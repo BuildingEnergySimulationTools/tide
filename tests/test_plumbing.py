@@ -2,7 +2,7 @@ import pandas as pd
 
 import numpy as np
 
-from tide.plumbing import _get_pipe_from_proc_list, _get_column_wise_transformer
+from tide.plumbing import _get_pipe_from_proc_list, _get_column_wise_transformer, _get_resampler
 
 TEST_DF = pd.DataFrame(
     {
@@ -27,7 +27,7 @@ PIPE_DICT = {
         "ALL": [["INTERPOLATE", ["linear"]], ["FFILL"], ["BFILL", {"limit": 3}]]
     },
     "resampling": {
-        "RESAMPLER": ["15min", {"energy": "sum"}],
+        "RESAMPLER": ["3h", {"W/m2": "SUM"}],
     },
     "Compute_energy": {
         "DATACOMBINER": [
@@ -97,3 +97,24 @@ class TestPlumbing:
         )
 
         assert col_trans is None
+
+    def test__get_resampler(self):
+        resampler = _get_resampler(PIPE_DICT["resampling"]["RESAMPLER"], TEST_DF.columns)
+
+        res = resampler.fit_transform(TEST_DF.copy())
+
+        np.testing.assert_almost_equal(
+            res.T.squeeze().to_list(),
+            [20.0, 2.6, 550.0, 12.6, 33.3, 12.6, 200.0, 466.6],
+            decimal=1
+        )
+
+        default_resampler = _get_resampler(["15min"], TEST_DF.columns)
+        mean_resampler = _get_resampler(["15min", "MEAN"], TEST_DF.columns)
+
+        pd.testing.assert_frame_equal(
+            default_resampler.fit_transform(TEST_DF.copy()),
+            mean_resampler.fit_transform(TEST_DF.copy())
+        )
+
+        assert True
