@@ -7,15 +7,19 @@ from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
     get_gaps_mask,
-    parse_columns,
-    columns_to_tree,
+    data_columns_to_tree,
+    get_data_col_names_from_root,
+    get_data_level_names,
+    parse_request_to_col_names,
     timedelta_to_int,
 )
 
 DF_COLUMNS = pd.DataFrame(
     columns=[
         "name_1__°C__bloc1",
+        "name_1__°C__bloc2",
         "name_2",
+        "name_2__DIMENSIONLESS__bloc2",
         "name_3__kWh/m²",
         "name4__DIMENSIONLESS__bloc4",
     ]
@@ -24,16 +28,9 @@ DF_COLUMNS = pd.DataFrame(
 
 class TestUtils:
     def test_columns_parser(self):
-        assert parse_columns(DF_COLUMNS.columns) == [
-            ("name_1", "°C", "bloc1"),
-            ("name_2", "DIMENSIONLESS", "OTHER"),
-            ("name_3", "kWh/m²", "OTHER"),
-            ("name4", "DIMENSIONLESS", "bloc4"),
-        ]
-
-    def test_columns_to_tree(self):
-        root = columns_to_tree(DF_COLUMNS)
-        assert True
+        root = data_columns_to_tree(DF_COLUMNS.columns)
+        col_names = get_data_col_names_from_root(root)
+        assert col_names == list(DF_COLUMNS.columns)
 
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(

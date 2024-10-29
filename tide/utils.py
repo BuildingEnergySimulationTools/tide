@@ -1,10 +1,49 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
-from bigtree import list_to_tree
+from bigtree import dict_to_tree, levelordergroup_iter
 
 
-def parse_columns(columns: pd.Index | list[str]) -> list[tuple[str, str, str]]:
+def get_data_col_names_from_root(data_root):
+    return [
+        [node.get_attr("col_name") for node in node_group]
+        for node_group in levelordergroup_iter(data_root)
+    ][-1]
+
+
+def get_data_level_names(data_root, level: str):
+    level_indices = {"name": 3, "unit": 2, "bloc": 1}
+    if level not in level_indices:
+        raise ValueError(f"Unknown level {level}")
+
+    nodes = [
+        [node.name for node in node_group]
+        for node_group in levelordergroup_iter(data_root)
+    ]
+
+    selected_nodes = nodes[level_indices[level]]
+
+    return set(selected_nodes) if level in {"bloc", "unit"} else selected_nodes
+
+
+def parse_request_to_col_names(
+    data_columns: pd.Index | list[str], request: str
+) -> list[str]:
+    request_parts = request.split("__")
+
+    if not (1 <= len(request_parts) <= 3):
+        raise ValueError(
+            f"Request '{request}' is malformed. "
+            f"Use 'name__unit__bloc' format or a combination of these tags."
+        )
+
+    if len(request_parts) == 3:
+        return [request] if request in data_columns else []
+
+    return [col for col in data_columns if all(part in col for part in request_parts)]
+
+
+def data_columns_to_tree(columns: pd.Index | list[str]) -> list[tuple[str, str, str]]:
     """
     Parses a DataFrame columns or a list of strings.
     Columns names must be formatted in the following way: "name__unit__bloc"
@@ -19,30 +58,24 @@ def parse_columns(columns: pd.Index | list[str]) -> list[tuple[str, str, str]]:
     data time series. Names should follow the "name__unit__bloc" naming convention
     """
 
-    parsed_list = []
+    parsed_dict = {}
 
     for col in columns:
         split_col = col.split("__")
         num_tags = len(split_col)
 
         if num_tags == 1:
-            parsed_tuple = (split_col[0], "DIMENSIONLESS", "OTHER")
+            pt = (split_col[0], "DIMENSIONLESS", "OTHER")
         elif num_tags == 2:
-            parsed_tuple = (split_col[0], split_col[1], "OTHER")
+            pt = (split_col[0], split_col[1], "OTHER")
         elif num_tags == 3:
-            parsed_tuple = tuple(split_col)
+            pt = tuple(split_col)
         else:
             raise ValueError(f"Too many tags; last tag '{split_col[-1]}' is not valid")
 
-        parsed_list.append(parsed_tuple)
+        parsed_dict[f"DATA|{pt[2]}|{pt[1]}|{pt[0]}"] = {"col_name": col}
 
-    return parsed_list
-
-
-def columns_to_tree(columns: pd.Index | list[str]):
-    parsed_columns = parse_columns(columns)
-    parsed_to_str = [f"DATA|{p[2]}|{p[1]}|{p[0]}" for p in parsed_columns]
-    return list_to_tree(parsed_to_str, sep="|")
+    return dict_to_tree(parsed_dict, sep="|")
 
 
 def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
