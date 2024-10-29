@@ -30,7 +30,7 @@ def _get_column_wise_transformer(
             name = req.replace("__", "_")
             col_trans_list.append(
                 (
-                    f"{process_name}_{name}" if process_name is not None else name,
+                    f"{process_name}->{name}" if process_name is not None else name,
                     _get_pipe_from_proc_list(proc_list),
                     requested_col,
                 )
