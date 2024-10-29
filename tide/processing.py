@@ -201,6 +201,7 @@ class RenameColumns(ProcessingBC):
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
+        X = check_and_return_dt_index_df(X)
         check_is_fitted(self, attributes=["features_", "index_"])
         if isinstance(self.new_names, list):
             if len(self.new_names) != len(X.columns):
@@ -215,6 +216,7 @@ class RenameColumns(ProcessingBC):
 
     def inverse_transform(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["features_", "index_"])
+        X = check_and_return_dt_index_df(X)
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
         X.columns = self.features_
