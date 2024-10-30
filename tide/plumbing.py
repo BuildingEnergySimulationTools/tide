@@ -3,9 +3,9 @@ import pandas as pd
 from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
+from tide import AGG_METHOD_MAP
 from tide.utils import data_columns_to_tree, parse_request_to_col_names
 import tide.processing as pc
-from tide import AGG_METHOD_MAP
 
 
 def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:

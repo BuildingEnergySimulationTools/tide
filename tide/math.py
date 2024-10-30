@@ -1,4 +1,4 @@
-import datetime as dt
+from enum import Enum
 
 import pandas as pd
 import numpy as np
@@ -7,6 +7,7 @@ from scipy import integrate
 from collections.abc import Callable
 
 from tide.utils import check_and_return_dt_index_df
+
 
 
 def time_gradient(data: pd.DataFrame | pd.Series) -> pd.DataFrame:
@@ -159,3 +160,19 @@ def sind(angle):
 
     res = np.sin(np.radians(angle))
     return res
+
+class AggMethod(str, Enum):
+    MEAN = "MEAN"
+    SUM = "SUM"
+    CUMSUM = "CUMSUM"
+    DIFF = "DIFF"
+    TIME_INTEGRATE = "TIME_INTEGRATE"
+
+
+AGG_METHOD_MAP = {
+    "MEAN": "mean",
+    "SUM": "sum",
+    "CUMSUM": "cumsum",
+    "DIFF": "diff",
+    "TIME_INTEGRATE": time_integrate,
+}
