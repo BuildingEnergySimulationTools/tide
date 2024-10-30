@@ -27,17 +27,18 @@ PIPE_DICT = {
         "outdoor__W/m2": [["DropTimeGradient", {"upper_rate": -100}]],
     },
     "common": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]],
-    "resampling": {
-        "RESAMPLER": ["3h", {"W/m2": "SUM"}],
-    },
-    "Compute_energy": {
-        "DATACOMBINER": [
-            ["T1", "T2", "M"],
-            '("T1"-"T2") * M * 2001',
-            "Air_flow_energy__hvac__J",
-            True,
-        ],
-    },
+    "resampling": [["Resample", ["3h", {"W/m2": "sum"}]]],
+    "Compute_energy": [
+        [
+            "Combiner",
+            [
+                ["T1", "T2", "M"],
+                '("T1"-"T2") * M * 2001',
+                "Air_flow_energy__hvac__J",
+                True,
+            ],
+        ]
+    ],
 }
 
 
@@ -46,7 +47,7 @@ class TestPlumbing:
         test_df = TEST_DF.copy()
         test_df.iloc[1, 0] = np.nan
         test_df.iloc[0, 1] = np.nan
-        pipe = _get_pipe_from_proc_list(PIPE_DICT["common"]["ALL"])
+        pipe = _get_pipe_from_proc_list(PIPE_DICT["common"])
 
         res = pipe.fit_transform(test_df)
 
@@ -99,4 +100,3 @@ class TestPlumbing:
         )
 
         assert col_trans is None
-

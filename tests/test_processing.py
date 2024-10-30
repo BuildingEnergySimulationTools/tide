@@ -98,7 +98,7 @@ class TestCustomTransformers:
 
         assert list(renamer.fit_transform(df).columns) == ["c", "a"]
 
-        inversed = renamer.inverse_transform(np.zeros((2, 2)))
+        inversed = renamer.inverse_transform(pd.DataFrame(np.zeros((2, 2)), pd.date_range("2009", freq="h", periods=2)))
         assert list(inversed.columns) == ["c", "a"]
 
     def test_pd_sk_transformer(self):
