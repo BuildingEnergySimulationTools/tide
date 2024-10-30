@@ -20,11 +20,11 @@ TEST_DF = pd.DataFrame(
 
 PIPE_DICT = {
     "pre_processing": {
-        "°C": [["DROP_THRESHOLD", {"upper": 25}]],
-        "outdoor__W/m2": [["DROP_TIME_GRADIENT", {"upper_rate": -100}]],
+        "°C": [["DropThreshold", {"upper": 25}]],
+        "outdoor__W/m2": [["DropTimeGradient", {"upper_rate": -100}]],
     },
     "common": {
-        "ALL": [["INTERPOLATE", ["linear"]], ["FFILL"], ["BFILL", {"limit": 3}]]
+        "ALL": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]]
     },
     "resampling": {
         "RESAMPLER": ["3h", {"W/m2": "SUM"}],

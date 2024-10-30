@@ -4,13 +4,13 @@ from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
 from tide.utils import data_columns_to_tree, parse_request_to_col_names
-from tide.processing import Resampler, ColumnResampler
-from tide import PROCESSOR_MAP, AGG_METHOD_MAP
+import tide.processing as pc
+from tide import AGG_METHOD_MAP
 
 
 def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:
     proc_units = [
-        PROCESSOR_MAP[proc[0]](
+        getattr(pc, proc[0])(
             *proc[1] if len(proc) > 1 and isinstance(proc[1], list) else (),
             **proc[1] if len(proc) > 1 and isinstance(proc[1], dict) else {},
         )
@@ -50,10 +50,10 @@ def _get_resampler(arg_list:list, data_columns:pd.Index | list[str]):
     rule = arg_list[0]
 
     if len(arg_list) == 1:
-        return Resampler(rule=rule, method=AGG_METHOD_MAP["MEAN"])
+        return pc.Resampler(rule=rule, method=AGG_METHOD_MAP["MEAN"])
 
     elif isinstance(arg_list[1], str):
-        return Resampler(rule=rule, method=AGG_METHOD_MAP[arg_list[1]])
+        return pc.Resampler(rule=rule, method=AGG_METHOD_MAP[arg_list[1]])
 
     else:
         column_config_list = [
@@ -61,7 +61,7 @@ def _get_resampler(arg_list:list, data_columns:pd.Index | list[str]):
             for req, method in arg_list[1].items()
         ]
 
-        return ColumnResampler(
+        return pc.ColumnResampler(
             rule=rule,
             columns_method=column_config_list,
             remainder=AGG_METHOD_MAP["MEAN"],
