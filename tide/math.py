@@ -9,7 +9,6 @@ from collections.abc import Callable
 from tide.utils import check_and_return_dt_index_df
 
 
-
 def time_gradient(data: pd.DataFrame | pd.Series) -> pd.DataFrame:
     """
     Calculates the time gradient of a given time series `data`
@@ -160,6 +159,7 @@ def sind(angle):
 
     res = np.sin(np.radians(angle))
     return res
+
 
 class AggMethod(str, Enum):
     MEAN = "MEAN"
