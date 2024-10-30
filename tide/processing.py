@@ -14,6 +14,7 @@ from tide.utils import (
     get_outer_timestamps,
     check_and_return_dt_index_df,
     get_gaps_mask,
+    parse_request_to_col_names,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
@@ -725,7 +726,12 @@ class Resampler(ProcessingBC):
         The default method for resampling.
         It Will be overridden if a specific method
         is specified in columns_method
-    columns_method : list of Tuples Optional
+    tide_format_methods:
+        Allow the use of tide column format name__unit__bloc to specify
+        column aggregation method.
+        Warning using this argument will override columns_methods argument.
+        Requires fitting operation before transformation
+    columns_methods : list of Tuples Optional
         List of tuples containing a list of column names and associated
         resampling method.
         The method should be a string or callable that can be passed
@@ -736,26 +742,35 @@ class Resampler(ProcessingBC):
         self,
         rule: str | pd.Timedelta | dt.timedelta,
         method: str | Callable = "mean",
-        columns_method: list[tuple[list[str], str | Callable]] = None,
+        tide_format_methods: dict[str, str | Callable] = None,
+        columns_methods: list[tuple[list[str], str | Callable]] = None,
     ):
         super().__init__()
         self.rule = rule
         self.method = method
-        self.columns_method = columns_method
+        self.columns_methods = columns_methods
+        self.tide_format_methods = tide_format_methods
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         _ = check_and_return_dt_index_df(X)
         self.features_ = X.columns
+        if self.tide_format_methods:
+            self.columns_methods = []
+            for req, method in self.tide_format_methods.items():
+                self.columns_methods.append(
+                    (parse_request_to_col_names(X.columns, req), method)
+                )
+
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["features_"])
         X = check_and_return_dt_index_df(X)
 
-        if not self.columns_method:
+        if not self.columns_methods:
             agg_dict = {col: self.method for col in X.columns}
         else:
-            agg_dict = {col: agg for cols, agg in self.columns_method for col in cols}
+            agg_dict = {col: agg for cols, agg in self.columns_methods for col in cols}
             for col in X.columns:
                 if col not in agg_dict.keys():
                     agg_dict[col] = self.method

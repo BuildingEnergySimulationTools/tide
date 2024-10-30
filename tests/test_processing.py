@@ -270,8 +270,8 @@ class TestCustomTransformers:
         df = pd.DataFrame(
             {
                 "col0": np.arange(10) * 100,
-                "col1": np.arange(10),
-                "col2": np.random.random(10),
+                "col1__°C": np.arange(10),
+                "col2__°C": np.random.random(10),
                 "col3": np.random.random(10) * 10,
             },
             index=pd.date_range("2009-01-01", freq="h", periods=10),
@@ -280,8 +280,8 @@ class TestCustomTransformers:
         ref = pd.DataFrame(
             {
                 "col0": [400.0, 900.0],
-                "col1": [2.0, 7.0],
-                "col2": [0.56239, 0.47789],
+                "col1__°C": [2.0, 7.0],
+                "col2__°C": [0.56239, 0.47789],
                 "col3": [9.69910, 5.24756],
             },
             index=pd.date_range("2009-01-01 00:00:00", freq="5h", periods=2),
@@ -290,9 +290,18 @@ class TestCustomTransformers:
         column_resampler = Resampler(
             rule="5h",
             method="max",
-            columns_method=[(["col2"], "mean"), (["col1"], "mean")],
+            columns_methods=[(["col2__°C"], "mean"), (["col1__°C"], "mean")],
         )
 
+        pd.testing.assert_frame_equal(
+            ref, column_resampler.fit_transform(df).astype("float"), atol=0.01
+        )
+
+        column_resampler = Resampler(
+            rule="5h",
+            method="max",
+            tide_format_methods={"°C": "mean"},
+        )
         pd.testing.assert_frame_equal(
             ref, column_resampler.fit_transform(df).astype("float"), atol=0.01
         )
