@@ -10,7 +10,7 @@ from sklearn.metrics import r2_score
 from tide.processing import (
     AddTimeLag,
     ApplyExpression,
-    ColumnResampler,
+    Resampler,
     CombineColumns,
     DropThreshold,
     DropTimeGradient,
@@ -21,7 +21,6 @@ from tide.processing import (
     GaussianFilter1D,
     Identity,
     RenameColumns,
-    Resampler,
     SkTransformer,
     TimeGradient,
     ReplaceDuplicated,
@@ -266,22 +265,7 @@ class TestCustomTransformers:
         filler = FillNa(value=0.0)
         pd.testing.assert_frame_equal(ref, filler.fit_transform(test))
 
-    def test_pd_resampler(self):
-        test = pd.DataFrame(
-            {"col": [1.0, 2.0, 3.0]},
-            index=pd.date_range("2009-01-01 00:00:00", freq="h", periods=3),
-        )
-
-        ref = pd.DataFrame(
-            {"col": [2.0]},
-            index=pd.DatetimeIndex(["2009-01-01"], dtype="datetime64[ns]", freq="3h"),
-        )
-
-        transformer = Resampler(rule="3h", method="mean")
-
-        pd.testing.assert_frame_equal(ref, transformer.fit_transform(test))
-
-    def test_pd_columns_resampler(self):
+    def test_resampler(self):
         np.random.seed(42)
         df = pd.DataFrame(
             {
@@ -300,33 +284,33 @@ class TestCustomTransformers:
                 "col2": [0.56239, 0.47789],
                 "col3": [9.69910, 5.24756],
             },
-            index=pd.DatetimeIndex(
-                ["2009-01-01 00:00:00", "2009-01-01 05:00:00"],
-                dtype="datetime64[ns]",
-                freq="5h",
-            ),
+            index=pd.date_range("2009-01-01 00:00:00", freq="5h", periods=2),
         ).astype("float")
 
-        column_resampler = ColumnResampler(
+        column_resampler = Resampler(
             rule="5h",
+            method="max",
             columns_method=[(["col2"], "mean"), (["col1"], "mean")],
-            remainder="max",
         )
 
         pd.testing.assert_frame_equal(
             ref, column_resampler.fit_transform(df).astype("float"), atol=0.01
         )
 
-        column_resampler = ColumnResampler(
+        column_resampler = Resampler(
             rule="5h",
-            columns_method=[(["col2"], "mean"), (["col1"], "mean")],
-            remainder="drop",
+            method="max",
         )
 
-        pd.testing.assert_frame_equal(
-            ref[["col2", "col1"]],
-            column_resampler.fit_transform(df).astype("float"),
-            atol=0.01,
+        np.testing.assert_almost_equal(
+            column_resampler.fit_transform(df.copy()).to_numpy(),
+            np.array(
+                [
+                    [4.00000000e02, 4.00000000e00, 9.50714306e-01, 9.69909852e00],
+                    [9.00000000e02, 9.00000000e00, 8.66176146e-01, 5.24756432e00],
+                ]
+            ),
+            decimal=1,
         )
 
     def test_pd_add_time_lag(self):

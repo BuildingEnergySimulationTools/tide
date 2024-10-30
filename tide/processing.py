@@ -621,71 +621,6 @@ class FillNa(ProcessingBC):
         return X.fillna(self.value)
 
 
-class Resampler(ProcessingBC):
-    """A transformer class that resamples a Pandas DataFrame
-
-    This class performs resampling on a Pandas DataFrame using the specified
-    `rule` and `method`. The resampling operation aggregates the data by time
-    intervals of the given `rule` and applies the specified `method` to the
-    data within each interval.
-
-    This transformer extends the scikit-learn `TransformerMixin` and `BaseEstimator`
-    classes.
-
-    Parameters:
-    -----------
-    rule : str
-        The frequency of resampling. The `rule` must be a string that can be
-        passed to the `resample()` method of a Pandas DataFrame.
-        It can also be a datetime.timedelta object
-    method : str, callable, or list of str/callable, default None
-        The aggregation method to be used in resampling. The `method`
-        must be a string or callable that can be passed to the `agg()` method
-        of a resampled Pandas DataFrame.
-
-    Attributes:
-    ----------
-    columns : array-like
-        The names of the columns in the input data.
-    resampled_index : DatetimeIndex
-        The index of the resampled Pandas DataFrame.
-
-    Methods:
-    -------
-    get_feature_names_out(input_features=None)
-        Returns the names of the output features.
-    fit(X, y=None)
-        Fit the transformer to the input data.
-    transform(X)
-        Perform the resampling operation on the input data and return the
-        resampled DataFrame.
-
-    Returns:
-    -------
-    X_resampled : Pandas DataFrame
-        The resampled Pandas DataFrame.
-    """
-
-    def __init__(self, rule: str | pd.Timedelta | dt.timedelta, method=None):
-        super().__init__()
-        self.rule = rule
-        self.method = method
-
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.resampled_index_ = X.resample(self.rule).asfreq()
-        return self
-
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
-        check_is_fitted(self, attributes=["resampled_index_", "features_"])
-        X = X.apply(pd.to_numeric)
-        X_resampled = X.resample(self.rule).agg(self.method)
-        self.resampled_index_ = X_resampled.index
-        return X_resampled
-
-
 class Interpolate(ProcessingBC):
     """A class that implements interpolation of missing values in
      a Pandas DataFrame.
@@ -776,114 +711,56 @@ class Interpolate(ProcessingBC):
         return X
 
 
-class ColumnResampler(ProcessingBC):
-    """Resample time series data in a pandas DataFrame based on different
-    resampling methods for different columns.
-
-    WARNING Use PdResampler if you want to resample all the columns with
-    the same aggregation method
+class Resampler(ProcessingBC):
+    """
+    Resample time series data in a pandas DataFrame according to rule.
+    Allow column wise resampling methods.
 
     Parameters
     ----------
     rule : str
-        The offset string or object representing the target resampling
+        The pandas timedelta or object representing the target resampling
         frequency.
-    columns_method : list of tuples
-        List of tuples containing a list of column names and an associated
-        resampling method. The method should be a callable that can be passed
+    method : str | Callable
+        The default method for resampling.
+        It Will be overridden if a specific method
+        is specified in columns_method
+    columns_method : list of Tuples Optional
+        List of tuples containing a list of column names and associated
+        resampling method.
+        The method should be a string or callable that can be passed
         to the `agg()` method of a pandas DataFrame.
-    remainder : str or callable, default='drop'
-        If 'drop', drop the non-aggregated columns from the resampled output.
-        If callable, must be a function that takes a DataFrame as input and
-        returns a DataFrame. Any non-aggregated columns not included in the
-        output of this function will be dropped from the resampled output.
-
-    Attributes
-    ----------
-    resampled_index : pandas.DatetimeIndex or None
-        Index of the resampled data after fitting.
-    columns : list of str or None
-        List of columns used to fit the transformer. If `remainder` is set to
-        'drop', this will only contain the columns used for aggregation.
-        Otherwise, it will contain all columns in the original DataFrame.
-
-
-    Methods
-    -------
-    fit(X, y=None)
-        Fit the transformer to the input DataFrame.
-    transform(X)
-        Resample the input DataFrame based on the specified resampling methods.
-    get_feature_names_out()
-        Return the names of the new features created in `transform()`.
-
     """
 
-    def __init__(self, rule, columns_method, remainder: str | Callable = "drop"):
+    def __init__(
+        self,
+        rule: str | pd.Timedelta | dt.timedelta,
+        method: str | Callable = "mean",
+        columns_method: list[tuple[list[str], str | Callable]] = None,
+    ):
         super().__init__()
         self.rule = rule
+        self.method = method
         self.columns_method = columns_method
-        self.resampled_index = None
-        self.remainder = remainder
-        self._check_columns_method()
-
-    def _check_columns_method(self):
-        if not isinstance(self.columns_method, list):
-            raise ValueError(
-                "Columns_method must be a list of Tuple"
-                "first index shall be a list of columns names,"
-                "second index shall be an aggregation method callable or pandas"
-                "Groupby method name"
-            )
-        for elmt in self.columns_method:
-            if not isinstance(elmt[0], list):
-                raise ValueError("Tuple first element must be a list" "of columns")
-
-    def _check_columns(self, X):
-        for col_list, _ in self.columns_method:
-            for col in col_list:
-                if col not in X.columns:
-                    raise ValueError("Columns in columns_method not found in" "X")
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self._check_columns(X)
-        if self.remainder == "drop":
-            self.features_ = []
-            for col_list, _ in self.columns_method:
-                self.features_ += col_list
-        else:
-            self.features_ = X.columns
-
+        _ = check_and_return_dt_index_df(X)
+        self.features_ = X.columns
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["features_"])
         X = check_and_return_dt_index_df(X)
-        if self.columns_method:
-            transformed_X = pd.concat(
-                [
-                    X[tup[0]].resample(self.rule).agg(tup[1])
-                    for tup in self.columns_method
-                ],
-                axis=1,
-            )
+
+        if not self.columns_method:
+            agg_dict = {col: self.method for col in X.columns}
         else:
-            transformed_X = pd.DataFrame()
+            agg_dict = {col: agg for cols, agg in self.columns_method for col in cols}
+            for col in X.columns:
+                if col not in agg_dict.keys():
+                    agg_dict[col] = self.method
 
-        if self.remainder != "drop":
-            remaining_col = [
-                col for col in X.columns if col not in transformed_X.columns
-            ]
-            transformed_X = pd.concat(
-                [
-                    transformed_X,
-                    X[remaining_col].resample(self.rule).agg(self.remainder),
-                ],
-                axis=1,
-            )
-
-        return transformed_X[self.features_]
+        return X.resample(rule=self.rule).agg(agg_dict)[X.columns]
 
 
 class AddTimeLag(ProcessingBC):
@@ -1299,3 +1176,14 @@ class FillGapsAR(ProcessingBC):
                     del gaps[col][i]
 
         return X
+
+
+class Combiner(ProcessingBC):
+    def __init__(
+        self,
+        variables: list[str] | pd.Index,
+        equation: str,
+        result_col_name: str,
+        drop_variables: bool = False,
+    ):
+        super().__init__()
