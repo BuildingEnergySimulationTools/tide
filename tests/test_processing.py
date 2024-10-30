@@ -10,7 +10,7 @@ from sklearn.metrics import r2_score
 from tide.processing import (
     AddTimeLag,
     ApplyExpression,
-    Resampler,
+    Resample,
     CombineColumns,
     DropThreshold,
     DropTimeGradient,
@@ -287,7 +287,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009-01-01 00:00:00", freq="5h", periods=2),
         ).astype("float")
 
-        column_resampler = Resampler(
+        column_resampler = Resample(
             rule="5h",
             method="max",
             columns_methods=[(["col2__°C"], "mean"), (["col1__°C"], "mean")],
@@ -297,7 +297,7 @@ class TestCustomTransformers:
             ref, column_resampler.fit_transform(df).astype("float"), atol=0.01
         )
 
-        column_resampler = Resampler(
+        column_resampler = Resample(
             rule="5h",
             method="max",
             tide_format_methods={"°C": "mean"},
@@ -306,7 +306,7 @@ class TestCustomTransformers:
             ref, column_resampler.fit_transform(df).astype("float"), atol=0.01
         )
 
-        column_resampler = Resampler(
+        column_resampler = Resample(
             rule="5h",
             method="max",
         )

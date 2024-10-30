@@ -712,7 +712,7 @@ class Interpolate(ProcessingBC):
         return X
 
 
-class Resampler(ProcessingBC):
+class Resample(ProcessingBC):
     """
     Resample time series data in a pandas DataFrame according to rule.
     Allow column wise resampling methods.

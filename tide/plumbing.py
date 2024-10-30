@@ -46,14 +46,15 @@ def _get_column_wise_transformer(
             verbose_feature_names_out=False,
         ).set_output(transform="pandas")
 
-def _get_resampler(arg_list:list, data_columns:pd.Index | list[str]):
+
+def _get_resampler(arg_list: list, data_columns: pd.Index | list[str]):
     rule = arg_list[0]
 
     if len(arg_list) == 1:
-        return pc.Resampler(rule=rule, method=AGG_METHOD_MAP["MEAN"])
+        return pc.Resample(rule=rule, method=AGG_METHOD_MAP["MEAN"])
 
     elif isinstance(arg_list[1], str):
-        return pc.Resampler(rule=rule, method=AGG_METHOD_MAP[arg_list[1]])
+        return pc.Resample(rule=rule, method=AGG_METHOD_MAP[arg_list[1]])
 
     else:
         column_config_list = [
@@ -61,11 +62,12 @@ def _get_resampler(arg_list:list, data_columns:pd.Index | list[str]):
             for req, method in arg_list[1].items()
         ]
 
-        return pc.ColumnResampler(
+        return pc.Resample(
             rule=rule,
-            columns_method=column_config_list,
+            columns_methods=column_config_list,
             remainder=AGG_METHOD_MAP["MEAN"],
         )
+
 
 def get_pipeline_from_dict(data_index: pd.Index | list[str], pipe_dict: {}):
     data_root = data_columns_to_tree(data_index)
