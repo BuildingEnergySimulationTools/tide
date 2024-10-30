@@ -47,28 +47,6 @@ def _get_column_wise_transformer(
         ).set_output(transform="pandas")
 
 
-def _get_resampler(arg_list: list, data_columns: pd.Index | list[str]):
-    rule = arg_list[0]
-
-    if len(arg_list) == 1:
-        return pc.Resample(rule=rule, method=AGG_METHOD_MAP["MEAN"])
-
-    elif isinstance(arg_list[1], str):
-        return pc.Resample(rule=rule, method=AGG_METHOD_MAP[arg_list[1]])
-
-    else:
-        column_config_list = [
-            (parse_request_to_col_names(data_columns, req), AGG_METHOD_MAP[method])
-            for req, method in arg_list[1].items()
-        ]
-
-        return pc.Resample(
-            rule=rule,
-            columns_methods=column_config_list,
-            remainder=AGG_METHOD_MAP["MEAN"],
-        )
-
-
 def get_pipeline_from_dict(data_index: pd.Index | list[str], pipe_dict: {}):
     data_root = data_columns_to_tree(data_index)
     return None

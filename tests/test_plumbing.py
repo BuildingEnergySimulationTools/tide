@@ -2,7 +2,10 @@ import pandas as pd
 
 import numpy as np
 
-from tide.plumbing import _get_pipe_from_proc_list, _get_column_wise_transformer, _get_resampler
+from tide.plumbing import (
+    _get_pipe_from_proc_list,
+    _get_column_wise_transformer,
+)
 
 TEST_DF = pd.DataFrame(
     {
@@ -23,9 +26,7 @@ PIPE_DICT = {
         "°C": [["DropThreshold", {"upper": 25}]],
         "outdoor__W/m2": [["DropTimeGradient", {"upper_rate": -100}]],
     },
-    "common": {
-        "ALL": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]]
-    },
+    "common": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]],
     "resampling": {
         "RESAMPLER": ["3h", {"W/m2": "SUM"}],
     },
@@ -50,7 +51,8 @@ class TestPlumbing:
         res = pipe.fit_transform(test_df)
 
         pd.testing.assert_series_equal(
-            res["Tin__°C__building"], TEST_DF["Tin__°C__building"])
+            res["Tin__°C__building"], TEST_DF["Tin__°C__building"]
+        )
         assert float(res.iloc[0, 1]) == 5.0
 
     def test__get_column_wise_transformer(self):
@@ -62,8 +64,8 @@ class TestPlumbing:
 
         res = col_trans.fit_transform(TEST_DF.copy())
 
-        np.testing.assert_array_equal(res.iloc[:, 0].to_list(), [10., 20., np.nan])
-        np.testing.assert_array_equal(res.iloc[:, 2].to_list(), [50., 100., np.nan])
+        np.testing.assert_array_equal(res.iloc[:, 0].to_list(), [10.0, 20.0, np.nan])
+        np.testing.assert_array_equal(res.iloc[:, 2].to_list(), [50.0, 100.0, np.nan])
 
         col_trans = _get_column_wise_transformer(
             proc_dict=PIPE_DICT["pre_processing"],
@@ -79,7 +81,7 @@ class TestPlumbing:
             ].copy()
         )
 
-        np.testing.assert_array_equal(res.iloc[:, 0].to_list(), [10., 20., np.nan])
+        np.testing.assert_array_equal(res.iloc[:, 0].to_list(), [10.0, 20.0, np.nan])
         assert len(col_trans.transformers_) == 2
 
         cols_none = [
@@ -98,23 +100,3 @@ class TestPlumbing:
 
         assert col_trans is None
 
-    def test__get_resampler(self):
-        resampler = _get_resampler(PIPE_DICT["resampling"]["RESAMPLER"], TEST_DF.columns)
-
-        res = resampler.fit_transform(TEST_DF.copy())
-
-        np.testing.assert_almost_equal(
-            res.T.squeeze().to_list(),
-            [20.0, 2.6, 550.0, 12.6, 33.3, 12.6, 200.0, 466.6],
-            decimal=1
-        )
-
-        default_resampler = _get_resampler(["15min"], TEST_DF.columns)
-        mean_resampler = _get_resampler(["15min", "MEAN"], TEST_DF.columns)
-
-        pd.testing.assert_frame_equal(
-            default_resampler.fit_transform(TEST_DF.copy()),
-            mean_resampler.fit_transform(TEST_DF.copy())
-        )
-
-        assert True
