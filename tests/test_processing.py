@@ -553,3 +553,42 @@ class TestCustomTransformers:
         for gap in holes_pairs[1:]:
             # Skip the first one. r2_score doesn't work for only value
             assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.99
+
+    def test_combiner(self):
+        test_df = pd.DataFrame(
+            {
+                "Tin__°C__building": [10.0, 20.0, 30.0],
+                "Text__°C__outdoor": [-1.0, 5.0, 4.0],
+                "radiation__W/m2__outdoor": [50, 100, 400],
+                "Humidity__%HR": [10, 15, 13],
+                "Humidity__%HR__room1": [20, 30, 50],
+                "Humidity_2": [10, 15, 13],
+                "light__DIMENSIONLESS__building": [100, 200, 300],
+                "mass_flwr__m3/h__hvac": [300, 500, 600],
+            },
+            index=pd.date_range("2009", freq="h", periods=3),
+        )
+
+        combiner = ExpressionCombine(
+            variables_dict={
+                "T1": "Tin__°C__building",
+                "T2": "Text__°C__outdoor",
+                "m": "mass_flwr__m3/h__hvac",
+            },
+            expression="(T1 - T2) * m * 1004 * 1.204",
+            result_col_name="loss_ventilation__J__hvac",
+        )
+
+        res = combiner.fit_transform(test_df.copy())
+
+        np.testing.assert_almost_equal(
+            res["loss_ventilation__J__hvac"],
+            [3989092.8, 9066120.0, 18857529.6],
+            decimal=1,
+        )
+
+        combiner.set_params(drop_variables=True)
+
+        res = combiner.fit_transform(test_df.copy())
+
+        assert res.shape == (3, 6)

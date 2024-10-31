@@ -1193,7 +1193,48 @@ class FillGapsAR(ProcessingBC):
         return X
 
 
-class Combiner(ProcessingBC):
+class ExpressionCombine(ProcessingBC):
+    """
+    Performs specified operations on selected columns, creating a new column
+    based on the provided expression.
+    Useful for aggregation in a single column, or physical expression.
+    The transformer can also optionally drop the columns used in the expression
+    after computation.
+
+    Parameters
+    ----------
+    variables_dict : dict[str, str]
+        A dictionary mapping variable names (as used in the expression) to the
+        column names in the X DataFrame. Keys are variable names in the expression,
+        and values are the corresponding column names in the DataFrame.
+
+    expression : str
+        A mathematical expression in string format, which will be evaluated using the
+        specified columns from the DataFrame. Variables in the expression should
+        match the keys in `variables_dict`.
+
+    result_col_name : str
+        Name of the new column in which the result of the evaluated expression
+        will be stored.
+
+    drop_variables : bool, default=False
+        If True, the columns used in the calculation will be dropped
+        from the resulting DataFrame after the transformation.
+
+    Examples
+    --------
+    combiner = Combiner(
+        variables_dict={
+            "T1": "Tin__°C__building",
+            "T2": "Text__°C__outdoor",
+            "m": "mass_flwr__m3/h__hvac",
+        },
+        expression="(T1 - T2) * m * 1004 * 1.204",
+        result_col_name="loss_ventilation__J__hvac",
+        drop_variables = True
+    )
+    """
+
     def __init__(
         self,
         variables: list[str] | pd.Index,
