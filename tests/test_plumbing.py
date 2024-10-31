@@ -5,6 +5,7 @@ import numpy as np
 from tide.plumbing import (
     _get_pipe_from_proc_list,
     _get_column_wise_transformer,
+    get_pipeline_from_dict
 )
 
 TEST_DF = pd.DataFrame(
@@ -24,16 +25,20 @@ TEST_DF = pd.DataFrame(
 PIPE_DICT = {
     "pre_processing": {
         "°C": [["DropThreshold", {"upper": 25}]],
-        "outdoor__W/m2": [["DropTimeGradient", {"upper_rate": -100}]],
+        "W/m2__outdoor": [["DropTimeGradient", {"upper_rate": -100}]],
     },
     "common": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]],
-    "resampling": [["Resample", ["3h", {"W/m2": "sum"}]]],
-    "Compute_energy": [
+    "resampling": [["Resample", ["3h", "mean", {"W/m2": "sum"}]]],
+    "compute_energy": [
         [
-            "Combiner",
+            "ExpressionCombine",
             [
-                ["T1", "T2", "M"],
-                '("T1"-"T2") * M * 2001',
+                {
+                    "T1": "Tin__°C__building",
+                    "T2": "Text__°C__outdoor",
+                    "m": "mass_flwr__m3/h__hvac",
+                },
+                "(T1 - T2) * m * 1004 * 1.204",
                 "Air_flow_energy__hvac__J",
                 True,
             ],
@@ -100,3 +105,10 @@ class TestPlumbing:
         )
 
         assert col_trans is None
+
+    def test_get_pipeline_from_dict(self):
+        pipe = get_pipeline_from_dict(TEST_DF.columns, PIPE_DICT)
+        pipe.fit_transform(TEST_DF.copy())
+
+        assert True
+

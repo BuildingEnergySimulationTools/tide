@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
-from tide.utils import data_columns_to_tree, parse_request_to_col_names
+from tide.utils import parse_request_to_col_names
 import tide.processing as pc
 
 
@@ -46,6 +46,19 @@ def _get_column_wise_transformer(
         ).set_output(transform="pandas")
 
 
-def get_pipeline_from_dict(data_index: pd.Index | list[str], pipe_dict: {}):
-    data_root = data_columns_to_tree(data_index)
-    return None
+def get_pipeline_from_dict(data_index: pd.Index | list[str], pipe_dict: dict):
+    steps_list = []
+    for step, op_conf in pipe_dict.items():
+        if isinstance(op_conf, list):
+            operation = _get_pipe_from_proc_list(op_conf)
+
+        elif isinstance(op_conf, dict):
+            operation = _get_column_wise_transformer(op_conf, data_index, step)
+
+        else:
+            raise ValueError(f"{op_conf} is an invalid operation config")
+
+        if operation is not None:
+            steps_list.append((step, operation))
+
+    return Pipeline(steps_list)
