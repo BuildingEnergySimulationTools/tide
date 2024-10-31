@@ -11,7 +11,7 @@ from tide.processing import (
     AddTimeLag,
     ApplyExpression,
     Resample,
-    CombineColumns,
+    ColumnsCombine,
     DropThreshold,
     DropTimeGradient,
     Dropna,
@@ -21,12 +21,13 @@ from tide.processing import (
     GaussianFilter1D,
     Identity,
     RenameColumns,
-    SkTransformer,
+    SkTransform,
     TimeGradient,
     ReplaceDuplicated,
     STLFilter,
     FillGapsAR,
     Interpolate,
+    ExpressionCombine,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -98,7 +99,9 @@ class TestCustomTransformers:
 
         assert list(renamer.fit_transform(df).columns) == ["c", "a"]
 
-        inversed = renamer.inverse_transform(pd.DataFrame(np.zeros((2, 2)), pd.date_range("2009", freq="h", periods=2)))
+        inversed = renamer.inverse_transform(
+            pd.DataFrame(np.zeros((2, 2)), pd.date_range("2009", freq="h", periods=2))
+        )
         assert list(inversed.columns) == ["c", "a"]
 
     def test_pd_sk_transformer(self):
@@ -107,7 +110,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2),
         )
 
-        scaler = SkTransformer(StandardScaler())
+        scaler = SkTransform(StandardScaler())
         to_test = scaler.fit_transform(df)
 
         ref = pd.DataFrame(
@@ -369,19 +372,19 @@ class TestCustomTransformers:
 
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(
-            {"a": [1, 2], "b": [1, 2], "c": [1, 2]},
+            {"a__°C": [1, 2], "b__°C": [1, 2], "c": [1, 2]},
             index=pd.date_range("2009", freq="h", periods=2),
         )
 
-        trans = CombineColumns(
-            columns_to_combine=["a", "b"],
+        trans = ColumnsCombine(
             function=np.sum,
+            columns=["a__°C", "b__°C"],
             function_kwargs={"axis": 1},
             drop_columns=True,
         )
 
         pd.testing.assert_frame_equal(
-            trans.fit_transform(x_in),
+            trans.fit_transform(x_in.copy()),
             pd.DataFrame(
                 {"c": [1, 2], "combined": [2, 4]},
                 index=pd.date_range("2009", freq="h", periods=2),
@@ -390,7 +393,16 @@ class TestCustomTransformers:
 
         ref = x_in.copy()
         ref["combined"] = [2, 4]
-        trans.drop_columns = False
+        trans.set_params(drop_columns=False)
+
+        pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
+
+        trans = ColumnsCombine(
+            function=np.sum,
+            tide_format_columns="°C",
+            function_kwargs={"axis": 1},
+            drop_columns=False,
+        )
 
         pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
 

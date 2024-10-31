@@ -224,7 +224,7 @@ class RenameColumns(ProcessingBC):
         return self.transform(X)
 
 
-class SkTransformer(ProcessingBC):
+class SkTransform(ProcessingBC):
     """A transformer class to apply scikit transformers on a pandas DataFrame
 
     This class takes in a scikit-learn transformers as input and applies the
@@ -748,8 +748,8 @@ class Resample(ProcessingBC):
         super().__init__()
         self.rule = rule
         self.method = method
-        self.columns_methods = columns_methods
         self.tide_format_methods = tide_format_methods
+        self.columns_methods = columns_methods
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         _ = check_and_return_dt_index_df(X)
@@ -922,17 +922,20 @@ class GaussianFilter1D(ProcessingBC):
         return X.apply(gauss_filter)
 
 
-class CombineColumns(ProcessingBC):
+class ColumnsCombine(ProcessingBC):
     """
     A class that combines multiple columns in a pandas DataFrame using a specified
     function.
 
     Parameters
     ----------
-        columns_to_combine (list or None): A list of column names to combine.
-            If None, all columns will be combined.
         function (callable or None): A function or method to apply for combining
             columns.
+        tide_format_columns str: Tide request format. Columns are determined using
+            tide columns format name__unit__bloc. It override the columns attribute
+        columns (list or None): A list of column names to combine.
+            If None, all columns will be combined.
+
         function_kwargs (dict or None): Additional keyword arguments to pass to the
             combining function.
         drop_columns (bool): If True, the original columns to combine will be dropped
@@ -959,49 +962,47 @@ class CombineColumns(ProcessingBC):
 
     def __init__(
         self,
-        columns_to_combine=None,
-        function=None,
-        function_kwargs=None,
-        drop_columns=False,
-        label_name="combined",
+        function: Callable,
+        tide_format_columns: str = None,
+        columns=None,
+        function_kwargs: dict = {},
+        drop_columns: bool = False,
+        label_name: str = "combined",
     ):
         super().__init__()
-        self.function_kwargs = function_kwargs
-        self.columns_to_combine = columns_to_combine
         self.function = function
+        self.tide_format_columns = tide_format_columns
+        self.columns = columns
+        self.function_kwargs = function_kwargs
         self.drop_columns = drop_columns
         self.label_name = label_name
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
-        self.function_kwargs = (
-            {} if self.function_kwargs is None else self.function_kwargs
+        if self.columns is None and self.tide_format_columns is None:
+            raise ValueError("Provide at least one of columns or tide_format_columns")
+
+        self.columns_to_combine_ = (
+            parse_request_to_col_names(X.columns, self.tide_format_columns)
+            if self.tide_format_columns
+            else self.columns
         )
-        self.features_ = X.columns
-        self.index_ = X.index
-        for lab in self.columns_to_combine:
-            if lab not in self.features_:
-                raise ValueError(f"{lab} is not found in X DataFrame columns")
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_"])
+        check_is_fitted(self, attributes=["columns_to_combine_"])
         X = check_and_return_dt_index_df(X)
-        X_transformed = X.copy()
-        if self.drop_columns:
-            col_to_return = [
-                col for col in self.features_ if col not in self.columns_to_combine
-            ]
-        else:
-            col_to_return = list(self.features_)
-
-        X_transformed[self.label_name] = self.function(
-            X_transformed[self.columns_to_combine], **self.function_kwargs
+        X[self.label_name] = self.function(
+            X[self.columns_to_combine_], **self.function_kwargs
         )
 
-        col_to_return.append(self.label_name)
-
-        return X_transformed[col_to_return]
+        if self.drop_columns:
+            col_to_return = [
+                col for col in X.columns if col not in self.columns_to_combine_
+            ]
+            return X[col_to_return]
+        else:
+            return X
 
 
 class STLFilter(ProcessingBC):
@@ -1237,9 +1238,30 @@ class ExpressionCombine(ProcessingBC):
 
     def __init__(
         self,
-        variables: list[str] | pd.Index,
-        equation: str,
+        variables_dict: dict[str, str],
+        expression: str,
         result_col_name: str,
         drop_variables: bool = False,
     ):
-        super().__init__()
+        self.variables_dict = variables_dict
+        self.expression = expression
+        self.result_col_name = result_col_name
+        self.drop_variables = drop_variables
+
+    def fit(self, X, y=None):
+        X = check_and_return_dt_index_df(X)
+        return self
+
+    def transform(self, X):
+        X = check_and_return_dt_index_df(X)
+        exp = self.expression
+        for key, val in self.variables_dict.items():
+            exp = exp.replace(key, f'X["{val}"]')
+
+        X[self.result_col_name] = pd.eval(exp, target=X)
+        if self.drop_variables:
+            return X[
+                [col for col in X.columns if col not in self.variables_dict.values()]
+            ]
+        else:
+            return X
