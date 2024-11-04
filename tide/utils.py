@@ -12,7 +12,21 @@ def get_data_col_names_from_root(data_root):
 
 
 def get_data_level_names(data_root, level: str):
-    level_indices = {"name": 3, "unit": 2, "bloc": 1}
+    depth_levels = {
+        5: {"name": 4, "unit": 3, "bloc": 1, "sub_bloc": 2},
+        4: {"name": 3, "unit": 2, "bloc": 1},
+        3: {"name": 2, "unit": 1},
+        2: {"name": 1},
+    }
+
+    max_depth = data_root.max_depth
+    if max_depth not in depth_levels:
+        raise ValueError(
+            f"Unsupported root depth of {max_depth}. Allowed depths are 2 to 5."
+        )
+
+    level_indices = depth_levels[max_depth]
+
     if level not in level_indices:
         raise ValueError(f"Unknown level {level}")
 
@@ -31,49 +45,54 @@ def parse_request_to_col_names(
 ) -> list[str]:
     request_parts = request.split("__")
 
-    if not (1 <= len(request_parts) <= 3):
+    if not (1 <= len(request_parts) <= 4):
         raise ValueError(
             f"Request '{request}' is malformed. "
             f"Use 'name__unit__bloc' format or a combination of these tags."
         )
 
-    if len(request_parts) == 3:
+    if len(request_parts) == 4:
         return [request] if request in data_columns else []
 
     return [col for col in data_columns if all(part in col for part in request_parts)]
 
 
-def data_columns_to_tree(columns: pd.Index | list[str]) -> list[tuple[str, str, str]]:
+def data_columns_to_tree(columns: pd.Index | list[str]) -> list[tuple[str]]:
     """
-    Parses a DataFrame columns or a list of strings.
-    Columns names must be formatted in the following way: "name__unit__bloc"
-    Tags are separated by a double underscore "__"
-    Only unit and bloc tags are allowed. More tags will raise an error
-    If only one tag is given, it will be considered as unit tag. The bloc tag
-    will be set to "OTHER".
-    If no tag is given unit tag will be set to "DIMENSIONLESS", bloc tag will be set to
-    "OTHER"
+    Parses column names and organizes them in a hierarchical structure.
+    Column names must follow the format: "name__unit__bloc__sub_bloc" with tags
+    separated by "__". Supported tags are: name, unit, bloc, and sub_bloc.
+    Tree depth is automatically determined from the greater number of tags in a
+    column name.
+    Tags are supposed to be written in the above order.
+    If only one tag is given, and tree depth is 4, it will be considered as name
+    and the remaining tags will be set to DIMENSIONLESS, OTHER, OTHER
 
     :param columns: DataFrame columns or list of strings containing names of measured
-    data time series. Names should follow the "name__unit__bloc" naming convention
+    data time series. Names should follow the "name__unit__bloc_sub_bloc"
+    naming convention
     """
 
+    tag_levels = max(len(col.split("__")) for col in columns)
+
+    if not 1 <= tag_levels <= 4:
+        raise ValueError(f"Only up to 4 tags are allowed; found {tag_levels}.")
+
     parsed_dict = {}
+    level_format = {
+        1: lambda pt: f"DATA|{pt[0]}",
+        2: lambda pt: f"DATA|{pt[1]}|{pt[0]}",
+        3: lambda pt: f"DATA|{pt[2]}|{pt[1]}|{pt[0]}",
+        4: lambda pt: f"DATA|{pt[2]}|{pt[3]}|{pt[1]}|{pt[0]}",
+    }
 
     for col in columns:
         split_col = col.split("__")
         num_tags = len(split_col)
 
-        if num_tags == 1:
-            pt = (split_col[0], "DIMENSIONLESS", "OTHER")
-        elif num_tags == 2:
-            pt = (split_col[0], split_col[1], "OTHER")
-        elif num_tags == 3:
-            pt = tuple(split_col)
-        else:
-            raise ValueError(f"Too many tags; last tag '{split_col[-1]}' is not valid")
+        pt = tuple(split_col + ["DIMENSIONLESS", "OTHER", "OTHER"][num_tags - 1 : 4])
 
-        parsed_dict[f"DATA|{pt[2]}|{pt[1]}|{pt[0]}"] = {"col_name": col}
+        parsed_dict[level_format[tag_levels](pt)] = {"col_name": col}
 
     return dict_to_tree(parsed_dict, sep="|")
 

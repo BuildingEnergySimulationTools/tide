@@ -32,6 +32,12 @@ class TestUtils:
         col_names = get_data_col_names_from_root(root)
         assert all(col in DF_COLUMNS.columns for col in col_names)
 
+    def test_get_data_level_names(self):
+        root = data_columns_to_tree(DF_COLUMNS.columns)
+        res = get_data_level_names(root, "name")
+
+        assert res == ["name_1", "name_1", "name_2", "name_2", "name_3", "name4"]
+
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
             {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
