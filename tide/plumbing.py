@@ -7,6 +7,7 @@ from tide.utils import (
     parse_request_to_col_names,
     check_and_return_dt_index_df,
     data_columns_to_tree,
+    get_data_level_names,
 )
 import tide.processing as pc
 
@@ -74,13 +75,29 @@ def get_pipeline_from_dict(data_columns: pd.Index | list[str], pipe_dict: dict):
 
 class Plumber:
     def __init__(self, data: pd.Series | pd.DataFrame = None, pipe_dict: dict = None):
-        self.data = check_and_return_dt_index_df(data)
+        self.data = check_and_return_dt_index_df(data) if data is not None else None
+        self.root = data_columns_to_tree(data.columns) if data is not None else None
         self.pipe_dict = pipe_dict
 
     def __repr__(self):
         if self.data is not None:
-            root = data_columns_to_tree(self.data.columns)
-            root.show()
+            tree_depth = self.root.max_depth
+            tag_levels = ["name", "unit", "bloc", "sub_bloc"]
+            rep_str = f"Number of tags : {tree_depth - 2} \n"
+            for tag in range(1, tree_depth - 1):
+                rep_str += f"=== {tag_levels[tag]} === \n"
+                for lvl_name in get_data_level_names(self.root, tag_levels[tag]):
+                    rep_str += f"{lvl_name}\n"
+                rep_str += "\n"
+            return rep_str
+
+    def show(self):
+        if self.root is not None:
+            self.root.show()
+
+    def set_data(self, data: pd.Series | pd.DataFrame):
+        self.data = check_and_return_dt_index_df(data)
+        self.root = data_columns_to_tree(data.columns)
 
     def get_pipeline(self, select: str | pd.Index | list[str]) -> Pipeline:
         select = _select_to_data_columns(select)
