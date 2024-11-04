@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 from bigtree import dict_to_tree, levelordergroup_iter
+from bigtree.node import node
+from typing import TypeVar
+
+T = TypeVar("T", bound=node.Node)
 
 
 def get_data_col_names_from_root(data_root):
@@ -57,7 +61,7 @@ def parse_request_to_col_names(
     return [col for col in data_columns if all(part in col for part in request_parts)]
 
 
-def data_columns_to_tree(columns: pd.Index | list[str]) -> list[tuple[str]]:
+def data_columns_to_tree(columns: pd.Index | list[str]) -> T:
     """
     Parses column names and organizes them in a hierarchical structure.
     Column names must follow the format: "name__unit__bloc__sub_bloc" with tags
