@@ -131,6 +131,21 @@ class Plumber:
 
         return get_pipeline_from_dict(selection, dict_to_pipe)
 
-    def get_corrected_data(self, select: str | pd.Index | list[str]):
-        select = _select_to_data_columns(select)
-        return self.get_pipeline(select).fit_transform(self.data[select].copy())
+    def get_corrected_data(
+        self, select: str | pd.Index | list[str] = None, until_step: str = None
+    ) -> pd.DataFrame:
+        self._check_config_data_pipe()
+        select = _select_to_data_columns(self.data, select)
+        return self.get_pipeline(select, until_step).fit_transform(
+            self.data[select].copy()
+        )
+
+    def plot_gaps_heatmap(
+        self,
+        select: str | pd.Index | list[str] = None,
+        until_step: str = None,
+        time_step: str | pd.Timedelta | dt.timedelta = None,
+        title: str = None,
+    ):
+        data = self.get_corrected_data(select, until_step)
+        return plot_gaps_heatmap(data, time_step=time_step, title=title)
