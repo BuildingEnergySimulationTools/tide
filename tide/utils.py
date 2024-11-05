@@ -45,20 +45,25 @@ def get_data_level_names(data_root, level: str):
 
 
 def parse_request_to_col_names(
-    data_columns: pd.Index | list[str], request: str
+    data_columns: pd.Index | list[str], request: str = None
 ) -> list[str]:
-    request_parts = request.split("__")
+    if request is None:
+        return list(data_columns)
+    else:
+        request_parts = request.split("__")
 
-    if not (1 <= len(request_parts) <= 4):
-        raise ValueError(
-            f"Request '{request}' is malformed. "
-            f"Use 'name__unit__bloc' format or a combination of these tags."
-        )
+        if not (1 <= len(request_parts) <= 4):
+            raise ValueError(
+                f"Request '{request}' is malformed. "
+                f"Use 'name__unit__bloc' format or a combination of these tags."
+            )
 
-    if len(request_parts) == 4:
-        return [request] if request in data_columns else []
+        if len(request_parts) == 4:
+            return [request] if request in data_columns else []
 
-    return [col for col in data_columns if all(part in col for part in request_parts)]
+        return [
+            col for col in data_columns if all(part in col for part in request_parts)
+        ]
 
 
 def data_columns_to_tree(columns: pd.Index | list[str]) -> T:
