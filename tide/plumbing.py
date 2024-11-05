@@ -89,13 +89,20 @@ class Plumber:
         if self.data is not None:
             tree_depth = self.root.max_depth
             tag_levels = ["name", "unit", "bloc", "sub_bloc"]
-            rep_str = f"Number of tags : {tree_depth - 2} \n"
+            rep_str = "tide.plumbing.Plumber object \n"
+            rep_str += f"Number of tags : {tree_depth - 2} \n"
             for tag in range(1, tree_depth - 1):
                 rep_str += f"=== {tag_levels[tag]} === \n"
                 for lvl_name in get_data_level_names(self.root, tag_levels[tag]):
                     rep_str += f"{lvl_name}\n"
                 rep_str += "\n"
             return rep_str
+        else:
+            return super().__repr__()
+
+    def _check_config_data_pipe(self):
+        if self.data is None or self.pipe_dict is None:
+            raise ValueError("data and pipe_dict are required")
 
     def show(self):
         if self.root is not None:
