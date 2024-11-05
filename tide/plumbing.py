@@ -12,8 +12,14 @@ from tide.utils import (
 import tide.processing as pc
 
 
-def _select_to_data_columns(select: str | pd.Index | list[str]):
-    return parse_request_to_col_names(select) if isinstance(select, str) else select
+def _select_to_data_columns(
+    data: pd.DataFrame = None, select: str | pd.Index | list[str] = None
+):
+    return (
+        parse_request_to_col_names(data.columns, select)
+        if isinstance(select, str) or select is None
+        else select
+    )
 
 
 def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:
