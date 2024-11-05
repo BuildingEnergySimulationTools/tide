@@ -1,3 +1,5 @@
+import datetime as dt
+
 import pandas as pd
 
 from sklearn.pipeline import make_pipeline, Pipeline
@@ -9,6 +11,7 @@ from tide.utils import (
     data_columns_to_tree,
     get_data_level_names,
 )
+from tide.plot import plot_gaps_heatmap
 import tide.processing as pc
 
 
@@ -112,9 +115,21 @@ class Plumber:
         self.data = check_and_return_dt_index_df(data)
         self.root = data_columns_to_tree(data.columns)
 
-    def get_pipeline(self, select: str | pd.Index | list[str]) -> Pipeline:
-        select = _select_to_data_columns(select)
-        return get_pipeline_from_dict(select, self.pipe_dict)
+    def get_pipeline(
+        self, select: str | pd.Index | list[str] = None, until_step: str = None
+    ) -> Pipeline:
+        self._check_config_data_pipe()
+        selection = _select_to_data_columns(self.data, select)
+        if until_step is None:
+            dict_to_pipe = self.pipe_dict
+        else:
+            dict_to_pipe = {}
+            for key, value in self.pipe_dict.items():
+                dict_to_pipe[key] = value
+                if key == until_step:
+                    break
+
+        return get_pipeline_from_dict(selection, dict_to_pipe)
 
     def get_corrected_data(self, select: str | pd.Index | list[str]):
         select = _select_to_data_columns(select)
