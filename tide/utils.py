@@ -41,8 +41,10 @@ def get_data_level_names(data_root, level: str):
 
     selected_nodes = nodes[level_indices[level]]
 
-    return set(selected_nodes) if level in {"bloc", "unit"} else selected_nodes
-
+    if level in {"bloc", "unit", "sub_bloc"}:
+        return list(dict.fromkeys(selected_nodes))
+    else:
+        return list(selected_nodes)  # Ensure it's a list either way.
 
 def parse_request_to_col_names(
     data_columns: pd.Index | list[str], request: str = None

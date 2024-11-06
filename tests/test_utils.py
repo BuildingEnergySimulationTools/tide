@@ -38,6 +38,14 @@ class TestUtils:
 
         assert res == ["name_1", "name_1", "name_2", "name_2", "name_3", "name4"]
 
+        res = get_data_level_names(root, "unit")
+
+        assert res == ['°C', 'DIMENSIONLESS', 'kWh/m²']
+
+        res = get_data_level_names(root, "bloc")
+
+        assert res == ['bloc1', 'bloc2', 'OTHER', 'bloc4']
+
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
             {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
