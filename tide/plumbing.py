@@ -11,18 +11,8 @@ from tide.utils import (
     data_columns_to_tree,
     get_data_level_names,
 )
-from tide.plot import plot_gaps_heatmap
+from tide.plot import plot_gaps_heatmap, plot
 import tide.processing as pc
-
-
-def _select_to_data_columns(
-    data: pd.DataFrame = None, select: str | pd.Index | list[str] = None
-):
-    return (
-        parse_request_to_col_names(data.columns, select)
-        if isinstance(select, str) or select is None
-        else select
-    )
 
 
 def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:
@@ -119,7 +109,7 @@ class Plumber:
         self, select: str | pd.Index | list[str] = None, until_step: str = None
     ) -> Pipeline:
         self._check_config_data_pipe()
-        selection = _select_to_data_columns(self.data, select)
+        selection = parse_request_to_col_names(self.data, select)
         if until_step is None:
             dict_to_pipe = self.pipe_dict
         else:
@@ -132,20 +122,102 @@ class Plumber:
         return get_pipeline_from_dict(selection, dict_to_pipe)
 
     def get_corrected_data(
-        self, select: str | pd.Index | list[str] = None, until_step: str = None
+        self,
+        select: str | pd.Index | list[str] = None,
+        start: str | dt.datetime | pd.Timestamp = None,
+        stop: str | dt.datetime | pd.Timestamp = None,
+        until_step: str = None,
     ) -> pd.DataFrame:
         self._check_config_data_pipe()
-        select = _select_to_data_columns(self.data, select)
-        return self.get_pipeline(select, until_step).fit_transform(
-            self.data[select].copy()
-        )
+        select = parse_request_to_col_names(self.data, select)
+        data = self.data.loc[
+            start or self.data.index[0] : stop or self.data.index[-1], select
+        ].copy()
+        if until_step == "":
+            return data
+        else:
+            return self.get_pipeline(select, until_step).fit_transform(data)
 
     def plot_gaps_heatmap(
         self,
         select: str | pd.Index | list[str] = None,
+        start: str | dt.datetime | pd.Timestamp = None,
+        stop: str | dt.datetime | pd.Timestamp = None,
         until_step: str = None,
         time_step: str | pd.Timedelta | dt.timedelta = None,
         title: str = None,
     ):
-        data = self.get_corrected_data(select, until_step)
+        data = self.get_corrected_data(select, start, stop, until_step)
         return plot_gaps_heatmap(data, time_step=time_step, title=title)
+
+    def plot(
+        self,
+        select: str | pd.Index | list[str] = None,
+        start: str | dt.datetime | pd.Timestamp = None,
+        stop: str | dt.datetime | pd.Timestamp = None,
+        until_step_1: str = None,
+        until_step_2: str = None,
+        plot_gaps_1: bool = False,
+        plot_gaps_2: bool = False,
+        data_1_mode: str = "lines",
+        data_2_mode: str = "markers",
+        y_axis_level: str = None,
+        y_axis_tag: [str] = None,
+        title: str = None,
+        markers_opacity: float = 0.8,
+        lines_width: float = 2.0,
+    ):
+        # A bit dirty. Here we assume that if you ask a selection
+        # that is not found in original data columns, it is because it
+        # has not yet been computed (using ExpressionCombine processor
+        # for example) So we just process the whole data
+        select_corr = (
+            self.data.columns
+            if not parse_request_to_col_names(self.data, select)
+            else select
+        )
+
+        data_1 = self.get_corrected_data(select_corr, start, stop, until_step_1)
+        mode_dict = {col: data_1_mode for col in data_1.columns}
+
+        if until_step_2 is not None:
+            data_2 = self.get_corrected_data(select_corr, start, stop, until_step_2)
+            data_2.columns = [f"data_2->{col}" for col in data_2.columns]
+            mode_dict = mode_dict | {col: data_2_mode for col in data_2.columns}
+            data = pd.concat([data_1, data_2], axis=1)
+        else:
+            data = data_1
+
+        # Get back only what we wanted
+        cols = parse_request_to_col_names(data, select)
+        if not cols:
+            raise ValueError(
+                f"Invalid selection: '{select}' not found in the "
+                f"DataFrame columns after processing."
+            )
+        data = data.loc[:, cols]
+
+        if y_axis_tag:
+            y_tags = y_axis_tag
+        else:
+            root = data_columns_to_tree(data.columns)
+            level = y_axis_level if y_axis_level else "unit"
+            y_tags = get_data_level_names(root, level)
+
+        axis_dict = {}
+        for i, tag in enumerate(y_tags):
+            selected_cols = parse_request_to_col_names(data.columns, tag)
+            for col in selected_cols:
+                axis_dict[col] = "y" if i == 0 else f"y{i + 1}"
+
+        fig = plot(
+            data,
+            title,
+            y_tags,
+            axis_dict,
+            mode_dict,
+            markers_opacity=markers_opacity,
+            lines_width=lines_width
+        )
+
+        return fig

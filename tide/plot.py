@@ -48,13 +48,14 @@ def plot_gaps_heatmap(
 
     return fig
 
+
 def plot(
     data: pd.Series | pd.DataFrame,
     title: str = None,
     y_axis_labels: [str] = None,
-    axis_space: float = 0.03,
     y_axis_dict: dict[str, str] = None,
     mode_dict: dict[str, str] = None,
+    axis_space: float = 0.03,
     y_title_standoff: int | float = 5,
     markers_opacity: float = 0.5,
     lines_width: float = 2.0,
@@ -94,7 +95,7 @@ def plot(
         Opacity of the markers in the plot. Ranges from 0 to 1. Defaults to 0.5.
     lines_width : float, optional
         Width of the lines in the plot. Defaults to 2.0.
-        """
+    """
 
     data = check_and_return_dt_index_df(data)
     if y_axis_dict is None:

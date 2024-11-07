@@ -5,7 +5,8 @@ import numpy as np
 from tide.plumbing import (
     _get_pipe_from_proc_list,
     _get_column_wise_transformer,
-    get_pipeline_from_dict
+    get_pipeline_from_dict,
+    Plumber,
 )
 
 TEST_DF = pd.DataFrame(
@@ -112,3 +113,46 @@ class TestPlumbing:
 
         assert True
 
+    def test_plumber(self):
+        df = pd.DataFrame(
+            {
+                "a__°C__zone_1": np.random.randn(24),
+                "b__°C__zone_1": np.random.randn(24),
+                "c__Wh__zone_2": np.random.randn(24) * 100,
+            },
+            index=pd.date_range("2009", freq="h", periods=24),
+        )
+
+        df["c__Wh__zone_2"] = abs(df).cumsum()["c__Wh__zone_2"]
+
+        df.loc["2009-01-01 05:00:00":"2009-01-01 09:00:00", "a__°C__zone_1"] = np.nan
+        df.loc["2009-01-01 15:00:00", "b__°C__zone_1"] = np.nan
+        df.loc["2009-01-01 20:00:00", "c__Wh__zone_2"] = np.nan
+
+        pipe = {
+            "fill_1": {"a__°C__zone_1": [["Interpolate"]]},
+            "fill_2": [["Interpolate"]],
+            "combine": [
+                [
+                    "ExpressionCombine",
+                    [
+                        {
+                            "T1": "a__°C__zone_1",
+                            "T2": "b__°C__zone_1",
+                        },
+                        "T1 * T2",
+                        "new_unit__°C²__zone_1",
+                        True,
+                    ],
+                ]
+            ],
+        }
+
+        plumber = Plumber()
+        plumber.set_data(df)
+        plumber.pipe_dict = pipe
+
+        plumber.plot()
+        plumber.plot(until_step_2="")
+        plumber.plot(select="°C²")
+        assert True
