@@ -21,6 +21,7 @@ DF_COLUMNS = pd.DataFrame(
         "name_2",
         "name_2__DIMENSIONLESS__bloc2",
         "name_3__kWh/m²",
+        "name_5__kWh",
         "name4__DIMENSIONLESS__bloc4",
     ]
 )
@@ -32,19 +33,63 @@ class TestUtils:
         col_names = get_data_col_names_from_root(root)
         assert all(col in DF_COLUMNS.columns for col in col_names)
 
+    def test_parse_request_to_col_names(self):
+        res = parse_request_to_col_names(DF_COLUMNS)
+        assert res == [
+            "name_1__°C__bloc1",
+            "name_1__°C__bloc2",
+            "name_2",
+            "name_2__DIMENSIONLESS__bloc2",
+            "name_3__kWh/m²",
+            "name_5__kWh",
+            "name4__DIMENSIONLESS__bloc4",
+        ]
+
+        res = parse_request_to_col_names(DF_COLUMNS, "name_1__°C__bloc1")
+        assert res == ["name_1__°C__bloc1"]
+
+        res = parse_request_to_col_names(
+            DF_COLUMNS,
+            [
+                "name_1__°C__bloc1",
+                "name_1__°C__bloc2",
+            ],
+        )
+        assert res == [
+            "name_1__°C__bloc1",
+            "name_1__°C__bloc2",
+        ]
+
+        res = parse_request_to_col_names(DF_COLUMNS, "°C")
+        assert res == ["name_1__°C__bloc1", "name_1__°C__bloc2"]
+
+        res = parse_request_to_col_names(DF_COLUMNS, "OTHER")
+        assert res == ["name_2", "name_3__kWh/m²", "name_5__kWh"]
+
+        res = parse_request_to_col_names(DF_COLUMNS, "DIMENSIONLESS__bloc2")
+        assert res == ["name_2__DIMENSIONLESS__bloc2"]
+
+        res = parse_request_to_col_names(DF_COLUMNS, "kWh")
+        assert res == ["name_5__kWh"]
+
     def test_get_data_level_names(self):
         root = data_columns_to_tree(DF_COLUMNS.columns)
         res = get_data_level_names(root, "name")
-
-        assert res == ["name_1", "name_1", "name_2", "name_2", "name_3", "name4"]
+        assert res == [
+            "name_1",
+            "name_1",
+            "name_2",
+            "name_2",
+            "name_3",
+            "name_5",
+            "name4",
+        ]
 
         res = get_data_level_names(root, "unit")
-
-        assert res == ['°C', 'DIMENSIONLESS', 'kWh/m²']
+        assert res == ["°C", "DIMENSIONLESS", "kWh/m²", "kWh"]
 
         res = get_data_level_names(root, "bloc")
-
-        assert res == ['bloc1', 'bloc2', 'OTHER', 'bloc4']
+        assert res == ["bloc1", "bloc2", "OTHER", "bloc4"]
 
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
