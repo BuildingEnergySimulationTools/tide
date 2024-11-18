@@ -54,7 +54,9 @@ def _get_column_wise_transformer(
         ).set_output(transform="pandas")
 
 
-def get_pipeline_from_dict(data_columns: pd.Index | list[str], pipe_dict: dict):
+def get_pipeline_from_dict(
+    data_columns: pd.Index | list[str], pipe_dict: dict, verbose: bool = False
+):
     steps_list = []
     for step, op_conf in pipe_dict.items():
         if isinstance(op_conf, list):
@@ -69,7 +71,11 @@ def get_pipeline_from_dict(data_columns: pd.Index | list[str], pipe_dict: dict):
         if operation is not None:
             steps_list.append((step, operation))
 
-    return Pipeline(steps_list)
+    return (
+        Pipeline([("Identity", pc.Identity())], verbose=verbose)
+        if not steps_list
+        else Pipeline(steps_list, verbose=verbose)
+    )
 
 
 class Plumber:
