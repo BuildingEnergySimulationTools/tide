@@ -4,7 +4,65 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from tide.utils import check_and_return_dt_index_df
+from tide.utils import (
+    check_and_return_dt_index_df,
+    parse_request_to_col_names,
+    data_columns_to_tree,
+    get_data_level_names,
+)
+
+
+def get_cols_to_axis_maps(
+    columns: pd.Index | list[str],
+    y_axis_level: str = None,
+    y_tag_list: list[str] = None,
+):
+    """
+    Map data columns to y-axis identifiers for plotly.
+    It assigns each column in the dataset to a specific y-axis
+    (e.g., "y", "y2", "y3", etc.). The mapping is based on Tide tags.
+
+    Args:
+        columns (pd.Index | list[str]):
+            The list or index of column names to be mapped to axes.
+        y_axis_level (str, optional):
+            The level of the data hierarchy to use for determining the y-axis tags.
+            Defaults to "unit" if not provided. name__unit__bloc__sub_bloc
+        y_tag_list (list[str], optional):
+            A pre-specified list of y-axis tags to use for mapping. If provided,
+            it overrides the automatic determination of tags based on `y_axis_level`.
+
+    Returns:
+        dict[str, str]:
+            A dictionary mapping each column name to its respective y-axis identifier.
+            The keys are column names, and the values are strings like "y", "y2", etc.
+
+    Raises:
+        ValueError: If `columns` is not a list or Pandas Index.
+
+    Notes:
+        - If `y_tag_list` is provided, it is used directly; otherwise, the function
+          generates the tags based on the column hierarchy and `y_axis_level`.
+        - The primary y-axis is labeled as "y", with subsequent axes labeled as "y2",
+          "y3", etc.
+    """
+
+    if y_tag_list:
+        y_tags = y_tag_list
+    else:
+        root = data_columns_to_tree(columns)
+        level = y_axis_level if y_axis_level else "unit"
+        y_tags = get_data_level_names(root, level)
+
+    col_axes_map = {}
+    axes_col_map = {}
+    for i, tag in enumerate(y_tags):
+        selected_cols = parse_request_to_col_names(columns, tag)
+        axes_col_map["y" if i == 0 else f"y{i + 1}"] = selected_cols
+        for col in selected_cols:
+            col_axes_map[col] = {"yaxis": "y"} if i == 0 else {"yaxis": f"y{i + 1}"}
+
+    return col_axes_map, axes_col_map
 
 
 def plot_gaps_heatmap(
