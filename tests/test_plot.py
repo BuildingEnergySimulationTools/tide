@@ -24,6 +24,12 @@ class TestPlot:
             {"y": ["a__°C__zone1"], "y2": ["c__Wh__zone1"], "y3": ["b__°C__zone2"]},
         )
 
+        columns = ["a", "b", "c"]
+        assert get_cols_to_axis_maps(columns) == (
+            {"a": {"yaxis": "y"}, "b": {"yaxis": "y"}, "c": {"yaxis": "y"}},
+            {"y": ["a", "b", "c"]},
+        )
+
     def test_plot_gaps_heatmap(self):
         df = pd.DataFrame(
             {

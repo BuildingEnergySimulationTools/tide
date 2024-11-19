@@ -51,8 +51,11 @@ def get_cols_to_axis_maps(
         y_tags = y_tag_list
     else:
         root = data_columns_to_tree(columns)
-        level = y_axis_level if y_axis_level else "unit"
-        y_tags = get_data_level_names(root, level)
+        if root.max_depth >= 3:
+            level = y_axis_level if y_axis_level else "unit"
+            y_tags = get_data_level_names(root, level)
+        else:
+            return {col: {"yaxis": "y"} for col in columns}, {"y": columns}
 
     col_axes_map = {}
     axes_col_map = {}
