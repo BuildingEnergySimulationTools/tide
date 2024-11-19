@@ -1,7 +1,14 @@
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 
-from tide.plot import plot_gaps_heatmap, plot
+from tide.plot import (
+    plot_gaps_heatmap,
+    add_multi_axis_scatter,
+    get_cols_to_axis_maps,
+    get_gap_scatter_dict,
+    get_yaxis_min_max,
+)
 
 import plotly.io as pio
 
@@ -76,3 +83,59 @@ class TestPlot:
         )
 
         assert True
+
+    def test_get_gaps_scatter_dict(self):
+        np.random.seed(42)
+        measure = pd.Series(
+            np.random.randn(24),
+            name="name",
+            index=pd.date_range("2009", freq="h", periods=24),
+        )
+
+        measure.loc["2009-01-01 02:00:00":"2009-01-01 05:00:00"] = np.nan
+        measure.loc["2009-01-01 12:00:00"] = np.nan
+
+        col_axes_map, axes_col_map = get_cols_to_axis_maps(["name"])
+        min_max = get_yaxis_min_max(measure)
+        gap_dict = get_gap_scatter_dict(measure, min_max, col_axes_map)
+
+        assert gap_dict == [
+            {
+                "x": [
+                    pd.Timestamp("2009-01-01 01:00:00"),
+                    pd.Timestamp("2009-01-01 01:00:00"),
+                    pd.Timestamp("2009-01-01 06:00:00"),
+                    pd.Timestamp("2009-01-01 06:00:00"),
+                ],
+                "y": [
+                    -1.913280244657798,
+                    1.5792128155073915,
+                    1.5792128155073915,
+                    -1.913280244657798,
+                ],
+                "mode": "none",
+                "fill": "toself",
+                "showlegend": False,
+                "fillcolor": "rgba(102, 102, 102, 0.5)",
+                "yaxis": "y",
+            },
+            {
+                "x": [
+                    pd.Timestamp("2009-01-01 11:00:00"),
+                    pd.Timestamp("2009-01-01 11:00:00"),
+                    pd.Timestamp("2009-01-01 13:00:00"),
+                    pd.Timestamp("2009-01-01 13:00:00"),
+                ],
+                "y": [
+                    -1.913280244657798,
+                    1.5792128155073915,
+                    1.5792128155073915,
+                    -1.913280244657798,
+                ],
+                "mode": "none",
+                "fill": "toself",
+                "showlegend": False,
+                "fillcolor": "rgba(102, 102, 102, 0.5)",
+                "yaxis": "y",
+            },
+        ]

@@ -9,6 +9,8 @@ from tide.utils import (
     parse_request_to_col_names,
     data_columns_to_tree,
     get_data_level_names,
+    get_data_blocks,
+    get_outer_timestamps,
 )
 
 
@@ -66,6 +68,88 @@ def get_cols_to_axis_maps(
             col_axes_map[col] = {"yaxis": "y"} if i == 0 else {"yaxis": f"y{i + 1}"}
 
     return col_axes_map, axes_col_map
+
+
+def get_yaxis_min_max(
+    data: pd.DataFrame | pd.Series,
+    y_axis_level: str = None,
+    y_tag_list: list[str] = None,
+):
+    data = check_and_return_dt_index_df(data)
+    _, axes_col_map = get_cols_to_axis_maps(data.columns, y_axis_level, y_tag_list)
+
+    return {
+        ax: (
+            float(data[axes_col_map[ax]].min().min()),
+            float(data[axes_col_map[ax]].max().max()),
+        )
+        for ax in axes_col_map.keys()
+    }
+
+
+def get_gap_scatter_dict(
+    ts: pd.Series,
+    y_axis_min_max,
+    col_axes_map,
+    lower_td: str | pd.Timedelta | dt.timedelta = None,
+    rgb: tuple[float, float, float] = (102, 102, 102),
+    alpha: float = 0.5,
+):
+    """
+    Generate a list of dictionaries defining surfaces plots for
+    visualizing gaps.
+    Formats data for plotly
+
+
+    Parameters:
+    -----------
+    ts : pd.Series
+        The time series containing data and potential gaps (nan values).
+    y_axis_min_max : dict
+        A mapping of y-axis names to their corresponding (min, max) values.
+        Used to define the vertical extent of the gap regions.
+    col_axes_map : dict
+        A mapping of column names to axis configurations. Each column
+        maps to a dictionary containing plot-related details, including the y-axis name.
+    lower_td : str | pd.Timedelta | dt.timedelta, optional
+        The lower time delta threshold for identifying gaps. Only gaps larger than this
+        threshold are considered. Can be a string (e.g., `"1H"`), a `pd.Timedelta`, or
+        a `datetime.timedelta`. Defaults to `None`, meaning no minimum threshold is
+        applied.
+    rgb : tuple[float, float, float], optional
+        RGB values defining the color of the shaded gap regions. Each component should
+        be between 0 and 255. Defaults to `(102, 102, 102)` (a gray color).
+    alpha : float, optional
+        The transparency level of the shaded gap regions, ranging from 0 (completely
+        transparent) to 1 (completely opaque). Defaults to `0.5`.
+
+    """
+    y_axis = col_axes_map[ts.name]["yaxis"]
+    y_min, y_max = y_axis_min_max[y_axis]
+
+    gap_list = get_data_blocks(
+        ts,
+        is_null=True,
+        lower_td_threshold=lower_td,
+        return_combination=False,
+    )[ts.name]
+
+    gap_dict_list = []
+    for gp in gap_list:
+        gap_start, gap_end = get_outer_timestamps(gp, ts.index)
+        gap_dict_list.append(
+            dict(
+                x=[gap_start, gap_start, gap_end, gap_end],
+                y=[y_min, y_max, y_max, y_min],
+                mode="none",
+                fill="toself",
+                showlegend=False,
+                fillcolor=f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha})",
+                yaxis=y_axis,
+            )
+        )
+
+    return gap_dict_list
 
 
 def plot_gaps_heatmap(
