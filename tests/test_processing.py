@@ -12,7 +12,7 @@ from tide.processing import (
     ApplyExpression,
     Resample,
     ColumnsCombine,
-    DropThreshold,
+    ReplaceThreshold,
     DropTimeGradient,
     Dropna,
     FillNa,
@@ -123,18 +123,18 @@ class TestCustomTransformers:
 
         pd.testing.assert_frame_equal(scaler.inverse_transform(to_test), df)
 
-    def test_pd_drop_threshold(self):
+    def test_pd_replace_threshold(self):
         df = pd.DataFrame(
             {"col1": [1, 2, 3, np.nan, 4], "col2": [1, np.nan, np.nan, 4, 5]},
             index=pd.date_range("2009", freq="h", periods=5),
         )
 
         ref = pd.DataFrame(
-            {"col1": [np.nan, 2, 3, np.nan, 4], "col2": [np.nan, np.nan, np.nan, 4, 5]},
+            {"col1": [0., 2, 3, np.nan, 4], "col2": [0., np.nan, np.nan, 4, 5]},
             index=pd.date_range("2009", freq="h", periods=5),
         )
 
-        dropper = DropThreshold(lower=1.1, upper=5)
+        dropper = ReplaceThreshold(lower=1.1, upper=5, value=0.)
         dropper.fit(df)
 
         assert list(df.columns) == list(dropper.get_feature_names_out())
@@ -142,7 +142,7 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(dropper.transform(df), ref)
 
         # check do nothing
-        dropper = DropThreshold()
+        dropper = ReplaceThreshold()
         pd.testing.assert_frame_equal(dropper.transform(df), df)
 
     def test_pd_drop_time_gradient(self):

@@ -281,8 +281,8 @@ class SkTransform(ProcessingBC):
         )
 
 
-class DropThreshold(ProcessingBC):
-    """Class replacing values in a pandas DataFrame by NaN based on
+class ReplaceThreshold(ProcessingBC):
+    """Class replacing values in a pandas DataFrame by "value" based on
     threshold values.
 
     This class implements the scikit-learn transformer API and can be used in
@@ -297,28 +297,14 @@ class DropThreshold(ProcessingBC):
     lower : float, optional (default=None)
         The lower threshold for values in the DataFrame. Values less than
         this threshold will be replaced.
-
-    Attributes
-    ----------
-    lower : float
-        The lower threshold for values in the DataFrame.
-    upper : float
-        The upper threshold for values in the DataFrame.
-
-    Methods
-    -------
-    fit(self, X, y=None)
-        No learning is performed, the method simply returns self.
-
-    transform(self, X)
-        Transforms the input DataFrame by replacing values based on the
-        specified upper and lower thresholds.
+    value : (default=np.nan)The value to replace the targeted values in X DataFrame
     """
 
-    def __init__(self, upper=None, lower=None):
+    def __init__(self, upper=None, lower=None, value=np.nan):
         super().__init__()
         self.lower = lower
         self.upper = upper
+        self.value = value
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
@@ -342,7 +328,7 @@ class DropThreshold(ProcessingBC):
                 np.full(X.shape, False), index=X.index, columns=X.columns
             )
 
-        X[np.logical_or(lower_mask, upper_mask)] = np.nan
+        X[np.logical_or(lower_mask, upper_mask)] = self.value
 
         return X
 
