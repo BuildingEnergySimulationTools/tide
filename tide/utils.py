@@ -309,7 +309,7 @@ def get_freq_delta_or_min_time_interval(df: pd.Series | pd.DataFrame):
     if freq:
         freq = pd.to_timedelta("1" + freq) if freq.isalpha() else pd.to_timedelta(freq)
     else:
-        freq = df.index.to_frame().diff().min()[0]
+        freq = df.index.to_frame().diff().min().iloc[0]
 
     return freq
 
