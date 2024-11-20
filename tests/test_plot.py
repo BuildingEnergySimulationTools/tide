@@ -16,25 +16,27 @@ pio.renderers.default = "browser"
 
 
 class TestPlot:
-    def test_get_cols_to_axis_maps(self):
+    def test_get_cols_to_axis_maps_and_labels(self):
         columns = ["a__°C__zone1", "b__°C__zone2", "c__Wh__zone1"]
-        assert get_cols_to_axis_maps(columns) == get_cols_to_axis_maps(
+        assert get_cols_axis_maps_and_labels(columns) == get_cols_axis_maps_and_labels(
             columns, y_tag_list=["°C", "Wh"]
         )
 
-        assert get_cols_to_axis_maps(columns, "name") == (
+        assert get_cols_axis_maps_and_labels(columns, "name") == (
             {
                 "a__°C__zone1": {"yaxis": "y"},
                 "c__Wh__zone1": {"yaxis": "y2"},
                 "b__°C__zone2": {"yaxis": "y3"},
             },
             {"y": ["a__°C__zone1"], "y2": ["c__Wh__zone1"], "y3": ["b__°C__zone2"]},
+            ["°C", "Wh"],
         )
 
         columns = ["a", "b", "c"]
-        assert get_cols_to_axis_maps(columns) == (
+        assert get_cols_axis_maps_and_labels(columns) == (
             {"a": {"yaxis": "y"}, "b": {"yaxis": "y"}, "c": {"yaxis": "y"}},
             {"y": ["a", "b", "c"]},
+            ["a", "b", "c"],
         )
 
     def test_plot_gaps_heatmap(self):

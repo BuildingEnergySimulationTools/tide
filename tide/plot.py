@@ -14,7 +14,7 @@ from tide.utils import (
 )
 
 
-def get_cols_to_axis_maps(
+def get_cols_axis_maps_and_labels(
     columns: pd.Index | list[str],
     y_axis_level: str = None,
     y_tag_list: list[str] = None,
@@ -67,7 +67,7 @@ def get_cols_to_axis_maps(
         for col in selected_cols:
             col_axes_map[col] = {"yaxis": "y"} if i == 0 else {"yaxis": f"y{i + 1}"}
 
-    return col_axes_map, axes_col_map
+    return col_axes_map, axes_col_map, y_tags
 
 
 def get_yaxis_min_max(
@@ -76,7 +76,9 @@ def get_yaxis_min_max(
     y_tag_list: list[str] = None,
 ):
     data = check_and_return_dt_index_df(data)
-    _, axes_col_map = get_cols_to_axis_maps(data.columns, y_axis_level, y_tag_list)
+    _, axes_col_map, _ = get_cols_axis_maps_and_labels(
+        data.columns, y_axis_level, y_tag_list
+    )
 
     return {
         ax: (
