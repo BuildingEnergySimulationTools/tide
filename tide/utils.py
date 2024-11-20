@@ -23,6 +23,26 @@ LEVEL_FORMAT = {
 }
 
 
+class NamedList:
+    def __init__(self, elements: list):
+        self.elements = elements
+
+    def __repr__(self):
+        return self.elements.__repr__()
+
+    def __getitem__(self, key: str | list[str] | slice):
+        if isinstance(key, slice):
+            start = self.elements.index(key.start) if key.start is not None else None
+            stop = self.elements.index(key.stop) + 1 if key.stop is not None else None
+            return self.elements[start:stop]
+        elif isinstance(key, str):
+            return [self.elements[self.elements.index(key)]]
+        elif isinstance(key, list):
+            return [elmt for elmt in key if elmt in self.elements]
+        else:
+            raise TypeError("Invalid key type")
+
+
 def get_tag_levels(data_columns: pd.Index | list[str]) -> int:
     """
     Returns max number of used tags from data columns names

@@ -12,6 +12,7 @@ from tide.utils import (
     get_data_level_names,
     parse_request_to_col_names,
     timedelta_to_int,
+    NamedList
 )
 
 DF_COLUMNS = pd.DataFrame(
@@ -28,6 +29,13 @@ DF_COLUMNS = pd.DataFrame(
 
 
 class TestUtils:
+    def test_named_list(self):
+        test = NamedList(["a", "b", "c", "d"])
+
+        assert test["a"] == ["a"]
+        assert test[["a", "d"]] == ["a", "d"]
+        assert test[:"b"] == ["a", "b"]
+
     def test_columns_parser(self):
         root = data_columns_to_tree(DF_COLUMNS.columns)
         col_names = get_data_col_names_from_root(root)
