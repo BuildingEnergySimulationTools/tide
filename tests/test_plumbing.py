@@ -9,6 +9,10 @@ from tide.plumbing import (
     Plumber,
 )
 
+import plotly.io as pio
+
+pio.renderers.default = "browser"
+
 TEST_DF = pd.DataFrame(
     {
         "Tin__°C__building": [10.0, 20.0, 30.0],
@@ -22,6 +26,22 @@ TEST_DF = pd.DataFrame(
     },
     index=pd.date_range("2009", freq="h", periods=3),
 )
+
+TEST_DF_2 = pd.DataFrame(
+    {
+        "a__°C__zone_1": np.random.randn(24),
+        "b__°C__zone_1": np.random.randn(24),
+        "c__Wh__zone_2": np.random.randn(24) * 100,
+    },
+    index=pd.date_range("2009", freq="h", periods=24),
+)
+
+TEST_DF_2["c__Wh__zone_2"] = abs(TEST_DF_2).cumsum()["c__Wh__zone_2"]
+
+TEST_DF_2.loc["2009-01-01 05:00:00":"2009-01-01 09:00:00", "a__°C__zone_1"] = np.nan
+TEST_DF_2.loc["2009-01-01 15:00:00", "b__°C__zone_1"] = np.nan
+TEST_DF_2.loc["2009-01-01 17:00:00", "b__°C__zone_1"] = np.nan
+TEST_DF_2.loc["2009-01-01 20:00:00", "c__Wh__zone_2"] = np.nan
 
 PIPE_DICT = {
     "pre_processing": {
@@ -108,30 +128,9 @@ class TestPlumbing:
         assert col_trans is None
 
     def test_get_pipeline_from_dict(self):
-        pipe = get_pipeline_from_dict(TEST_DF.columns, PIPE_DICT)
-        pipe.fit_transform(TEST_DF.copy())
-
-        assert True
-
-    def test_plumber(self):
-        df = pd.DataFrame(
-            {
-                "a__°C__zone_1": np.random.randn(24),
-                "b__°C__zone_1": np.random.randn(24),
-                "c__Wh__zone_2": np.random.randn(24) * 100,
-            },
-            index=pd.date_range("2009", freq="h", periods=24),
-        )
-
-        df["c__Wh__zone_2"] = abs(df).cumsum()["c__Wh__zone_2"]
-
-        df.loc["2009-01-01 05:00:00":"2009-01-01 09:00:00", "a__°C__zone_1"] = np.nan
-        df.loc["2009-01-01 15:00:00", "b__°C__zone_1"] = np.nan
-        df.loc["2009-01-01 20:00:00", "c__Wh__zone_2"] = np.nan
-
         pipe = {
             "fill_1": {"a__°C__zone_1": [["Interpolate"]]},
-            "fill_2": [["Interpolate"]],
+            # "fill_2": {"b": [["Interpolate"]]},
             "combine": [
                 [
                     "ExpressionCombine",
@@ -146,13 +145,48 @@ class TestPlumbing:
                     ],
                 ]
             ],
+            "fill_3": [["Interpolate"]],
+        }
+
+        pipe = get_pipeline_from_dict(TEST_DF_2.columns, pipe, verbose=True)
+        res = pipe.fit_transform(TEST_DF_2.copy())
+
+        assert True
+
+    def test_plumber(self):
+        pipe = {
+            "fill_1": {"a__°C__zone_1": [["Interpolate"]]},
+            "fill_2": {"b": [["Interpolate"]]},
+            "combine": [
+                [
+                    "ExpressionCombine",
+                    [
+                        {
+                            "T1": "a__°C__zone_1",
+                            "T2": "b__°C__zone_1",
+                        },
+                        "T1 * T2",
+                        "new_unit__°C²__zone_1",
+                        True,
+                    ],
+                ]
+            ],
+            "fill_3": [["Interpolate"]],
         }
 
         plumber = Plumber()
-        plumber.set_data(df)
+        plumber.set_data(TEST_DF_2)
         plumber.pipe_dict = pipe
 
-        plumber.plot()
-        plumber.plot(until_step_2="")
-        plumber.plot(select="°C²")
+        # plumber.plot()
+        # plumber.plot(until_step_1="", plot_gaps_1=True)
+        # plumber.plot(select="°C²")
+
+        res = plumber.plot(
+            until_step_1="",
+            until_step_2="fill_2",
+            plot_gaps_1=True,
+            plot_gaps_2=True,
+        )
+
         assert True

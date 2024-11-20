@@ -48,6 +48,7 @@ def get_cols_axis_maps_and_labels(
         - The primary y-axis is labeled as "y", with subsequent axes labeled as "y2",
           "y3", etc.
     """
+    columns = list(columns) if isinstance(columns, pd.Index) else columns
 
     if y_tag_list:
         y_tags = y_tag_list
@@ -57,7 +58,7 @@ def get_cols_axis_maps_and_labels(
             level = y_axis_level if y_axis_level else "unit"
             y_tags = get_data_level_names(root, level)
         else:
-            return {col: {"yaxis": "y"} for col in columns}, {"y": columns}
+            return {col: {"yaxis": "y"} for col in columns}, {"y": columns}, columns
 
     col_axes_map = {}
     axes_col_map = {}
@@ -94,7 +95,7 @@ def get_gap_scatter_dict(
     y_axis_min_max,
     col_axes_map,
     lower_td: str | pd.Timedelta | dt.timedelta = None,
-    rgb: tuple[float, float, float] = (102, 102, 102),
+    rgb: tuple[int, int, int] = (102, 102, 102),
     alpha: float = 0.5,
 ):
     """
@@ -196,7 +197,8 @@ def plot_gaps_heatmap(
     return fig
 
 
-def plot(
+def add_multi_axis_scatter(
+    fig: go.Figure,
     data: pd.Series | pd.DataFrame,
     title: str = None,
     y_axis_labels: [str] = None,
@@ -248,7 +250,6 @@ def plot(
     if y_axis_dict is None:
         y_axis_dict = {col: "y" for col in data.columns}
 
-    fig = go.Figure()
     for i, col in enumerate(data.columns):
         fig.add_scattergl(
             x=data.index,

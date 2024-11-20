@@ -2,6 +2,7 @@ import datetime as dt
 
 import pandas as pd
 
+import plotly.graph_objects as go
 from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
@@ -10,8 +11,16 @@ from tide.utils import (
     check_and_return_dt_index_df,
     data_columns_to_tree,
     get_data_level_names,
+    get_data_blocks,
+    get_outer_timestamps,
 )
-from tide.plot import plot_gaps_heatmap, plot
+from tide.plot import (
+    plot_gaps_heatmap,
+    add_multi_axis_scatter,
+    get_cols_axis_maps_and_labels,
+    get_gap_scatter_dict,
+    get_yaxis_min_max,
+)
 import tide.processing as pc
 
 
@@ -161,22 +170,173 @@ class Plumber:
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
+        y_axis_level: str = None,
+        y_tag_list: list[str] = None,
+        until_step_1: str = None,
+        data_1_mode: str = "lines",
+        until_step_2: str = None,
+        data_2_mode: str = "markers",
+        markers_opacity: float = 0.8,
+        lines_width: float = 2.0,
+        title: str = None,
+        plot_gaps_1: bool = False,
+        gaps_1_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_1_rgb: tuple[int, int, int] = (31, 73, 125),
+        gaps_1_alpha: float = 0.5,
+        plot_gaps_2: bool = False,
+        gaps_2_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_2_rgb: tuple[int, int, int] = (254, 160, 34),
+        gaps_2_alpha: float = 0.5,
+        axis_space: float = 0.03,
+        y_title_standoff: int | float = 5,
+    ):
+        # A bit dirty. Here we assume that if you ask a selection
+        # that is not found in original data columns, it is because it
+        # has not yet been computed (using ExpressionCombine processor
+        # for example) So we just process the whole data hoping to find the result
+        # after.
+        select_corr = (
+            self.data.columns
+            if not parse_request_to_col_names(self.data, select)
+            else select
+        )
+
+        data_1 = self.get_corrected_data(select_corr, start, stop, until_step_1)
+        if until_step_2 is not None:
+            data_2 = self.get_corrected_data(select_corr, start, stop, until_step_2)
+            data_2.columns = [f"data_2->{col}" for col in data_2.columns]
+        else:
+            data_2 = pd.DataFrame()
+
+        cols = pd.concat([data_1, data_2], axis=1).columns
+        col_axes_map, axes_col_map, y_labels = get_cols_axis_maps_and_labels(
+            cols, y_axis_level, y_tag_list
+        )
+        conf_dict_list = []
+        conf_dict_list.append({col: {"name": f"{col}"} for col in cols})
+        conf_dict_list.append(col_axes_map)
+        conf_dict_list.append(
+            {col: {"mode": data_1_mode} for col in data_1}
+            | {col: {"mode": data_2_mode} for col in data_2}
+        )
+        conf_dict_list.append({col: dict(line=dict(width=lines_width)) for col in cols})
+        conf_dict_list.append(
+            {col: dict(marker=dict(opacity=markers_opacity)) for col in cols}
+        )
+
+        scatter_config = {}
+
+        for d in conf_dict_list:
+            for key in d:
+                scatter_config[key] = {**scatter_config.get(key, {}), **d[key]}
+
+        fig = go.Figure()
+        for col in data_1:
+            fig.add_scattergl(x=data_1.index, y=data_1[col], **scatter_config[col])
+
+        if until_step_2 is not None:
+            for col in data_2:
+                fig.add_scattergl(x=data_2.index, y=data_2[col], **scatter_config[col])
+
+        yaxis_min_max = get_yaxis_min_max(
+            pd.concat([data_1, data_2], axis=1), y_axis_level, y_tag_list
+        )
+
+        def gap_dict_config(data, lower_td, rgb, alpha):
+            gaps_list = []
+            for col in data:
+                col_configs = get_gap_scatter_dict(
+                    data[col], yaxis_min_max, col_axes_map, lower_td, rgb, alpha
+                )
+                if col_configs:
+                    gaps_list += col_configs
+            return gaps_list
+
+        gap_conf_list = []
+        if plot_gaps_1:
+            gap_conf_list += gap_dict_config(
+                data_1, gaps_1_lower_td, gaps_1_rgb, gaps_1_alpha
+            )
+
+        if plot_gaps_2:
+            gap_conf_list += gap_dict_config(
+                data_2, gaps_2_lower_td, gaps_2_rgb, gaps_2_alpha
+            )
+
+        for gap in gap_conf_list:
+            fig.add_scattergl(**gap)
+
+        layout_dict = {
+            "legend": dict(
+                orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5
+            ),
+            "title": title,
+            "yaxis": dict(
+                title=y_labels[0] if y_labels is not None else None,
+                side="left",
+                title_standoff=y_title_standoff,
+            ),
+        }
+
+        nb_right_y_axis = len(y_labels) - 1
+        x_right_space = 1 - axis_space * nb_right_y_axis
+        fig.update_xaxes(domain=(0, x_right_space))
+
+        for i in range(nb_right_y_axis):
+            layout_dict[f"yaxis{i + 2}"] = dict(
+                title=y_labels[1 + i] if y_labels is not None else None,
+                overlaying="y",
+                side="right",
+                position=x_right_space + i * axis_space,
+                title_standoff=y_title_standoff,
+            )
+
+        fig.update_layout(layout_dict)
+
+        return fig
+
+    def plot_legacy(
+        self,
+        select: str | pd.Index | list[str] = None,
+        start: str | dt.datetime | pd.Timestamp = None,
+        stop: str | dt.datetime | pd.Timestamp = None,
         until_step_1: str = None,
         until_step_2: str = None,
-        plot_gaps_1: bool = False,
-        plot_gaps_2: bool = False,
         data_1_mode: str = "lines",
         data_2_mode: str = "markers",
+        plot_gaps_1: bool = False,
+        gaps_1_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        plot_gaps_2: bool = False,
+        gaps_2_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_alpha: float = 0.5,
         y_axis_level: str = None,
         y_axis_tag: [str] = None,
         title: str = None,
         markers_opacity: float = 0.8,
         lines_width: float = 2.0,
     ):
+        def get_gaps_start_end(df, lower_td):
+            gaps = get_data_blocks(
+                df,
+                is_null=True,
+                lower_td_threshold=lower_td,
+                return_combination=False,
+            )
+
+            gaps = {col: gp for col, gp in gaps.items() if gp}
+
+            gp_dict = {
+                col: [get_outer_timestamps(idx, df.index) for idx in gaps[col]]
+                for col in gaps.keys()
+            }
+
+            return {} if all([not gap for gap in gp_dict.values()]) else gp_dict
+
         # A bit dirty. Here we assume that if you ask a selection
         # that is not found in original data columns, it is because it
         # has not yet been computed (using ExpressionCombine processor
-        # for example) So we just process the whole data
+        # for example) So we just process the whole data hoping to find the result
+        # after.
         select_corr = (
             self.data.columns
             if not parse_request_to_col_names(self.data, select)
@@ -186,11 +346,19 @@ class Plumber:
         data_1 = self.get_corrected_data(select_corr, start, stop, until_step_1)
         mode_dict = {col: data_1_mode for col in data_1.columns}
 
+        gaps_dict = {} if plot_gaps_1 or plot_gaps_2 else None
+
+        if plot_gaps_1:
+            gaps_dict = gaps_dict | get_gaps_start_end(data_1, gaps_1_lower_td)
+
         if until_step_2 is not None:
             data_2 = self.get_corrected_data(select_corr, start, stop, until_step_2)
             data_2.columns = [f"data_2->{col}" for col in data_2.columns]
             mode_dict = mode_dict | {col: data_2_mode for col in data_2.columns}
             data = pd.concat([data_1, data_2], axis=1)
+            if plot_gaps_2:
+                gaps_dict = gaps_dict | get_gaps_start_end(data_2, gaps_2_lower_td)
+
         else:
             data = data_1
 
@@ -210,20 +378,53 @@ class Plumber:
             level = y_axis_level if y_axis_level else "unit"
             y_tags = get_data_level_names(root, level)
 
-        axis_dict = {}
+        col_axes_map = {}
+        axes_col_map = {}
         for i, tag in enumerate(y_tags):
             selected_cols = parse_request_to_col_names(data.columns, tag)
+            axes_col_map["y" if i == 0 else f"y{i + 1}"] = selected_cols
             for col in selected_cols:
-                axis_dict[col] = "y" if i == 0 else f"y{i + 1}"
+                col_axes_map[col] = "y" if i == 0 else f"y{i + 1}"
 
-        fig = plot(
+        axes_min_max = {
+            ax: (
+                float(data[axes_col_map[ax]].min().min()),
+                float(data[axes_col_map[ax]].max().max()),
+            )
+            for ax in axes_col_map.keys()
+        }
+
+        fig = go.Figure()
+
+        add_multi_axis_scatter(
+            fig,
             data,
             title,
             y_tags,
-            axis_dict,
+            col_axes_map,
             mode_dict,
             markers_opacity=markers_opacity,
-            lines_width=lines_width
+            lines_width=lines_width,
         )
+
+        if gaps_dict:
+            for col, gap_list in gaps_dict.items():
+                for gap in gap_list:
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=[gap[0], gap[0], gap[1], gap[1]],
+                            y=[
+                                axes_min_max[col_axes_map[col]][0],
+                                axes_min_max[col_axes_map[col]][1],
+                                axes_min_max[col_axes_map[col]][1],
+                                axes_min_max[col_axes_map[col]][0],
+                            ],
+                            mode="none",
+                            fill="toself",
+                            showlegend=False,
+                            fillcolor=f"rgba(128, 128, 128, {gaps_alpha})",
+                            yaxis=col_axes_map[col],
+                        )
+                    )
 
         return fig

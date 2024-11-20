@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from tide.plot import (
     plot_gaps_heatmap,
     add_multi_axis_scatter,
-    get_cols_to_axis_maps,
+    get_cols_axis_maps_and_labels,
     get_gap_scatter_dict,
     get_yaxis_min_max,
 )
@@ -29,10 +29,17 @@ class TestPlot:
                 "b__°C__zone2": {"yaxis": "y3"},
             },
             {"y": ["a__°C__zone1"], "y2": ["c__Wh__zone1"], "y3": ["b__°C__zone2"]},
-            ["°C", "Wh"],
+            ["a", "c", "b"],
         )
 
         columns = ["a", "b", "c"]
+        assert get_cols_axis_maps_and_labels(columns) == (
+            {"a": {"yaxis": "y"}, "b": {"yaxis": "y"}, "c": {"yaxis": "y"}},
+            {"y": ["a", "b", "c"]},
+            ["a", "b", "c"],
+        )
+
+        columns = pd.Index(["a", "b", "c"])
         assert get_cols_axis_maps_and_labels(columns) == (
             {"a": {"yaxis": "y"}, "b": {"yaxis": "y"}, "c": {"yaxis": "y"}},
             {"y": ["a", "b", "c"]},
@@ -56,7 +63,7 @@ class TestPlot:
 
         assert True
 
-    def test_plot(self):
+    def test_add_multi_axis_scatter(self):
         df = pd.DataFrame(
             {
                 "a__°C": np.random.randn(24),
@@ -68,9 +75,12 @@ class TestPlot:
         )
         df["e__Wh"] = abs(df).cumsum()["e__Wh"]
 
-        fig = plot(df)
+        fig = go.Figure()
+        fig = add_multi_axis_scatter(fig, df)
 
-        fig = plot(
+        fig = go.Figure()
+        fig = add_multi_axis_scatter(
+            fig,
             df,
             y_axis_dict={"a__°C": "y", "b__°C": "y", "b__W": "y2", "e__Wh": "y3"},
             y_axis_labels=["y1", "y2", "y3"],
@@ -97,7 +107,7 @@ class TestPlot:
         measure.loc["2009-01-01 02:00:00":"2009-01-01 05:00:00"] = np.nan
         measure.loc["2009-01-01 12:00:00"] = np.nan
 
-        col_axes_map, axes_col_map = get_cols_to_axis_maps(["name"])
+        col_axes_map, axes_col_map, _ = get_cols_axis_maps_and_labels(["name"])
         min_max = get_yaxis_min_max(measure)
         gap_dict = get_gap_scatter_dict(measure, min_max, col_axes_map)
 
