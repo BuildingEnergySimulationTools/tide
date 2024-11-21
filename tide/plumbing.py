@@ -120,6 +120,12 @@ class Plumber:
         self.data = check_and_return_dt_index_df(data)
         self.root = data_columns_to_tree(data.columns)
 
+    def select(
+        self,
+        select: str | pd.Index | list[str] = None,
+    ):
+        return parse_request_to_col_names(self.data, select)
+
     def get_pipeline(
         self,
         select: str | pd.Index | list[str] = None,
