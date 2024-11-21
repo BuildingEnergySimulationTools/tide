@@ -178,15 +178,16 @@ class TestPlumbing:
         plumber.set_data(TEST_DF_2)
         plumber.pipe_dict = pipe
 
+        plumber.get_pipeline()
+
         # plumber.plot()
         # plumber.plot(until_step_1="", plot_gaps_1=True)
         # plumber.plot(select="°C²")
 
-        res = plumber.plot(
-            until_step_1="",
-            until_step_2="fill_2",
-            plot_gaps_1=True,
-            plot_gaps_2=True,
+        res = plumber.get_pipeline(
+            steps=["fill_3", "combine"]
         )
+
+        plumber.plot()
 
         assert True

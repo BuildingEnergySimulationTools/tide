@@ -13,6 +13,7 @@ from tide.utils import (
     get_data_level_names,
     get_data_blocks,
     get_outer_timestamps,
+    NamedList,
 )
 from tide.plot import (
     plot_gaps_heatmap,
@@ -64,27 +65,26 @@ def _get_column_wise_transformer(
 
 
 def get_pipeline_from_dict(
-    data_columns: pd.Index | list[str], pipe_dict: dict, verbose: bool = False
+    data_columns: pd.Index | list[str], pipe_dict: dict = None, verbose: bool = False
 ):
-    steps_list = []
-    for step, op_conf in pipe_dict.items():
-        if isinstance(op_conf, list):
-            operation = _get_pipe_from_proc_list(op_conf)
+    if pipe_dict is None:
+        return Pipeline([("Identity", pc.Identity())], verbose=verbose)
+    else:
+        steps_list = []
+        for step, op_conf in pipe_dict.items():
+            if isinstance(op_conf, list):
+                operation = _get_pipe_from_proc_list(op_conf)
 
-        elif isinstance(op_conf, dict):
-            operation = _get_column_wise_transformer(op_conf, data_columns, step)
+            elif isinstance(op_conf, dict):
+                operation = _get_column_wise_transformer(op_conf, data_columns, step)
 
-        else:
-            raise ValueError(f"{op_conf} is an invalid operation config")
+            else:
+                raise ValueError(f"{op_conf} is an invalid operation config")
 
-        if operation is not None:
-            steps_list.append((step, operation))
+            if operation is not None:
+                steps_list.append((step, operation))
 
-    return (
-        Pipeline([("Identity", pc.Identity())], verbose=verbose)
-        if not steps_list
-        else Pipeline(steps_list, verbose=verbose)
-    )
+        return Pipeline(steps_list, verbose=verbose)
 
 
 class Plumber:
@@ -121,48 +121,49 @@ class Plumber:
         self.root = data_columns_to_tree(data.columns)
 
     def get_pipeline(
-        self, select: str | pd.Index | list[str] = None, until_step: str = None
+        self,
+        select: str | pd.Index | list[str] = None,
+        steps: str | list[str] | slice = slice(None),
+        verbose: bool = False,
     ) -> Pipeline:
         self._check_config_data_pipe()
         selection = parse_request_to_col_names(self.data, select)
-        if until_step is None:
-            dict_to_pipe = self.pipe_dict
+        if steps is None:
+            dict_to_pipe = None
         else:
-            dict_to_pipe = {}
-            for key, value in self.pipe_dict.items():
-                dict_to_pipe[key] = value
-                if key == until_step:
-                    break
+            pipe_named_keys = NamedList(list(self.pipe_dict.keys()))
+            selected_steps = pipe_named_keys[steps]
+            dict_to_pipe = {key: self.pipe_dict[key] for key in selected_steps}
 
-        return get_pipeline_from_dict(selection, dict_to_pipe)
+        return get_pipeline_from_dict(selection, dict_to_pipe, verbose)
 
     def get_corrected_data(
         self,
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        until_step: str = None,
+        steps: str | list[str] | slice = None,
+        verbose: bool = False,
     ) -> pd.DataFrame:
         self._check_config_data_pipe()
         select = parse_request_to_col_names(self.data, select)
         data = self.data.loc[
             start or self.data.index[0] : stop or self.data.index[-1], select
         ].copy()
-        if until_step == "":
-            return data
-        else:
-            return self.get_pipeline(select, until_step).fit_transform(data)
+
+        return self.get_pipeline(select, steps, verbose).fit_transform(data)
 
     def plot_gaps_heatmap(
         self,
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        until_step: str = None,
+        steps: str | list[str] | slice = None,
         time_step: str | pd.Timedelta | dt.timedelta = None,
         title: str = None,
+        verbose: bool = False,
     ):
-        data = self.get_corrected_data(select, start, stop, until_step)
+        data = self.get_corrected_data(select, start, stop, steps, verbose)
         return plot_gaps_heatmap(data, time_step=time_step, title=title)
 
     def plot(
@@ -172,9 +173,9 @@ class Plumber:
         stop: str | dt.datetime | pd.Timestamp = None,
         y_axis_level: str = None,
         y_tag_list: list[str] = None,
-        until_step_1: str = None,
+        steps_1: str | list[str] | slice = slice(None),
         data_1_mode: str = "lines",
-        until_step_2: str = None,
+        steps_2: str | list[str] | slice = None,
         data_2_mode: str = "markers",
         markers_opacity: float = 0.8,
         lines_width: float = 2.0,
@@ -189,6 +190,7 @@ class Plumber:
         gaps_2_alpha: float = 0.5,
         axis_space: float = 0.03,
         y_title_standoff: int | float = 5,
+        verbose: bool = False,
     ):
         # A bit dirty. Here we assume that if you ask a selection
         # that is not found in original data columns, it is because it
@@ -201,9 +203,9 @@ class Plumber:
             else select
         )
 
-        data_1 = self.get_corrected_data(select_corr, start, stop, until_step_1)
-        if until_step_2 is not None:
-            data_2 = self.get_corrected_data(select_corr, start, stop, until_step_2)
+        data_1 = self.get_corrected_data(select_corr, start, stop, steps_1, verbose)
+        if steps_2 is not None:
+            data_2 = self.get_corrected_data(select_corr, start, stop, steps_2)
             data_2.columns = [f"data_2->{col}" for col in data_2.columns]
         else:
             data_2 = pd.DataFrame()
@@ -234,7 +236,7 @@ class Plumber:
         for col in data_1:
             fig.add_scattergl(x=data_1.index, y=data_1[col], **scatter_config[col])
 
-        if until_step_2 is not None:
+        if steps_2 is not None:
             for col in data_2:
                 fig.add_scattergl(x=data_2.index, y=data_2[col], **scatter_config[col])
 
