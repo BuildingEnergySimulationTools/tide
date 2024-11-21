@@ -130,11 +130,11 @@ class TestCustomTransformers:
         )
 
         ref = pd.DataFrame(
-            {"col1": [0., 2, 3, np.nan, 4], "col2": [0., np.nan, np.nan, 4, 5]},
+            {"col1": [0.0, 2, 3, np.nan, 4], "col2": [0.0, np.nan, np.nan, 4, 5]},
             index=pd.date_range("2009", freq="h", periods=5),
         )
 
-        dropper = ReplaceThreshold(lower=1.1, upper=5, value=0.)
+        dropper = ReplaceThreshold(lower=1.1, upper=5, value=0.0)
         dropper.fit(df)
 
         assert list(df.columns) == list(dropper.get_feature_names_out())

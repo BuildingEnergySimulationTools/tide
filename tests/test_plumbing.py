@@ -45,7 +45,7 @@ TEST_DF_2.loc["2009-01-01 20:00:00", "c__Wh__zone_2"] = np.nan
 
 PIPE_DICT = {
     "pre_processing": {
-        "°C": [["DropThreshold", {"upper": 25}]],
+        "°C": [["ReplaceThreshold", {"upper": 25}]],
         "W/m2__outdoor": [["DropTimeGradient", {"upper_rate": -100}]],
     },
     "common": [["Interpolate", ["linear"]], ["Ffill"], ["Bfill", {"limit": 3}]],
