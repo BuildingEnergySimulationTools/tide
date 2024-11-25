@@ -9,6 +9,22 @@ from collections.abc import Callable
 from tide.utils import check_and_return_dt_index_df
 
 
+def cosd(angle):
+    """
+    Cosine with angle input in degrees
+    """
+    res = np.cos(np.radians(angle))
+    return res
+
+
+def sind(angle):
+    """
+    Sine with angle input in degrees
+    """
+
+    res = np.sin(np.radians(angle))
+    return res
+
 def time_gradient(data: pd.DataFrame | pd.Series) -> pd.DataFrame:
     """
     Calculates the time gradient of a given time series `data`
