@@ -7,7 +7,7 @@ from collections.abc import Callable
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
 
-from tide.base import ProcessingBC
+from tide.base import BaseProcessing
 from tide.math import time_gradient
 from tide.utils import (
     get_data_blocks,
@@ -22,7 +22,7 @@ from tide.classifiers import STLEDetector
 MODEL_MAP = {"STL": SkSTLForecast}
 
 
-class Identity(ProcessingBC):
+class Identity(BaseProcessing):
     """
     A custom transformer that returns the input data without any modifications.
 
@@ -78,7 +78,7 @@ class Identity(ProcessingBC):
         return check_and_return_dt_index_df(X)
 
 
-class ReplaceDuplicated(ProcessingBC):
+class ReplaceDuplicated(BaseProcessing):
     """This transformer replaces duplicated values in each column by
     specified new value.
 
@@ -121,7 +121,7 @@ class ReplaceDuplicated(ProcessingBC):
         return X
 
 
-class Dropna(ProcessingBC):
+class Dropna(BaseProcessing):
     """A class to drop NaN values in a Pandas DataFrame.
 
     Parameters
@@ -162,7 +162,7 @@ class Dropna(ProcessingBC):
         return check_and_return_dt_index_df(X).dropna(how=self.how)
 
 
-class RenameColumns(ProcessingBC):
+class RenameColumns(BaseProcessing):
     """
     Scikit-learn transformer that renames columns of a Pandas DataFrame.
 
@@ -224,7 +224,7 @@ class RenameColumns(ProcessingBC):
         return self.transform(X)
 
 
-class SkTransform(ProcessingBC):
+class SkTransform(BaseProcessing):
     """A transformer class to apply scikit transformers on a pandas DataFrame
 
     This class takes in a scikit-learn transformers as input and applies the
@@ -281,7 +281,7 @@ class SkTransform(ProcessingBC):
         )
 
 
-class ReplaceThreshold(ProcessingBC):
+class ReplaceThreshold(BaseProcessing):
     """Class replacing values in a pandas DataFrame by "value" based on
     threshold values.
 
@@ -333,7 +333,7 @@ class ReplaceThreshold(ProcessingBC):
         return X
 
 
-class DropTimeGradient(ProcessingBC):
+class DropTimeGradient(BaseProcessing):
     """
     A transformer that removes values in a DataFrame based on the time gradient.
 
@@ -424,7 +424,7 @@ class DropTimeGradient(ProcessingBC):
         return pd.concat(X_transformed, axis=1)
 
 
-class ApplyExpression(ProcessingBC):
+class ApplyExpression(BaseProcessing):
     """A transformer class to apply a mathematical expression on a Pandas
     DataFrame.
 
@@ -463,7 +463,7 @@ class ApplyExpression(ProcessingBC):
         return eval(self.expression)
 
 
-class TimeGradient(ProcessingBC):
+class TimeGradient(BaseProcessing):
     """
     A class to calculate the time gradient of a pandas DataFrame,
      which is the derivative of the data with respect to time.
@@ -505,7 +505,7 @@ class TimeGradient(ProcessingBC):
         return derivative.reindex(original_index)
 
 
-class Ffill(ProcessingBC):
+class Ffill(BaseProcessing):
     """
     A class to front-fill missing values in a Pandas DataFrame.
     the limit argument allows the function to stop frontfilling at a certain
@@ -541,7 +541,7 @@ class Ffill(ProcessingBC):
         return X.ffill(limit=self.limit)
 
 
-class Bfill(ProcessingBC):
+class Bfill(BaseProcessing):
     """
     A class to back-fill missing values in a Pandas DataFrame.
     the limit argument allows the function to stop backfilling at a certain
@@ -577,7 +577,7 @@ class Bfill(ProcessingBC):
         return X.bfill(limit=self.limit)
 
 
-class FillNa(ProcessingBC):
+class FillNa(BaseProcessing):
     """
     A class that extends scikit-learn's TransformerMixin and BaseEstimator
     to fill missing values in a Pandas DataFrame.
@@ -608,7 +608,7 @@ class FillNa(ProcessingBC):
         return X.fillna(self.value)
 
 
-class Interpolate(ProcessingBC):
+class Interpolate(BaseProcessing):
     """A class that implements interpolation of missing values in
      a Pandas DataFrame.
 
@@ -698,7 +698,7 @@ class Interpolate(ProcessingBC):
         return X
 
 
-class Resample(ProcessingBC):
+class Resample(BaseProcessing):
     """
     Resample time series data in a pandas DataFrame according to rule.
     Allow column wise resampling methods.
@@ -764,7 +764,7 @@ class Resample(ProcessingBC):
         return X.resample(rule=self.rule).agg(agg_dict)[X.columns]
 
 
-class AddTimeLag(ProcessingBC):
+class AddTimeLag(BaseProcessing):
     """
      PdAddTimeLag - A transformer that adds lagged features to a pandas
      DataFrame.
@@ -836,7 +836,7 @@ class AddTimeLag(ProcessingBC):
         return X_transformed
 
 
-class GaussianFilter1D(ProcessingBC):
+class GaussianFilter1D(BaseProcessing):
     """
     A transformer that applies a 1D Gaussian filter to a Pandas DataFrame.
     The Gaussian filter is a widely used smoothing filter that effectively
@@ -908,7 +908,7 @@ class GaussianFilter1D(ProcessingBC):
         return X.apply(gauss_filter)
 
 
-class ColumnsCombine(ProcessingBC):
+class ColumnsCombine(BaseProcessing):
     """
     A class that combines multiple columns in a pandas DataFrame using a specified
     function.
@@ -991,7 +991,7 @@ class ColumnsCombine(ProcessingBC):
             return X
 
 
-class STLFilter(ProcessingBC):
+class STLFilter(BaseProcessing):
     """
     A transformer that applies Seasonal-Trend decomposition using LOESS (STL)
     to a pandas DataFrame, and filters outliers based on an absolute threshold
@@ -1084,7 +1084,7 @@ class STLFilter(ProcessingBC):
         return X
 
 
-class FillGapsAR(ProcessingBC):
+class FillGapsAR(BaseProcessing):
     """
     A class designed to identify gaps in time series data and fill them using
     a specified model.
@@ -1180,7 +1180,7 @@ class FillGapsAR(ProcessingBC):
         return X
 
 
-class ExpressionCombine(ProcessingBC):
+class ExpressionCombine(BaseProcessing):
     """
     Performs specified operations on selected columns, creating a new column
     based on the provided expression.

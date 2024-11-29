@@ -6,10 +6,10 @@ from sklearn.utils.validation import check_is_fitted, check_array
 from statsmodels.tsa.seasonal import STL
 
 from tide.utils import check_and_return_dt_index_df
-from tide.base import STLBC
+from tide.base import BaseSTL
 
 
-class STLEDetector(ClassifierMixin, STLBC):
+class STLEDetector(ClassifierMixin, BaseSTL):
     """
     A custom anomaly detection model based on statsmodel STL
     (Seasonal and Trend decomposition using Loess).

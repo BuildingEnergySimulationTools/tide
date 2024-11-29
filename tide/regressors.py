@@ -8,14 +8,14 @@ from sklearn.base import RegressorMixin
 from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
 
-from tide.base import STLBC
+from tide.base import BaseSTL
 from tide.utils import check_and_return_dt_index_df
 
 MODEL_MAP = {"ARIMA": ARIMA}
 MODEL_DEFAULT_CONF = {"ARIMA": {"order": (1, 1, 0), "trend": "t"}}
 
 
-class SkSTLForecast(RegressorMixin, STLBC):
+class SkSTLForecast(RegressorMixin, BaseSTL):
     """
     A model designed for time series forecasting or backcasting
     (predicting past values).

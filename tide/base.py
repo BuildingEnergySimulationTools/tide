@@ -15,7 +15,7 @@ from tide.utils import (
 )
 
 
-class ProcessingBC(ABC, TransformerMixin, BaseEstimator):
+class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
     def get_feature_names_out(self, input_features=None):
         check_is_fitted(self, attributes=["features_"])
         return self.features_
@@ -31,7 +31,7 @@ class ProcessingBC(ABC, TransformerMixin, BaseEstimator):
         pass
 
 
-class STLBC(ABC, BaseEstimator):
+class BaseSTL(ABC, BaseEstimator):
     def __init__(
         self,
         period: int | str | dt.timedelta = "24h",
