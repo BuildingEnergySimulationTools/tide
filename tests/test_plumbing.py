@@ -184,9 +184,7 @@ class TestPlumbing:
         # plumber.plot(until_step_1="", plot_gaps_1=True)
         # plumber.plot(select="°C²")
 
-        res = plumber.get_pipeline(
-            steps=["fill_3", "combine"]
-        )
+        res = plumber.get_pipeline(steps=["fill_3", "combine"])
 
         plumber.plot()
 

@@ -12,7 +12,7 @@ from tide.utils import (
     get_data_level_names,
     parse_request_to_col_names,
     timedelta_to_int,
-    NamedList
+    NamedList,
 )
 
 DF_COLUMNS = pd.DataFrame(

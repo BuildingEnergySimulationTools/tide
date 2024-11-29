@@ -9,7 +9,7 @@ from tide.math import cosd, sind
 def sun_position(date: dt.datetime, lat: float = 46.5, long: float = 6.5):
     """
     Returns sun elevation and azimuth angle (Degree) based on latitude and longitude.
-    based on Jérôme's python  code interpretation of stackoverflow answer to :
+    based on Jérôme's python code interpretation of stackoverflow answer to :
     https://stackoverflow.com/questions/8708048/
     position-of-the-sun-given-time-of-day-latitude-and-longitude
 
