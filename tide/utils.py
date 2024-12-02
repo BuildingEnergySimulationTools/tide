@@ -189,6 +189,61 @@ def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
     return X.to_frame() if isinstance(X, pd.Series) else X
 
 
+def get_series_bloc(
+    date_series: pd.Series,
+    is_null: bool = False,
+    lower_td_threshold: str | dt.timedelta = None,
+    upper_td_threshold: str | dt.timedelta = None,
+    lower_threshold_inclusive: bool = True,
+    upper_threshold_inclusive: bool = True,
+):
+    data = check_and_return_dt_index_df(date_series).squeeze()
+    freq = get_freq_delta_or_min_time_interval(data)
+    # If data index has no frequency, a frequency based on minimum
+    # timedelta is set.
+    df = data.asfreq(freq)
+
+    # Convert string thresholds to timedelta if necessary
+    if isinstance(lower_td_threshold, str):
+        lower_td_threshold = pd.Timedelta(lower_td_threshold)
+    if isinstance(upper_td_threshold, str):
+        upper_td_threshold = pd.Timedelta(upper_td_threshold)
+
+    if not df.dtype == bool:
+        filt = df.isnull() if is_null else ~df.isnull()
+    else:
+        filt = ~df if is_null else df
+
+    idx = df.index[filt]
+    time_diff = idx.to_series().diff()
+    split_points = np.where(time_diff != time_diff.min())[0][1:]
+    consecutive_indices = np.split(idx, split_points)
+
+    durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
+
+    if lower_td_threshold is not None:
+        lower_mask = (
+            (durations >= lower_td_threshold)
+            if lower_threshold_inclusive
+            else (durations > lower_td_threshold)
+        )
+    else:
+        lower_mask = np.ones_like(durations, dtype=bool)
+
+    if upper_td_threshold is not None:
+        upper_mask = (
+            (durations <= upper_td_threshold)
+            if upper_threshold_inclusive
+            else (durations < upper_td_threshold)
+        )
+    else:
+        upper_mask = np.ones_like(durations, dtype=bool)
+
+    mask = lower_mask & upper_mask
+
+    return [consecutive_indices[i] for i, val in enumerate(mask) if val]
+
+
 def get_data_blocks(
     data: pd.Series | pd.DataFrame,
     is_null: bool = False,
@@ -245,7 +300,6 @@ def get_data_blocks(
         Each `DatetimeIndex` represents a group of one or several consecutive
         timestamps where the values in the corresponding column were NaN and
         exceeded the gap threshold.
-
     """
 
     data = check_and_return_dt_index_df(data)
@@ -255,72 +309,29 @@ def get_data_blocks(
     elif cols is None:
         cols = list(data.columns)
 
-    if isinstance(lower_td_threshold, str):
-        lower_td_threshold = pd.to_timedelta(lower_td_threshold)
-    elif lower_td_threshold is None:
-        lower_td_threshold = pd.to_timedelta(0)
-
-    if isinstance(upper_td_threshold, str):
-        upper_td_threshold = pd.to_timedelta(upper_td_threshold)
-    elif upper_td_threshold is None:
-        upper_td_threshold = pd.Timedelta.max
-
-    freq = get_freq_delta_or_min_time_interval(data)
-    # If data index has no frequency, a frequency based on minimum
-    # timedelta is set.
-    df = data.asfreq(freq)
-
-    df = df.isnull() if is_null else ~df.isnull()
+    idx_dict = {}
+    for col in cols:
+        idx_dict[col] = get_series_bloc(
+            data[col],
+            is_null,
+            lower_td_threshold,
+            upper_td_threshold,
+            lower_threshold_inclusive,
+            upper_threshold_inclusive,
+        )
 
     if return_combination:
-        df["combination"] = df.any(axis=1)
-        cols += ["combination"]
-
-    def is_valid_block(group, lgt, hgt):
-        new_block = pd.DatetimeIndex(group)
-        block_duration = new_block.max() - new_block.min() + freq
-
-        lower_check = (
-            block_duration >= lgt if lower_threshold_inclusive else block_duration > lgt
-        )
-        upper_check = (
-            block_duration <= hgt if upper_threshold_inclusive else block_duration < hgt
+        combined_series = ~data[["data_1", "data_2"]].isnull().any(axis=1)
+        idx_dict["combination"] = get_series_bloc(
+            combined_series,
+            is_null,
+            lower_td_threshold,
+            upper_td_threshold,
+            lower_threshold_inclusive,
+            upper_threshold_inclusive,
         )
 
-        return lower_check and upper_check
-
-    def finalize_block(current_group):
-        # For indexes where frequency has been imposed,
-        # Get back to the original data index
-        current_group = [ts for ts in current_group if ts in data.index]
-        new_block_index = pd.DatetimeIndex(current_group)
-        new_block_index.freq = new_block_index.inferred_freq
-        return new_block_index
-
-    block_dict = {}
-    for col in cols:
-        groups = []
-        current_group = []
-
-        for timestamp in df.index:
-            if df.loc[timestamp, col]:
-                current_group.append(timestamp)
-            else:
-                if current_group and is_valid_block(
-                    current_group, lower_td_threshold, upper_td_threshold
-                ):
-                    groups.append(finalize_block(current_group))
-                current_group = []
-
-        # Append the last group if it exists and is valid
-        if current_group and is_valid_block(
-            current_group, lower_td_threshold, upper_td_threshold
-        ):
-            groups.append(finalize_block(current_group))
-
-        block_dict[col] = groups
-
-    return block_dict
+    return idx_dict
 
 
 def get_freq_delta_or_min_time_interval(df: pd.Series | pd.DataFrame):
