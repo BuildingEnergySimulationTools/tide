@@ -192,6 +192,7 @@ def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
 def get_series_bloc(
     date_series: pd.Series,
     is_null: bool = False,
+    select_inner: bool = True,
     lower_td_threshold: str | dt.timedelta = None,
     upper_td_threshold: str | dt.timedelta = None,
     lower_threshold_inclusive: bool = True,
@@ -203,11 +204,16 @@ def get_series_bloc(
     # timedelta is set.
     df = data.asfreq(freq)
 
-    # Convert string thresholds to timedelta if necessary
-    if isinstance(lower_td_threshold, str):
-        lower_td_threshold = pd.Timedelta(lower_td_threshold)
-    if isinstance(upper_td_threshold, str):
-        upper_td_threshold = pd.Timedelta(upper_td_threshold)
+    lower_td_threshold = (
+        pd.Timedelta(lower_td_threshold)
+        if isinstance(lower_td_threshold, str)
+        else lower_td_threshold
+    )
+    upper_td_threshold = (
+        pd.Timedelta(upper_td_threshold)
+        if isinstance(upper_td_threshold, str)
+        else upper_td_threshold
+    )
 
     if not df.dtype == bool:
         filt = df.isnull() if is_null else ~df.isnull()
@@ -218,36 +224,38 @@ def get_series_bloc(
     time_diff = idx.to_series().diff()
     split_points = np.where(time_diff != time_diff.min())[0][1:]
     consecutive_indices = np.split(idx, split_points)
-
     durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
 
-    if lower_td_threshold is not None:
-        lower_mask = (
-            (durations >= lower_td_threshold)
-            if lower_threshold_inclusive
-            else (durations > lower_td_threshold)
-        )
-    else:
+    if lower_td_threshold is None:
         lower_mask = np.ones_like(durations, dtype=bool)
-
-    if upper_td_threshold is not None:
-        upper_mask = (
-            (durations <= upper_td_threshold)
-            if upper_threshold_inclusive
-            else (durations < upper_td_threshold)
-        )
     else:
+        op = np.greater_equal if lower_threshold_inclusive else np.greater
+        lower_mask = (
+            op(durations, lower_td_threshold)
+            if select_inner
+            else ~op(durations, lower_td_threshold)
+        )
+
+    if upper_td_threshold is None:
         upper_mask = np.ones_like(durations, dtype=bool)
+    else:
+        op = np.less_equal if lower_threshold_inclusive else np.less
+        upper_mask = (
+            op(durations, upper_td_threshold)
+            if select_inner
+            else ~op(durations, upper_td_threshold)
+        )
 
     mask = lower_mask & upper_mask
 
-    return [consecutive_indices[i] for i, val in enumerate(mask) if val]
+    return [indices for indices, keep in zip(consecutive_indices, mask) if keep]
 
 
 def get_data_blocks(
     data: pd.Series | pd.DataFrame,
     is_null: bool = False,
     cols: str | list[str] = None,
+    select_inner: bool = True,
     lower_td_threshold: str | dt.timedelta = None,
     upper_td_threshold: str | dt.timedelta = None,
     lower_threshold_inclusive: bool = True,
@@ -314,6 +322,7 @@ def get_data_blocks(
         idx_dict[col] = get_series_bloc(
             data[col],
             is_null,
+            select_inner,
             lower_td_threshold,
             upper_td_threshold,
             lower_threshold_inclusive,
@@ -325,6 +334,7 @@ def get_data_blocks(
         idx_dict["combination"] = get_series_bloc(
             combined_series,
             is_null,
+            select_inner,
             lower_td_threshold,
             upper_td_threshold,
             lower_threshold_inclusive,

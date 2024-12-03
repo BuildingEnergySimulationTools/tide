@@ -157,7 +157,7 @@ class TestUtils:
             upper_td_threshold="3h",
             upper_threshold_inclusive=False,
         )
-        assert not res["data_1"]
+        assert len(res["data_1"]) == 1
 
     def test_outer_timestamps(self):
         ref_index = pd.date_range("2009-01-01", freq="d", periods=5)
