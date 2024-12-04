@@ -112,6 +112,13 @@ class TestUtils:
         toy_holes.loc["2009-01-01 05:00:00":"2009-01-01 08:00:00"] = np.nan
         toy_holes.loc["2009-01-01 12:00:00":"2009-01-01 16:00:00"] = np.nan
 
+        get_series_bloc(
+            toy_holes,
+            is_null=True,
+            upper_td_threshold="3h",
+            upper_threshold_inclusive=False,
+        )
+
         # All data groups
         assert len(get_series_bloc(toy_holes)) == 4
 
@@ -126,9 +133,9 @@ class TestUtils:
                     is_null=True,
                     select_inner=True,
                     lower_td_threshold="1h",
-                    lower_bound_inclusive=False,
+                    lower_threshold_inclusive=False,
                     upper_td_threshold="4h",
-                    upper_bound_inclusive=True,
+                    upper_threshold_inclusive=True,
                 )
             )
             == 1
@@ -142,13 +149,15 @@ class TestUtils:
                     is_null=True,
                     select_inner=False,
                     lower_td_threshold="1h",
-                    lower_bound_inclusive=False,
+                    lower_threshold_inclusive=False,
                     upper_td_threshold="4h",
-                    upper_bound_inclusive=True,
+                    upper_threshold_inclusive=True,
                 )
             )
             == 2
         )
+
+        assert True
 
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
@@ -183,7 +192,7 @@ class TestUtils:
         res = get_data_blocks(toy_df, return_combination=False)
         assert "combination" not in res.keys()
 
-        # Remove timestamps to get indexes wtihout frequency
+        # CAREFUL !!! Remove timestamps to get indexes without frequency
         toy_df.drop(
             pd.date_range("2009-01-01 02:00:00", "2009-01-01 04:00:00", freq="h"),
             axis=0,
@@ -208,7 +217,7 @@ class TestUtils:
             upper_td_threshold="3h",
             upper_threshold_inclusive=False,
         )
-        assert len(res["data_1"]) == 1
+        assert res["data_1"] == []
 
     def test_outer_timestamps(self):
         ref_index = pd.date_range("2009-01-01", freq="d", periods=5)

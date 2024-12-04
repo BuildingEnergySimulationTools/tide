@@ -217,8 +217,8 @@ def get_series_bloc(
     select_inner: bool = True,
     lower_td_threshold: str | dt.timedelta = None,
     upper_td_threshold: str | dt.timedelta = None,
-    lower_bound_inclusive: bool = True,
-    upper_bound_inclusive: bool = True,
+    lower_threshold_inclusive: bool = True,
+    upper_threshold_inclusive: bool = True,
 ):
     data = check_and_return_dt_index_df(date_series).squeeze()
     freq = get_freq_delta_or_min_time_interval(data)
@@ -253,7 +253,7 @@ def get_series_bloc(
         lower_mask = np.ones_like(durations, dtype=bool)
     else:
         lower_mask = _lower_bound(
-            durations, lower_td_threshold, lower_bound_inclusive, select_inner
+            durations, lower_td_threshold, lower_threshold_inclusive, select_inner
         )
 
     # Right bound
@@ -261,7 +261,7 @@ def get_series_bloc(
         upper_mask = np.ones_like(durations, dtype=bool)
     else:
         upper_mask = _upper_bound(
-            durations, upper_td_threshold, upper_bound_inclusive, select_inner
+            durations, upper_td_threshold, upper_threshold_inclusive, select_inner
         )
 
     mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
@@ -283,11 +283,18 @@ def get_data_blocks(
     """
     Identifies groups of valid data if is_null = False, or groups of nan if
     is_null = True (gaps in measurements).
+
+    The groups can be filtered using lower_dt_threshold or higher_dt_threshold.
+    Their values can be included or not in the selection (lower_threshold_inclusive,
+    upper_threshold_inclusive).
+
+    Selection can be made inside the boundaries or outside using selec_inner
+
     Returns them in a dictionary as list of DateTimeIndex. The keys values are
     data columns (or name if data is a Series).
-    The groups can be filtered using lower_dt_threshold or higher_dt_threshold.
-    The argument return indicates if an additional key must be set to the dictionary
-    to account for all data presence.
+
+    The argument return_combination indicates if an additional key must be set to the
+    dictionary to account for all data presence.
 
     Parameters
     ----------
@@ -300,6 +307,8 @@ def get_data_blocks(
     cols : str or list[str], optional
         The columns in the DataFrame for which to detect gaps. If None (default), all
         columns are considered.
+    select_inner : Bool, default True
+        Select the groups of data inside or outside the given boundaries
     lower_td_threshold : str or timedelta, optional
         The minimum duration of a period for it to be considered valid.
         Can be passed as a string (e.g., '1d' for one day) or a `timedelta`.
@@ -348,9 +357,8 @@ def get_data_blocks(
         )
 
     if return_combination:
-        combined_series = ~data[["data_1", "data_2"]].isnull().any(axis=1)
         idx_dict["combination"] = get_series_bloc(
-            combined_series,
+            ~data.isnull().any(axis=1),
             is_null,
             select_inner,
             lower_td_threshold,
