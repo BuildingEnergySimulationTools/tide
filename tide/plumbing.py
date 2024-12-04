@@ -148,7 +148,7 @@ class Plumber:
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        steps: str | list[str] | slice = None,
+        steps: str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> pd.DataFrame:
         self._check_config_data_pipe()
@@ -164,7 +164,7 @@ class Plumber:
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        steps: str | list[str] | slice = None,
+        steps: str | list[str] | slice = slice(None),
         time_step: str | pd.Timedelta | dt.timedelta = None,
         title: str = None,
         verbose: bool = False,
