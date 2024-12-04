@@ -248,21 +248,25 @@ def get_series_bloc(
     consecutive_indices = np.split(idx, split_points)
     durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
 
+    lower_mask = upper_mask = np.ones_like(durations, dtype=bool)
+
     # Left bound
-    if lower_td_threshold is None:
-        lower_mask = np.ones_like(durations, dtype=bool)
-    else:
+    if lower_td_threshold is not None:
         lower_mask = _lower_bound(
             durations, lower_td_threshold, lower_threshold_inclusive, select_inner
         )
 
     # Right bound
-    if upper_td_threshold is None:
-        upper_mask = np.ones_like(durations, dtype=bool)
-    else:
+    if upper_td_threshold is not None:
         upper_mask = _upper_bound(
             durations, upper_td_threshold, upper_threshold_inclusive, select_inner
         )
+
+    if upper_td_threshold is None and lower_td_threshold is not None:
+        upper_mask = lower_mask
+
+    if lower_td_threshold is None and upper_td_threshold is not None:
+        lower_mask = upper_mask
 
     mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
 
