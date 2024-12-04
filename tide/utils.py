@@ -270,7 +270,7 @@ def get_series_bloc(
 
     mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
 
-    return [indices for indices, keep in zip(consecutive_indices, mask) if keep]
+    return [pd.DatetimeIndex(indices, freq=freq) for indices, keep in zip(consecutive_indices, mask) if keep]
 
 
 def get_data_blocks(
