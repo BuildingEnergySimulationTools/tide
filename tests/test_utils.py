@@ -6,7 +6,6 @@ import numpy as np
 from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
-    get_gaps_mask,
     data_columns_to_tree,
     get_data_col_names_from_root,
     get_data_level_names,
@@ -157,8 +156,6 @@ class TestUtils:
             == 2
         )
 
-        assert True
-
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
             {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
@@ -230,151 +227,6 @@ class TestUtils:
         start, end = get_outer_timestamps(ref_index, ref_index)
         assert start == ref_index[0]
         assert end == ref_index[-1]
-
-    def test_get_gaps_gte_mask(self):
-        toy_series = pd.Series(
-            np.random.randn(24),
-            index=pd.date_range("2009", freq="h", periods=24),
-            name="data",
-        )
-
-        toy_holes = toy_series.copy()
-        toy_holes.loc["2009-01-01 09:00:00"] = np.nan
-        toy_holes.loc["2009-01-01 11:00:00":"2009-01-01 13:00:00"] = np.nan
-        toy_holes.loc["2009-01-01 19:00:00":"2009-01-01 23:00:00"] = np.nan
-
-        res_1 = get_gaps_mask(toy_holes, "GTE")
-        res_2 = get_gaps_mask(toy_holes, "LTE")
-
-        np.testing.assert_array_equal(res_1, res_2)
-
-        res_gte = get_gaps_mask(toy_holes, operator="GTE", size="3h")
-        ref_gte = np.array(
-            [
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-                True,
-                True,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-                True,
-                True,
-                True,
-                True,
-            ]
-        )
-
-        np.testing.assert_array_equal(res_gte, ref_gte)
-
-        res_lte = get_gaps_mask(toy_holes, operator="LTE", size="3h")
-        ref_lte = np.array(
-            [
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-                False,
-                True,
-                True,
-                True,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-            ]
-        )
-
-        np.testing.assert_array_equal(res_lte, ref_lte)
-
-        res_lt = get_gaps_mask(toy_holes, operator="LT", size="3h")
-        ref_lt = np.array(
-            [
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                True,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-            ]
-        )
-
-        np.testing.assert_array_equal(res_lt, ref_lt)
-
-        res_gt = get_gaps_mask(toy_holes, operator="GT", size="5h")
-        ref_gt = np.array(
-            [
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-                False,
-            ]
-        )
-
-        np.testing.assert_array_equal(res_gt, ref_gt)
 
     def test_timedelta_to_int(self):
         X = pd.DataFrame(
