@@ -521,7 +521,6 @@ class TestCustomTransformers:
                 ]
             ),
         )
-        assert True
 
     def test_pd_fill_gap(self):
         index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h")
