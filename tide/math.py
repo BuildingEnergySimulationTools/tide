@@ -25,6 +25,7 @@ def sind(angle):
     res = np.sin(np.radians(angle))
     return res
 
+
 def time_gradient(data: pd.DataFrame | pd.Series) -> pd.DataFrame:
     """
     Calculates the time gradient of a given time series `data`
