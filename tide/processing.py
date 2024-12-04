@@ -7,13 +7,12 @@ from collections.abc import Callable
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
 
-from tide.base import BaseProcessing
+from tide.base import BaseProcessing, BaseFiller
 from tide.math import time_gradient
 from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
     check_and_return_dt_index_df,
-    get_gaps_mask,
     parse_request_to_col_names,
 )
 from tide.regressors import SkSTLForecast
@@ -608,7 +607,7 @@ class FillNa(BaseProcessing):
         return X.fillna(self.value)
 
 
-class Interpolate(BaseProcessing):
+class Interpolate(BaseFiller, BaseProcessing):
     """A class that implements interpolation of missing values in
      a Pandas DataFrame.
 
@@ -662,10 +661,8 @@ class Interpolate(BaseProcessing):
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
     ):
-        super().__init__()
+        super().__init__(gaps_lte, gaps_gte)
         self.method = method
-        self.gaps_lte = gaps_lte
-        self.gaps_gte = gaps_gte
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
@@ -675,26 +672,9 @@ class Interpolate(BaseProcessing):
 
     def transform(self, X: pd.Series | pd.DataFrame):
         X = check_and_return_dt_index_df(X)
-        for col in X:
-            if self.gaps_lte is not None:
-                gt_mask = get_gaps_mask(X[col], "GT", self.gaps_lte)
-            else:
-                gt_mask = np.ones(X.shape[0]).astype(bool)
-
-            if self.gaps_gte is not None:
-                lt_mask = get_gaps_mask(X[col], "LT", self.gaps_gte)
-            else:
-                lt_mask = np.ones(X.shape[0]).astype(bool)
-
-            if self.gaps_lte is None and self.gaps_gte is None:
-                lt_mask = gt_mask = np.zeros(X.shape[0]).astype(bool)
-
-            gaps_to_discard = X.index[np.logical_and(gt_mask, lt_mask)]
-            to_be_interpolated = ~X.index.isin(gaps_to_discard)
-            X.loc[to_be_interpolated, col] = X.loc[to_be_interpolated, col].interpolate(
-                method=self.method
-            )
-
+        gaps_mask = self.get_gaps_mask(X)
+        X_full = X.interpolate(method=self.method)
+        X[gaps_mask] = X_full[gaps_mask]
         return X
 
 
