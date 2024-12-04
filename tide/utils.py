@@ -189,14 +189,36 @@ def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
     return X.to_frame() if isinstance(X, pd.Series) else X
 
 
+def _lower_bound(series, bound, bound_inclusive: bool, inner: bool):
+    ops = {
+        (False, False): np.less,
+        (False, True): np.greater,
+        (True, False): np.less_equal,
+        (True, True): np.greater_equal,
+    }
+    op = ops[(bound_inclusive, inner)]
+    return op(series, bound)
+
+
+def _upper_bound(series, bound, bound_inclusive: bool, inner: bool):
+    ops = {
+        (False, False): np.greater,
+        (False, True): np.less,
+        (True, False): np.greater_equal,
+        (True, True): np.less_equal,
+    }
+    op = ops[(bound_inclusive, inner)]
+    return op(series, bound)
+
+
 def get_series_bloc(
     date_series: pd.Series,
     is_null: bool = False,
     select_inner: bool = True,
     lower_td_threshold: str | dt.timedelta = None,
     upper_td_threshold: str | dt.timedelta = None,
-    lower_threshold_inclusive: bool = True,
-    upper_threshold_inclusive: bool = True,
+    lower_bound_inclusive: bool = True,
+    upper_bound_inclusive: bool = True,
 ):
     data = check_and_return_dt_index_df(date_series).squeeze()
     freq = get_freq_delta_or_min_time_interval(data)
@@ -226,27 +248,23 @@ def get_series_bloc(
     consecutive_indices = np.split(idx, split_points)
     durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
 
+    # Left bound
     if lower_td_threshold is None:
         lower_mask = np.ones_like(durations, dtype=bool)
     else:
-        op = np.greater_equal if lower_threshold_inclusive else np.greater
-        lower_mask = (
-            op(durations, lower_td_threshold)
-            if select_inner
-            else ~op(durations, lower_td_threshold)
+        lower_mask = _lower_bound(
+            durations, lower_td_threshold, lower_bound_inclusive, select_inner
         )
 
+    # Right bound
     if upper_td_threshold is None:
         upper_mask = np.ones_like(durations, dtype=bool)
     else:
-        op = np.less_equal if lower_threshold_inclusive else np.less
-        upper_mask = (
-            op(durations, upper_td_threshold)
-            if select_inner
-            else ~op(durations, upper_td_threshold)
+        upper_mask = _upper_bound(
+            durations, upper_td_threshold, upper_bound_inclusive, select_inner
         )
 
-    mask = lower_mask & upper_mask
+    mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
 
     return [indices for indices, keep in zip(consecutive_indices, mask) if keep]
 

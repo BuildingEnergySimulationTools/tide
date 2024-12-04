@@ -13,6 +13,7 @@ from tide.utils import (
     parse_request_to_col_names,
     timedelta_to_int,
     NamedList,
+    get_series_bloc,
 )
 
 DF_COLUMNS = pd.DataFrame(
@@ -98,6 +99,56 @@ class TestUtils:
 
         res = get_data_level_names(root, "bloc")
         assert res == ["bloc1", "bloc2", "OTHER", "bloc4"]
+
+    def test_get_series_bloc(self):
+        toy_sr = pd.Series(
+            data=np.arange(24).astype(float),
+            index=pd.date_range("2009", freq="h", periods=24),
+            name="data_1",
+        )
+
+        toy_holes = toy_sr.copy()
+        toy_holes.loc["2009-01-01 02:00:00"] = np.nan
+        toy_holes.loc["2009-01-01 05:00:00":"2009-01-01 08:00:00"] = np.nan
+        toy_holes.loc["2009-01-01 12:00:00":"2009-01-01 16:00:00"] = np.nan
+
+        # All data groups
+        assert len(get_series_bloc(toy_holes)) == 4
+
+        # All gaps groups
+        assert len(get_series_bloc(toy_holes, is_null=True)) == 3
+
+        # Gaps Inner bounds, one inclusive
+        assert (
+            len(
+                get_series_bloc(
+                    toy_holes,
+                    is_null=True,
+                    select_inner=True,
+                    lower_td_threshold="1h",
+                    lower_bound_inclusive=False,
+                    upper_td_threshold="4h",
+                    upper_bound_inclusive=True,
+                )
+            )
+            == 1
+        )
+
+        # Gaps outer selection, one inclusive
+        assert (
+            len(
+                get_series_bloc(
+                    toy_holes,
+                    is_null=True,
+                    select_inner=False,
+                    lower_td_threshold="1h",
+                    lower_bound_inclusive=False,
+                    upper_td_threshold="4h",
+                    upper_bound_inclusive=True,
+                )
+            )
+            == 2
+        )
 
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
