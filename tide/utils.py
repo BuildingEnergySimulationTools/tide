@@ -242,9 +242,12 @@ def get_series_bloc(
     else:
         filt = ~df if is_null else df
 
+    if ~np.any(filt):
+        return []
+
     idx = df.index[filt]
     time_diff = idx.to_series().diff()
-    split_points = np.where(time_diff != time_diff.min())[0][1:]
+    split_points = np.where(time_diff != pd.Timedelta(df.index.freq))[0][1:]
     consecutive_indices = np.split(idx, split_points)
     durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
 

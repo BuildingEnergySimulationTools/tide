@@ -156,6 +156,32 @@ class TestUtils:
             == 2
         )
 
+        # Get isolated gaps
+        ser = pd.Series(
+            [np.nan, 1, 2, np.nan, 3, 4, np.nan],
+            index=pd.date_range("2009", freq="h", periods=7),
+        )
+        res = get_series_bloc(ser, is_null=True)
+        assert len(res) == 3
+
+        # No gaps case
+        ser = pd.Series(
+            [0.0, 1.0, 2.0, 2.5, 3, 4, 5.0],
+            index=pd.date_range("2009", freq="h", periods=7),
+        )
+        res = get_series_bloc(ser, is_null=True)
+
+        assert res == []
+
+        # No gaps case
+        ser = pd.Series(
+            [0.0, 1.0, 2.0, np.nan, 3, 4, 5.0],
+            index=pd.date_range("2009", freq="h", periods=7),
+        )
+        res = get_series_bloc(ser, is_null=True)
+
+        assert len(res) == 1
+
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
             {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
