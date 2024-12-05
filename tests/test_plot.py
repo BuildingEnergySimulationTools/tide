@@ -59,7 +59,7 @@ class TestPlot:
         df.loc["2009-01-01 15:00:00", "a"] = np.nan
         df.loc["2009-01-01 20:00:00", "b"] = np.nan
 
-        fig = plot_gaps_heatmap(df, "3h")
+        plot_gaps_heatmap(df, "3h")
 
         assert True
 

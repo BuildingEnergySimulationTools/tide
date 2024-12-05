@@ -149,7 +149,7 @@ class TestPlumbing:
         }
 
         pipe = get_pipeline_from_dict(TEST_DF_2.columns, pipe, verbose=True)
-        res = pipe.fit_transform(TEST_DF_2.copy())
+        pipe.fit_transform(TEST_DF_2.copy())
 
         assert True
 
@@ -179,12 +179,7 @@ class TestPlumbing:
         plumber.pipe_dict = pipe
 
         plumber.get_pipeline()
-
-        # plumber.plot()
-        # plumber.plot(until_step_1="", plot_gaps_1=True)
-        # plumber.plot(select="°C²")
-
-        res = plumber.get_pipeline(steps=["fill_3", "combine"])
+        plumber.get_pipeline(steps=["fill_3", "combine"])
 
         plumber.plot()
 
