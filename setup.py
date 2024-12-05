@@ -31,7 +31,7 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "numpy>=1.22.4, <2.0",
-        "pandas>=2.1.0, <3.0",
+        "pandas>=2.0.0, <3.0",
         "scipy>=1.9.1, <2.0",
         "bigtree>=0.21.3",
         "scikit-learn>=1.2.2, <2.0",
