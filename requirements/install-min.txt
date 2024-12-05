@@ -1,0 +1,9 @@
+numpy==1.22.4
+pandas==2.1.0
+scipy==1.9.1
+bigtree==0.21.3
+scikit-learn==1.2.2
+statsmodels==0.14.4
+matplotlib==3.5.1
+plotly==5.3.1
+requests==2.32.3

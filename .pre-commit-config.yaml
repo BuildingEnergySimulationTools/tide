@@ -1,0 +1,10 @@
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.4.2
+  hooks:
+    - id: ruff
+    - id: ruff-format
+- repo: https://github.com/python-jsonschema/check-jsonschema
+  rev: 0.28.2
+  hooks:
+    - id: check-github-workflows
