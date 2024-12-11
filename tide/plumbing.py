@@ -105,10 +105,6 @@ class Plumber:
         else:
             return super().__repr__()
 
-    def _check_config_data_pipe(self):
-        if self.data is None or self.pipe_dict is None:
-            raise ValueError("data and pipe_dict are required")
-
     def show(self):
         if self.root is not None:
             self.root.show()
@@ -129,9 +125,10 @@ class Plumber:
         steps: str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> Pipeline:
-        self._check_config_data_pipe()
+        if self.data is None:
+            raise ValueError("data is required to build a pipeline")
         selection = parse_request_to_col_names(self.data, select)
-        if steps is None:
+        if steps is None or self.pipe_dict is None:
             dict_to_pipe = None
         else:
             pipe_named_keys = NamedList(list(self.pipe_dict.keys()))
@@ -148,7 +145,8 @@ class Plumber:
         steps: str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> pd.DataFrame:
-        self._check_config_data_pipe()
+        if self.data is None:
+            raise ValueError("Cannot get corrected data. data are missing")
         select = parse_request_to_col_names(self.data, select)
         data = self.data.loc[
             start or self.data.index[0] : stop or self.data.index[-1], select
