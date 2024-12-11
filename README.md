@@ -4,8 +4,8 @@
 
 
 
-[![PyPI](https://img.shields.io/pypi/v/corrai?label=pypi%20package)](https://pypi.org/project/corrai/)
-[![Static Badge](https://img.shields.io/badge/python-3.10_%7C_3.12-blue)](https://pypi.org/project/corrai/)
+[![PyPI](https://img.shields.io/pypi/v/tide?label=pypi%20package)](https://pypi.org/project/python-tide/)
+[![Static Badge](https://img.shields.io/badge/python-3.10_%7C_3.12-blue)](https://pypi.org/project/python-tide/)
 [![codecov](https://codecov.io/gh/BuildingEnergySimulationTools/tide/branch/main/graph/badge.svg?token=F51O9CXI61)](https://codecov.io/gh/BuildingEnergySimulationTools/tide)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
@@ -41,7 +41,7 @@ handling.
 ## Getting started
 ### 1- Install ⬇️
 ````
-pip install tide
+pip install python-tide
 ````
 
 ### 2- Load and format data 🌲
