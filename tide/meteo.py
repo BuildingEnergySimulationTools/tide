@@ -2,8 +2,96 @@ import datetime as dt
 import math
 
 import numpy as np
+import pandas as pd
+import requests
 
 from tide.math import cosd, sind
+
+OIKOLAB_PARAM_MAP = {
+    "temperature": "temperature (degC)",
+    "dewpoint_temperature": "dewpoint_temperature (degC)",
+    "mean_sea_level_pressure": "mean_sea_level_pressure (Pa)",
+    "wind_speed": "wind_speed (m/s)",
+    "100m_wind_speed": "100m_wind_speed (m/s)",
+    "relative_humidity": "relative_humidity (0-1)",
+    "surface_solar_radiation": "surface_solar_radiation (W/m^2)",
+    "direct_normal_solar_radiation": "direct_normal_solar_radiation (W/m^2)",
+    "surface_diffuse_solar_radiation": "surface_diffuse_solar_radiation (W/m^2)",
+    "surface_thermal_radiation": "surface_thermal_radiation (W/m^2)",
+    "total_cloud_cover": "total_cloud_cover (0-1)",
+    "total_precipitation": "total_precipitation (mm of water equivalent)",
+}
+
+
+def get_oikolab_df(
+    lat: float,
+    lon: float,
+    start: pd.Timestamp | dt.datetime,
+    end: pd.Timestamp | dt.datetime,
+    api_key: str,
+    param: list[str] = None,
+    model: str = "era5",
+    freq: str = "H",
+) -> pd.DataFrame:
+    """
+    Retrieve weather data from the Oikolab API and return it as a pandas DataFrame.
+
+    This function sends a request to the Oikolab weather API, fetches the specified
+    weather parameters for a given location and time range, and returns the data
+    in a pandas DataFRame.
+
+    Parameters:
+    -----------
+    lat : float
+        Latitude of the location.
+    lon : float
+        Longitude of the location.
+    start : pd.Timestamp | dt.datetime
+        Start date and time for the data request.
+    end : pd.Timestamp | dt.datetime
+        End date and time for the data request.
+    api_key : str
+        API key for authentication with the Oikolab service.
+    param : list[str], optional
+        List of weather parameters to retrieve. If None, the following parameters
+        will be fetched. Default is None.
+        ['temperature', 'dewpoint_temperature', 'mean_sea_level_pressure',
+        'wind_speed', '100m_wind_speed', 'relative_humidity',
+        'surface_solar_radiation', 'direct_normal_solar_radiation',
+        'surface_diffuse_solar_radiation', 'surface_thermal_radiation',
+        'total_cloud_cover', 'total_precipitation']
+    model : str, optional
+        Weather model to use for data retrieval. Default is "era5".
+    freq : str, optional
+        Frequency of the data points. Default is "H" (hourly).
+
+    See Oikolab API doc for further informations : https://docs.oikolab.com/references/
+    """
+
+    param = list(OIKOLAB_PARAM_MAP.keys()) if param is None else param
+
+    r = requests.get(
+        url="https://api.oikolab.com/weather",
+        params={
+            "param": param,
+            "lat": lat,
+            "lon": lon,
+            "start": start.strftime("%Y-%m-%d"),
+            "end": end.strftime("%Y-%m-%d"),
+            "model": model,
+            "freq": freq,
+            "format": "csv",
+        },
+        headers={"api-key": api_key},
+    )
+
+    if not r.status_code == 200:
+        raise ValueError(f"Invalid request. Code:{r.status_code}")
+
+    df = pd.read_csv(r.url, parse_dates=True, index_col=0)
+    df.index = df.index.tz_localize("UTC")
+    df.index.freq = df.index.inferred_freq
+    return df.rename(columns={OIKOLAB_PARAM_MAP[par]: par for par in param})
 
 
 def sun_position(date: dt.datetime, lat: float = 46.5, long: float = 6.5):

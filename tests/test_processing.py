@@ -1,5 +1,6 @@
 import datetime as dt
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -28,9 +29,48 @@ from tide.processing import (
     FillGapsAR,
     Interpolate,
     ExpressionCombine,
+    FillOikoMeteo,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
+
+
+def mock_get_oikolab_df(**kwargs):
+    data = pd.read_csv(
+        Path(RESOURCES_PATH / "oiko_mockup.csv"), index_col=0, parse_dates=True
+    )
+    data.index.freq = data.index.inferred_freq
+
+    try:
+        param = kwargs["param"]
+    except KeyError:
+        param = [
+            "temperature",
+            "dewpoint_temperature",
+            "mean_sea_level_pressure",
+            "wind_speed",
+            "100m_wind_speed",
+            "relative_humidity",
+            "surface_solar_radiation",
+            "direct_normal_solar_radiation",
+            "surface_diffuse_solar_radiation",
+            "surface_thermal_radiation",
+            "total_cloud_cover",
+            "total_precipitation",
+        ]
+
+    start = kwargs["start"].strftime("%Y-%m-%d")
+    end = kwargs["end"].strftime("%Y-%m-%d")
+    return data.loc[
+        start:end,
+        [
+            "coordinates (lat,lon)",
+            "model (name)",
+            "model elevation (surface)",
+            "utc_offset (hrs)",
+        ]
+        + param,
+    ]
 
 
 class TestCustomTransformers:
@@ -603,3 +643,37 @@ class TestCustomTransformers:
         res = combiner.fit_transform(test_df.copy())
 
         assert res.shape == (3, 6)
+
+    @patch("tide.processing.get_oikolab_df", side_effect=mock_get_oikolab_df)
+    def test_fill_oiko_meteo(self, mock_get_oikolab):
+        data = pd.read_csv(
+            RESOURCES_PATH / "meteo_fill_df.csv", parse_dates=True, index_col=0
+        )
+
+        # dig holes
+        data_gap = data.copy()
+        data_gap.loc[
+            "2009-07-11 02:00:00":"2009-07-11 05:00:00", "text__°C__outdoor"
+        ] = np.nan
+        data_gap.loc["2009-07-12 18:00:00"::, "text__°C__outdoor"] = np.nan
+        data_gap.loc[
+            "2009-07-11 18:00:00":"2009-07-12 07:00:00", "gh__W/m²__outdoor"
+        ] = np.nan
+
+        meteo_filler = FillOikoMeteo(
+            gaps_gte="4h",
+            lat=-48.87667,
+            lon=-123.39333,
+            param_map={
+                "text__°C__outdoor": "temperature",
+                "gh__W/m²__outdoor": "surface_solar_radiation",
+                "rh__0-1__outdoor": "relative_humidity",
+            },
+        )
+
+        meteo_filler.fit_transform(data_gap)
+
+        pd.testing.assert_series_equal(
+            data["gh__W/m²__outdoor"], data_gap["gh__W/m²__outdoor"]
+        )
+        assert float(data_gap["text__°C__outdoor"].isnull().sum()) == 13
