@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -14,9 +16,11 @@ from tide.utils import (
     get_outer_timestamps,
     check_and_return_dt_index_df,
     parse_request_to_col_names,
+    get_freq_delta_or_min_time_interval,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
+from tide.meteo import get_oikolab_df
 
 MODEL_MAP = {"STL": SkSTLForecast}
 
@@ -1124,7 +1128,6 @@ class FillGapsAR(BaseProcessing):
         self.model_ = MODEL_MAP[self.model_name]
         self.features_ = X.columns
         self.index_ = X.index
-
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
@@ -1231,3 +1234,104 @@ class ExpressionCombine(BaseProcessing):
             ]
         else:
             return X
+
+
+class FillOikoMeteo(BaseFiller, BaseProcessing):
+    """
+    A processor that fills gaps using meteorological data from the Oikolab API.
+
+    This class extends BaseFiller to provide functionality for
+    filtering gaps based onthere size. It fills them with corresponding
+    meteorological data retrieved from the Oikolab API.
+
+    Attributes:
+    -----------
+    lat : float
+        Latitude of the location for which to retrieve meteorological data.
+    lon : float
+        Longitude of the location for which to retrieve meteorological data.
+    param_map : dict[str, str]
+        Mapping of input columns to Oikolab API parameters. Oikolab parameters are :
+        'temperature', 'dewpoint_temperature', 'mean_sea_level_pressure',
+        'wind_speed', '100m_wind_speed', 'relative_humidity',
+        'surface_solar_radiation', 'direct_normal_solar_radiation',
+        'surface_diffuse_solar_radiation', 'surface_thermal_radiation',
+        'total_cloud_cover', 'total_precipitation'
+    model : str
+        The meteorological model to use for data retrieval (default is "era5").
+    env_oiko_api_key : str
+        The name of the environement variable that holds the Oikolab API key
+        (set during fitting).
+
+    Example:
+    --------
+    >>> filler = FillOikoMeteo(gaps_gte="1h", gaps_lte="24h", lat=43.47, lon=-1.51)
+    >>> filler.fit(X)
+    >>> X_filled = filler.transform(X)
+
+    Notes:
+    ------
+    - The class requires an Oikolab API key to be set as an environment
+    variable env_oiko_api_key.
+    - If param_map is not provided, all columns will be filled with temperature data.
+    This dumb behavior ensures the processing object is working with default values
+    to comply with scikit learn API recomandation.
+    - The class handles different frequencies of input data, interpolating or
+    resampling as needed.
+    """
+
+    def __init__(
+        self,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        param_map: dict[str, str] = None,
+        model: str = "era5",
+        env_oiko_api_key: str = "OIKO_API_KEY",
+    ):
+        super().__init__(gaps_lte, gaps_gte)
+        self.lat = lat
+        self.lon = lon
+        self.param_map = param_map
+        self.model = model
+        self.env_oiko_api_key = env_oiko_api_key
+
+    def fit(self, X, y=None):
+        X = check_and_return_dt_index_df(X)
+        if self.param_map is None:
+            # Dumb action fill everything with temperature
+            self.param_map = {col: "temperature" for col in X.columns}
+        self.api_key_ = os.getenv(self.env_oiko_api_key)
+        self.fitted_ = True
+        return self
+
+    def transform(self, X: pd.Series | pd.DataFrame):
+        X = check_and_return_dt_index_df(X)
+        x_freq = get_freq_delta_or_min_time_interval(X)
+        check_is_fitted(self, attributes=["fitted_", "api_key_"])
+        gaps_dict = self.get_gaps_dict_to_fill(X)
+        for col, idx_list in gaps_dict.items():
+            for idx in idx_list:
+                end = (
+                    idx[-1]
+                    if idx[-1] <= idx[-1].replace(hour=23, minute=0)
+                    else idx[-1] + pd.Timedelta("1h")
+                )
+                df = get_oikolab_df(
+                    lat=self.lat,
+                    lon=self.lon,
+                    start=idx[0],
+                    end=end,
+                    api_key=self.api_key_,
+                    param=[self.param_map[col]],
+                    model=self.model,
+                )
+
+                ts = df[self.param_map[col]]
+                if x_freq < pd.Timedelta("1h"):
+                    ts = ts.asfreq(x_freq).interpolate("linear")
+                elif x_freq > pd.Timedelta("1h"):
+                    ts = ts.resample(x_freq).mean()
+                X.loc[idx, col] = ts.loc[idx]
+        return X
