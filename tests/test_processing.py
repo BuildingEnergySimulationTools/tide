@@ -644,7 +644,7 @@ class TestCustomTransformers:
 
         assert res.shape == (3, 6)
 
-    @patch("tide.processing.get_oikolab_df", side_effect=mock_get_oikolab_df)
+    @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
     def test_fill_oiko_meteo(self, mock_get_oikolab):
         data = pd.read_csv(
             RESOURCES_PATH / "meteo_fill_df.csv", parse_dates=True, index_col=0
@@ -664,7 +664,7 @@ class TestCustomTransformers:
             gaps_gte="4h",
             lat=-48.87667,
             lon=-123.39333,
-            param_map={
+            columns_param_map={
                 "text__°C__outdoor": "temperature",
                 "gh__W/m²__outdoor": "surface_solar_radiation",
                 "rh__0-1__outdoor": "relative_humidity",

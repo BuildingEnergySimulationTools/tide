@@ -1,3 +1,5 @@
+import os
+
 import datetime as dt
 import typing
 from abc import ABC, abstractmethod
@@ -15,7 +17,10 @@ from tide.utils import (
     validate_odd_param,
     process_stl_odd_args,
     get_data_blocks,
+    get_freq_delta_or_min_time_interval,
 )
+
+from tide.meteo import get_oikolab_df
 
 
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
@@ -29,12 +34,12 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         pass
 
     @abstractmethod
-    def transform(self, X):
+    def transform(self, X: pd.Series | pd.DataFrame):
         """Operations happening during transforming process"""
         pass
 
 
-class BaseSTL(ABC, BaseEstimator):
+class BaseSTL(BaseEstimator):
     def __init__(
         self,
         period: int | str | dt.timedelta = "24h",
@@ -95,3 +100,45 @@ class BaseFiller:
                 df_mask[col] = np.zeros_like(X.shape[0]).astype(bool)
 
         return df_mask
+
+
+class BaseOikoMeteo:
+    def __init__(
+        self,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        model: str = "era5",
+        env_oiko_api_key: str = "OIKO_API_KEY",
+    ):
+        self.lat = lat
+        self.lon = lon
+        self.model = model
+        self.env_oiko_api_key = env_oiko_api_key
+
+    def get_api_key_from_env(self):
+        self.api_key_ = os.getenv(self.env_oiko_api_key)
+
+    def get_meteo_at_x_freq(self, X: pd.Series | pd.DataFrame, param: list[str]):
+        check_is_fitted(self, attributes=["api_key_"])
+        x_freq = get_freq_delta_or_min_time_interval(X)
+        end = (
+            X.index[-1]
+            if X.index[-1] <= X.index[-1].replace(hour=23, minute=0)
+            else X.index[-1] + pd.Timedelta("1h")
+        )
+        df = get_oikolab_df(
+            lat=self.lat,
+            lon=self.lon,
+            start=X.index[0],
+            end=end,
+            api_key=self.api_key_,
+            param=param,
+            model=self.model,
+        )
+
+        df = df[param]
+        if x_freq < pd.Timedelta("1h"):
+            df = df.asfreq(x_freq).interpolate("linear")
+        elif x_freq > pd.Timedelta("1h"):
+            df = df.resample(x_freq).mean()
+        return df

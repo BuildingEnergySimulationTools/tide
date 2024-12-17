@@ -9,14 +9,13 @@ from collections.abc import Callable
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
 
-from tide.base import BaseProcessing, BaseFiller
+from tide.base import BaseProcessing, BaseFiller, BaseOikoMeteo
 from tide.math import time_gradient
 from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
     check_and_return_dt_index_df,
     parse_request_to_col_names,
-    get_freq_delta_or_min_time_interval,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
@@ -1236,7 +1235,7 @@ class ExpressionCombine(BaseProcessing):
             return X
 
 
-class FillOikoMeteo(BaseFiller, BaseProcessing):
+class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
     """
     A processor that fills gaps using meteorological data from the Oikolab API.
 
@@ -1286,52 +1285,30 @@ class FillOikoMeteo(BaseFiller, BaseProcessing):
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
         lat: float = 43.47,
         lon: float = -1.51,
-        param_map: dict[str, str] = None,
+        columns_param_map: dict[str, str] = None,
         model: str = "era5",
         env_oiko_api_key: str = "OIKO_API_KEY",
     ):
-        super().__init__(gaps_lte, gaps_gte)
-        self.lat = lat
-        self.lon = lon
-        self.param_map = param_map
-        self.model = model
-        self.env_oiko_api_key = env_oiko_api_key
+        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
+        BaseProcessing.__init__(self)
+        self.columns_param_map = columns_param_map
 
     def fit(self, X, y=None):
         X = check_and_return_dt_index_df(X)
-        if self.param_map is None:
+        if self.columns_param_map is None:
             # Dumb action fill everything with temperature
-            self.param_map = {col: "temperature" for col in X.columns}
-        self.api_key_ = os.getenv(self.env_oiko_api_key)
+            self.columns_param_map = {col: "temperature" for col in X.columns}
+        self.get_api_key_from_env()
         self.fitted_ = True
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
         X = check_and_return_dt_index_df(X)
-        x_freq = get_freq_delta_or_min_time_interval(X)
         check_is_fitted(self, attributes=["fitted_", "api_key_"])
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
             for idx in idx_list:
-                end = (
-                    idx[-1]
-                    if idx[-1] <= idx[-1].replace(hour=23, minute=0)
-                    else idx[-1] + pd.Timedelta("1h")
-                )
-                df = get_oikolab_df(
-                    lat=self.lat,
-                    lon=self.lon,
-                    start=idx[0],
-                    end=end,
-                    api_key=self.api_key_,
-                    param=[self.param_map[col]],
-                    model=self.model,
-                )
-
-                ts = df[self.param_map[col]]
-                if x_freq < pd.Timedelta("1h"):
-                    ts = ts.asfreq(x_freq).interpolate("linear")
-                elif x_freq > pd.Timedelta("1h"):
-                    ts = ts.resample(x_freq).mean()
-                X.loc[idx, col] = ts.loc[idx]
+                df = self.get_meteo_at_x_freq(X, [self.columns_param_map[col]])
+                X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
         return X
