@@ -141,4 +141,4 @@ class BaseOikoMeteo:
             df = df.asfreq(x_freq).interpolate("linear")
         elif x_freq > pd.Timedelta("1h"):
             df = df.resample(x_freq).mean()
-        return df
+        return df.loc[X.index, :]
