@@ -1,5 +1,3 @@
-import os
-
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -19,9 +17,23 @@ from tide.utils import (
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
-from tide.meteo import get_oikolab_df
 
 MODEL_MAP = {"STL": SkSTLForecast}
+
+OIKOLAB_DEFAULT_MAP = {
+    "temperature": "t_ext__°C__outdoor__meteo",
+    "dewpoint_temperature": "t_dp__°C__outdoor__meteo",
+    "mean_sea_level_pressure": "pressure__Pa__outdoor__meteo",
+    "wind_speed": "wind_speed__m/s__outdoor__meteo",
+    "100m_wind_speed": "100m_wind_speed__m/s__outdoor__meteo",
+    "relative_humidity": "rh__0-1RH__outdoor__meteo",
+    "surface_solar_radiation": "gho__w/m²__outdoor__meteo",
+    "direct_normal_solar_radiation": "dni__w/m²__outdoor__meteo",
+    "surface_diffuse_solar_radiation": "dhi__w/m²__outdoor__meteo",
+    "surface_thermal_radiation": "thermal_radiation__w/m²__outdoor__meteo",
+    "total_cloud_cover": "total_cloud_cover__0-1cover__outdoor__meteo",
+    "total_precipitation": "total_precipitation__mm__outdoor__meteo",
+}
 
 
 class Identity(BaseProcessing):
@@ -1311,4 +1323,81 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
             for idx in idx_list:
                 df = self.get_meteo_at_x_freq(X, [self.columns_param_map[col]])
                 X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
+        return X
+
+
+class AddOikoData(BaseOikoMeteo, BaseProcessing):
+    """
+    A transformer class to fetch and integrate Oikolab meteorological data
+    into a given time-indexed DataFrame or Series.
+
+    It retrieves weather data such as temperature, wind speed, or humidity
+    at specified latitude and longitude, and adds it to the input DataFrame
+    under user-specified column names.
+
+    Parameters
+    ----------
+    lat : float, optional
+        Latitude of the location for which meteorological data is to be fetched.
+        Default is 43.47.
+    lon : float, optional
+        Longitude of the location for which meteorological data is to be fetched.
+        Default is -1.51.
+    param_columns_map : dict[str, str], optional
+        A mapping of meteorological parameter names (keys) to column names (values)
+        in the resulting DataFrame. Default is `OIKOLAB_DEFAULT_MAP`.
+        Example:
+         `{"temperature": "text__°C__meteo", "wind_speed": "wind__m/s__meteo"}`
+    model : str, optional
+        The meteorological model to use for fetching data. Default is "era5".
+    env_oiko_api_key : str, optional
+        The name of the environment variable containing the Oikolab API key.
+        Default is "OIKO_API_KEY".
+
+    Methods
+    -------
+    fit(X: pd.Series | pd.DataFrame, y=None)
+        Checks the input DataFrame for conflicts with target column names
+        and validates the API key availability.
+
+    transform(X: pd.Series | pd.DataFrame)
+        Fetches meteorological data and appends it to the input DataFrame
+        under the specified column names at given frequency.
+
+    Notes
+    -----
+    - This class requires access to the Oikolab API, and a valid API key must
+      be set as an environment variable.
+    - The input DataFrame must have a DateTimeIndex for fetching data at specific
+      time frequencies.
+    """
+
+    def __init__(
+        self,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        param_columns_map: dict[str, str] = OIKOLAB_DEFAULT_MAP,
+        model: str = "era5",
+        env_oiko_api_key: str = "OIKO_API_KEY",
+    ):
+        BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
+        BaseProcessing.__init__(self)
+        self.param_columns_map = param_columns_map
+
+    def fit(self, X: pd.Series | pd.DataFrame, y=None):
+        X = check_and_return_dt_index_df(X)
+        mask = X.columns.isin(self.param_columns_map.values())
+        if mask.any():
+            raise ValueError(
+                f"Cannot add Oikolab meteo data. {X.columns[mask]} already in columns"
+            )
+        self.get_api_key_from_env()
+        self.columns_check_ = True
+        return self
+
+    def transform(self, X: pd.Series | pd.DataFrame):
+        X = check_and_return_dt_index_df(X)
+        check_is_fitted(self, attributes=["columns_check_", "api_key_"])
+        df = self.get_meteo_at_x_freq(X, list(self.param_columns_map.keys()))
+        X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
         return X

@@ -30,6 +30,7 @@ from tide.processing import (
     Interpolate,
     ExpressionCombine,
     FillOikoMeteo,
+    AddOikoData,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -677,3 +678,18 @@ class TestCustomTransformers:
             data["gh__W/m²__outdoor"], data_gap["gh__W/m²__outdoor"]
         )
         assert float(data_gap["text__°C__outdoor"].isnull().sum()) == 13
+
+    @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
+    def test_add_oiko_data(self, mock_get_oikolab):
+        data_idx = pd.date_range(
+            start="2009-07-11 16:00:00+00:00",
+            end="2009-07-12 23:15:00+00:00",
+            freq="15min",
+        )
+        data = pd.DataFrame(
+            {"tin__°C__Building": np.random.randn(len(data_idx))}, index=data_idx
+        )
+        add_oiko = AddOikoData(lat=-48.87667, lon=-123.39333)
+        res = add_oiko.fit_transform(data)
+        assert not res.isnull().any().any()
+        assert res.shape == (126, 13)
