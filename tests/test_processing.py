@@ -429,6 +429,8 @@ class TestCustomTransformers:
             ),
         )
 
+        assert trans.get_feature_names_out() == ["c", "combined"]
+
         ref = x_in.copy()
         ref["combined"] = [2, 4]
         trans.set_params(drop_columns=False)

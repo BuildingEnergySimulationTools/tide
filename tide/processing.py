@@ -880,7 +880,7 @@ class ColumnsCombine(BaseProcessing):
         drop_columns: bool = False,
         label_name: str = "combined",
     ):
-        super().__init__()
+        BaseProcessing.__init__(self, added_columns=[label_name])
         self.function = function
         self.tide_format_columns = tide_format_columns
         self.columns = columns
@@ -897,6 +897,8 @@ class ColumnsCombine(BaseProcessing):
             if self.tide_format_columns
             else self.columns
         )
+        self.required_columns = self.columns_to_combine_
+        self.removed_columns = self.columns_to_combine_ if self.drop_columns else None
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
@@ -1155,7 +1157,7 @@ class ExpressionCombine(BaseProcessing):
         for key, val in self.variables_dict.items():
             exp = exp.replace(key, f'X["{val}"]')
 
-        X[self.result_col_name] = pd.eval(exp, target=X)
+        X.loc[:, self.result_col_name] = pd.eval(exp, target=X)
         if self.drop_variables:
             return X[
                 [col for col in X.columns if col not in self.variables_dict.values()]
