@@ -71,14 +71,11 @@ class Identity(BaseProcessing):
     def __init__(self):
         super().__init__()
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X):
-        return check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        return X
 
 
 class ReplaceDuplicated(BaseProcessing):
@@ -111,14 +108,10 @@ class ReplaceDuplicated(BaseProcessing):
         self.keep = keep
         self.value = value
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         for col in X.columns:
             X.loc[X[col].duplicated(keep=self.keep), col] = self.value
         return X
@@ -155,14 +148,11 @@ class Dropna(BaseProcessing):
         super().__init__()
         self.how = how
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        return check_and_return_dt_index_df(X).dropna(how=self.how)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        return X.dropna(how=self.how)
 
 
 class RenameColumns(BaseProcessing):
@@ -198,15 +188,11 @@ class RenameColumns(BaseProcessing):
         super().__init__()
         self.new_names = new_names
 
-    def fit(self, X, y=None):
-        self.features_ = X.columns
-        self.index_ = X.index
-
+    def _fit_implementation(self, X, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
-        check_is_fitted(self, attributes=["features_", "index_"])
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
         if isinstance(self.new_names, list):
             if len(self.new_names) != len(X.columns):
                 raise ValueError(
@@ -219,11 +205,10 @@ class RenameColumns(BaseProcessing):
         return X
 
     def inverse_transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_", "index_"])
-        X = check_and_return_dt_index_df(X)
+        check_is_fitted(self, attributes=["feature_names_in_"])
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame(X)
-        X.columns = self.features_
+        X.columns = self.feature_names_in_
         return self.transform(X)
 
 
@@ -263,21 +248,18 @@ class SkTransform(BaseProcessing):
         super().__init__()
         self.transformer = transformer
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.transformer.fit(X)
-        self.features_ = X.columns
-        self.index_ = X.index
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_", "index_"])
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
         return pd.DataFrame(
             data=self.transformer.transform(X), index=X.index, columns=X.columns
         )
 
     def inverse_transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_", "index_"])
+        check_is_fitted(self, attributes=["feature_names_in_"])
         X = check_and_return_dt_index_df(X)
         return pd.DataFrame(
             data=self.transformer.inverse_transform(X), index=X.index, columns=X.columns
@@ -309,14 +291,10 @@ class ReplaceThreshold(BaseProcessing):
         self.upper = upper
         self.value = value
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         if self.lower is not None:
             lower_mask = X < self.lower
         else:
@@ -379,14 +357,10 @@ class DropTimeGradient(BaseProcessing):
         self.upper_rate = upper_rate
         self.lower_rate = lower_rate
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X_transformed = []
         for column in X.columns:
             X_column = X[column]
@@ -455,14 +429,10 @@ class ApplyExpression(BaseProcessing):
         super().__init__()
         self.expression = expression
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         return eval(self.expression)
 
 
@@ -495,14 +465,10 @@ class TimeGradient(BaseProcessing):
     def __init__(self):
         super().__init__()
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
         return derivative.reindex(original_index)
@@ -533,14 +499,10 @@ class Ffill(BaseProcessing):
         super().__init__()
         self.limit = limit
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         return X.ffill(limit=self.limit)
 
 
@@ -569,14 +531,10 @@ class Bfill(BaseProcessing):
         super().__init__()
         self.limit = limit
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         return X.bfill(limit=self.limit)
 
 
@@ -600,14 +558,10 @@ class FillNa(BaseProcessing):
         super().__init__()
         self.value = value
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         return X.fillna(self.value)
 
 
@@ -665,17 +619,14 @@ class Interpolate(BaseFiller, BaseProcessing):
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
     ):
-        super().__init__(gaps_lte, gaps_gte)
+        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseProcessing.__init__(self)
         self.method = method
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         gaps_mask = self.get_gaps_mask(X)
         X_full = X.interpolate(method=self.method)
         X[gaps_mask] = X_full[gaps_mask]
@@ -721,9 +672,7 @@ class Resample(BaseProcessing):
         self.tide_format_methods = tide_format_methods
         self.columns_methods = columns_methods
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        _ = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.tide_format_methods:
             self.columns_methods = []
             for req, method in self.tide_format_methods.items():
@@ -733,10 +682,8 @@ class Resample(BaseProcessing):
 
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_"])
-        X = check_and_return_dt_index_df(X)
-
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
         if not self.columns_methods:
             agg_dict = {col: self.method for col in X.columns}
         else:
@@ -791,8 +738,7 @@ class AddTimeLag(BaseProcessing):
         self.feature_marker = feature_marker
         self.drop_resulting_nan = drop_resulting_nan
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.features_to_lag = (
             [self.features_to_lag]
             if isinstance(self.features_to_lag, str)
@@ -806,9 +752,8 @@ class AddTimeLag(BaseProcessing):
         self.is_fitted_ = True
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["is_fitted_"])
-        X = check_and_return_dt_index_df(X)
         if self.features_to_lag is None:
             self.features_to_lag = X.columns
         to_lag = X[self.features_to_lag].copy()
@@ -876,15 +821,11 @@ class GaussianFilter1D(BaseProcessing):
         self.mode = mode
         self.truncate = truncate
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame, y=None):
-        check_is_fitted(self, attributes=["features_"])
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
         gauss_filter = partial(
             gaussian_filter1d, sigma=self.sigma, mode=self.mode, truncate=self.truncate
         )
@@ -947,8 +888,7 @@ class ColumnsCombine(BaseProcessing):
         self.drop_columns = drop_columns
         self.label_name = label_name
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.columns is None and self.tide_format_columns is None:
             raise ValueError("Provide at least one of columns or tide_format_columns")
 
@@ -959,9 +899,8 @@ class ColumnsCombine(BaseProcessing):
         )
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["columns_to_combine_"])
-        X = check_and_return_dt_index_df(X)
         X[self.label_name] = self.function(
             X[self.columns_to_combine_], **self.function_kwargs
         )
@@ -1043,10 +982,7 @@ class STLFilter(BaseProcessing):
         self.seasonal = seasonal
         self.stl_additional_kwargs = stl_additional_kwargs
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
-        self.features_ = X.columns
-        self.index_ = X.index
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.stl_ = STLEDetector(
             self.period,
             self.trend,
@@ -1057,9 +993,8 @@ class STLFilter(BaseProcessing):
         self.stl_.fit(X)
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["features_", "stl_"])
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "stl_"])
         errors = self.stl_.predict(X)
         errors = errors.astype(bool)
         for col in errors:
@@ -1123,16 +1058,12 @@ class FillGapsAR(BaseProcessing):
         to_predict.name = col
         X.loc[idx, col] = bc_model.predict(to_predict).to_numpy().flatten()
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.model_ = MODEL_MAP[self.model_name]
-        self.features_ = X.columns
-        self.index_ = X.index
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["model_"])
-        X = check_and_return_dt_index_df(X)
         gaps = get_data_blocks(
             X,
             is_null=True,
@@ -1212,17 +1143,16 @@ class ExpressionCombine(BaseProcessing):
         result_col_name: str,
         drop_variables: bool = False,
     ):
+        super().__init__()
         self.variables_dict = variables_dict
         self.expression = expression
         self.result_col_name = result_col_name
         self.drop_variables = drop_variables
 
-    def fit(self, X, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X, y=None):
         return self
 
-    def transform(self, X):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         exp = self.expression
         for key, val in self.variables_dict.items():
             exp = exp.replace(key, f'X["{val}"]')
@@ -1290,15 +1220,15 @@ class FillOikoMeteo(BaseFiller, BaseProcessing):
         model: str = "era5",
         env_oiko_api_key: str = "OIKO_API_KEY",
     ):
-        super().__init__(gaps_lte, gaps_gte)
+        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseProcessing.__init__(self)
         self.lat = lat
         self.lon = lon
         self.param_map = param_map
         self.model = model
         self.env_oiko_api_key = env_oiko_api_key
 
-    def fit(self, X, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X, y=None):
         if self.param_map is None:
             # Dumb action fill everything with temperature
             self.param_map = {col: "temperature" for col in X.columns}
@@ -1306,10 +1236,9 @@ class FillOikoMeteo(BaseFiller, BaseProcessing):
         self.fitted_ = True
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
-        x_freq = get_freq_delta_or_min_time_interval(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["fitted_", "api_key_"])
+        x_freq = get_freq_delta_or_min_time_interval(X)
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
             for idx in idx_list:

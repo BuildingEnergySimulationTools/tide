@@ -116,7 +116,6 @@ class TestCustomTransformers:
 
         dropper.fit(df)
         assert list(df.columns) == list(dropper.get_feature_names_out())
-        pd.testing.assert_index_equal(df.index, dropper.index)
         pd.testing.assert_frame_equal(dropper.transform(df), ref)
 
     def test_pd_rename_columns(self):
@@ -131,7 +130,6 @@ class TestCustomTransformers:
 
         renamer.fit(df)
         assert list(df.columns) == list(renamer.get_feature_names_out())
-        pd.testing.assert_index_equal(df.index, renamer.index_)
         assert list(renamer.transform(df).columns) == new_cols
 
         new_cols_dict = {"d": "a"}
