@@ -116,7 +116,6 @@ class TestCustomTransformers:
 
         dropper.fit(df)
         assert list(df.columns) == list(dropper.get_feature_names_out())
-        pd.testing.assert_index_equal(df.index, dropper.index)
         pd.testing.assert_frame_equal(dropper.transform(df), ref)
 
     def test_pd_rename_columns(self):
@@ -130,8 +129,8 @@ class TestCustomTransformers:
         renamer = RenameColumns(new_names=new_cols)
 
         renamer.fit(df)
-        assert list(df.columns) == list(renamer.get_feature_names_out())
-        pd.testing.assert_index_equal(df.index, renamer.index_)
+        assert list(df.columns) == renamer.get_feature_names_in()
+        assert renamer.get_feature_names_out() == new_cols
         assert list(renamer.transform(df).columns) == new_cols
 
         new_cols_dict = {"d": "a"}
@@ -251,7 +250,7 @@ class TestCustomTransformers:
     def test_pd_ffill(self):
         test = pd.DataFrame(
             {
-                "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, 3.0],
+                "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
@@ -259,19 +258,30 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {
-                "cpt1": [0.0, 0.0, 2.0, 2.0, 2.0, 3.0],
+                "cpt1": [0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 2.0, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
         )
 
         filler = Ffill()
-        pd.testing.assert_frame_equal(ref, filler.fit_transform(test))
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
+
+        ref = pd.DataFrame(
+            {
+                "cpt1": [0.0, 0.0, 2.0, 2.0, np.nan, np.nan],
+                "cpt2": [0.0, 1.0, 2.0, 2.0, 2.0, 3.0],
+            },
+            index=pd.date_range("2009", freq="h", periods=6),
+        )
+
+        filler = Ffill(gaps_lte="1h")
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
 
     def test_pd_bfill(self):
         test = pd.DataFrame(
             {
-                "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, 3.0],
+                "cpt1": [np.nan, np.nan, 2.0, 2.0, np.nan, 3.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
@@ -279,19 +289,29 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {
-                "cpt1": [0.0, 2.0, 2.0, 2.0, 3.0, 3.0],
+                "cpt1": [2.0, 2.0, 2.0, 2.0, 3.0, 3.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 3.0, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
         )
 
         filler = Bfill()
-        pd.testing.assert_frame_equal(ref, filler.fit_transform(test))
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
+
+        filler = Bfill(gaps_lte="1h")
+        ref = pd.DataFrame(
+            {
+                "cpt1": [np.nan, np.nan, 2.0, 2.0, 3.0, 3.0],
+                "cpt2": [0.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            },
+            index=pd.date_range("2009", freq="h", periods=6),
+        )
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
 
     def test_pd_fill_na(self):
         test = pd.DataFrame(
             {
-                "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, 3.0],
+                "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
@@ -299,14 +319,26 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {
-                "cpt1": [0.0, 0.0, 2.0, 2.0, 0.0, 3.0],
+                "cpt1": [0.0, 0.0, 2.0, 2.0, 0.0, 0.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 0.0, 3.0],
             },
             index=pd.date_range("2009", freq="h", periods=6),
         )
 
         filler = FillNa(value=0.0)
-        pd.testing.assert_frame_equal(ref, filler.fit_transform(test))
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
+
+        filler = FillNa(value=0.0, gaps_lte="1h")
+        ref = pd.DataFrame(
+            {
+                "cpt1": [0.0, 0.0, 2.0, 2.0, np.nan, np.nan],
+                "cpt2": [0.0, 1.0, 2.0, 2.0, 0.0, 3.0],
+            },
+            index=pd.date_range("2009", freq="h", periods=6),
+        )
+        pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
+
+        assert True
 
     def test_resampler(self):
         np.random.seed(42)
@@ -387,7 +419,13 @@ class TestCustomTransformers:
         )
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
-
+        lager.fit(df)
+        assert lager.get_feature_names_out() == [
+            "col0",
+            "col1",
+            "1:00:00_col0",
+            "1:00:00_col1",
+        ]
         pd.testing.assert_frame_equal(ref, lager.fit_transform(df))
 
     def test_pd_gaussian_filter(self):
@@ -430,6 +468,8 @@ class TestCustomTransformers:
                 index=pd.date_range("2009", freq="h", periods=2),
             ),
         )
+
+        assert trans.get_feature_names_out() == ["c", "combined"]
 
         ref = x_in.copy()
         ref["combined"] = [2, 4]
@@ -631,6 +671,17 @@ class TestCustomTransformers:
         )
 
         res = combiner.fit_transform(test_df.copy())
+        assert combiner.get_feature_names_out() == [
+            "Tin__°C__building",
+            "Text__°C__outdoor",
+            "radiation__W/m2__outdoor",
+            "Humidity__%HR",
+            "Humidity__%HR__room1",
+            "Humidity_2",
+            "light__DIMENSIONLESS__building",
+            "mass_flwr__m3/h__hvac",
+            "loss_ventilation__J__hvac",
+        ]
 
         np.testing.assert_almost_equal(
             res["loss_ventilation__J__hvac"],

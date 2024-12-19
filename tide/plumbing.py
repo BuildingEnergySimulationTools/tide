@@ -105,9 +105,13 @@ class Plumber:
         else:
             return super().__repr__()
 
-    def show(self):
-        if self.root is not None:
-            self.root.show()
+    def show(self, steps: str | list[str] | slice = slice(None)):
+        if steps is None:
+            if self.root is not None:
+                self.root.show()
+        elif self.data is not None:
+            pipe = self.get_pipeline(steps=steps).fit(self.data)
+            data_columns_to_tree(pipe.get_feature_names_out()).show()
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         self.data = check_and_return_dt_index_df(data)

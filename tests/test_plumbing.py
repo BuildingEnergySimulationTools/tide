@@ -128,7 +128,7 @@ class TestPlumbing:
         assert col_trans is None
 
     def test_get_pipeline_from_dict(self):
-        pipe = {
+        pipe_dict = {
             "fill_1": {"a__°C__zone_1": [["Interpolate"]]},
             # "fill_2": {"b": [["Interpolate"]]},
             "combine": [
@@ -148,7 +148,7 @@ class TestPlumbing:
             "fill_3": [["Interpolate"]],
         }
 
-        pipe = get_pipeline_from_dict(TEST_DF_2.columns, pipe, verbose=True)
+        pipe = get_pipeline_from_dict(TEST_DF_2.columns, pipe_dict, verbose=True)
         pipe.fit_transform(TEST_DF_2.copy())
 
         assert True
