@@ -1143,7 +1143,13 @@ class ExpressionCombine(BaseProcessing):
         result_col_name: str,
         drop_variables: bool = False,
     ):
-        super().__init__()
+        BaseProcessing.__init__(
+            self,
+            required_columns=list(variables_dict.values()),
+            removed_columns=list(variables_dict.values()) if drop_variables else None,
+            added_columns=result_col_name,
+        )
+
         self.variables_dict = variables_dict
         self.expression = expression
         self.result_col_name = result_col_name

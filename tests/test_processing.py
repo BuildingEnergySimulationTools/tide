@@ -629,6 +629,17 @@ class TestCustomTransformers:
         )
 
         res = combiner.fit_transform(test_df.copy())
+        assert combiner.get_feature_names_out() == [
+            "Tin__°C__building",
+            "Text__°C__outdoor",
+            "radiation__W/m2__outdoor",
+            "Humidity__%HR",
+            "Humidity__%HR__room1",
+            "Humidity_2",
+            "light__DIMENSIONLESS__building",
+            "mass_flwr__m3/h__hvac",
+            "loss_ventilation__J__hvac",
+        ]
 
         np.testing.assert_almost_equal(
             res["loss_ventilation__J__hvac"],
