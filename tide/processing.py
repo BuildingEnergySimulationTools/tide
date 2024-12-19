@@ -189,6 +189,14 @@ class RenameColumns(BaseProcessing):
         self.new_names = new_names
 
     def _fit_implementation(self, X, y=None):
+        self.feature_names_in_ = list(X.columns)
+        if isinstance(self.new_names, list):
+            self.removed_columns = list(X.columns)
+            self.added_columns = self.new_names
+        else:
+            self.removed_columns = self.required_columns = list(self.new_names.keys())
+            self.added_columns = list(self.new_names.values())
+
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
@@ -474,7 +482,7 @@ class TimeGradient(BaseProcessing):
         return derivative.reindex(original_index)
 
 
-class Ffill(BaseProcessing):
+class Ffill(BaseFiller, BaseProcessing):
     """
     A class to front-fill missing values in a Pandas DataFrame.
     the limit argument allows the function to stop frontfilling at a certain
@@ -495,18 +503,33 @@ class Ffill(BaseProcessing):
             Fill missing values in the input DataFrame.
     """
 
-    def __init__(self, limit: int = None):
-        super().__init__()
+    def __init__(
+        self,
+        limit: int = None,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+    ):
+        BaseFiller.__init__(self)
+        BaseProcessing.__init__(self)
         self.limit = limit
+        self.gaps_gte = gaps_gte
+        self.gaps_lte = gaps_lte
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return X.ffill(limit=self.limit)
+        filled_x = X.ffill(limit=self.limit)
+
+        if not (self.gaps_gte or self.gaps_lte):
+            return filled_x
+
+        gaps_mask = self.get_gaps_mask(X)
+        X.values[gaps_mask.to_numpy()] = filled_x.values[gaps_mask.to_numpy()]
+        return X
 
 
-class Bfill(BaseProcessing):
+class Bfill(BaseFiller, BaseProcessing):
     """
     A class to back-fill missing values in a Pandas DataFrame.
     the limit argument allows the function to stop backfilling at a certain
@@ -527,18 +550,33 @@ class Bfill(BaseProcessing):
             Fill missing values in the input DataFrame.
     """
 
-    def __init__(self, limit: int = None):
-        super().__init__()
+    def __init__(
+        self,
+        limit: int = None,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+    ):
+        BaseFiller.__init__(self)
+        BaseProcessing.__init__(self)
         self.limit = limit
+        self.gaps_gte = gaps_gte
+        self.gaps_lte = gaps_lte
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return X.bfill(limit=self.limit)
+        filled_x = X.bfill(limit=self.limit)
+
+        if not (self.gaps_gte or self.gaps_lte):
+            return filled_x
+
+        gaps_mask = self.get_gaps_mask(X)
+        X.values[gaps_mask.to_numpy()] = filled_x.values[gaps_mask.to_numpy()]
+        return X
 
 
-class FillNa(BaseProcessing):
+class FillNa(BaseFiller, BaseProcessing):
     """
     A class that extends scikit-learn's TransformerMixin and BaseEstimator
     to fill missing values in a Pandas DataFrame.
@@ -554,15 +592,30 @@ class FillNa(BaseProcessing):
             Fill missing values in the input DataFrame.
     """
 
-    def __init__(self, value: float):
-        super().__init__()
+    def __init__(
+        self,
+        value: float,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+    ):
+        BaseFiller.__init__(self)
+        BaseProcessing.__init__(self)
         self.value = value
+        self.gaps_gte = gaps_gte
+        self.gaps_lte = gaps_lte
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return X.fillna(self.value)
+        if self.gaps_gte or self.gaps_lte:
+            gaps = self.get_gaps_dict_to_fill(X)
+            for col, gaps in gaps.items():
+                for gap in gaps:
+                    X.loc[gap, col] = X.loc[gap, col].fillna(self.value)
+            return X
+        else:
+            return X.fillna(self.value)
 
 
 class Interpolate(BaseFiller, BaseProcessing):
@@ -619,9 +672,11 @@ class Interpolate(BaseFiller, BaseProcessing):
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
     ):
-        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseFiller.__init__(self)
         BaseProcessing.__init__(self)
         self.method = method
+        self.gaps_gte = gaps_gte
+        self.gaps_lte = gaps_lte
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
