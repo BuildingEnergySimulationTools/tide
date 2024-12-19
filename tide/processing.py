@@ -1003,7 +1003,7 @@ class STLFilter(BaseProcessing):
         return X
 
 
-class FillGapsAR(BaseProcessing):
+class FillGapsAR(BaseFiller, BaseProcessing):
     """
     A class designed to identify gaps in time series data and fill them using
     a specified model.
@@ -1041,14 +1041,13 @@ class FillGapsAR(BaseProcessing):
         self,
         model_name: str = "STL",
         model_kwargs: dict = {},
-        lower_gap_threshold: str | dt.datetime = None,
-        upper_gap_threshold: str | dt.datetime = None,
+        gaps_lte: str | dt.datetime | pd.Timestamp = None,
+        gaps_gte: str | dt.datetime | pd.Timestamp = None,
     ):
-        super().__init__()
+        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseProcessing.__init__(self)
         self.model_name = model_name
         self.model_kwargs = model_kwargs
-        self.lower_gap_threshold = lower_gap_threshold
-        self.upper_gap_threshold = upper_gap_threshold
 
     def _fit_and_fill_x(self, X, biggest_group, col, idx, backcast):
         check_is_fitted(self, attributes=["model_"])
@@ -1064,14 +1063,7 @@ class FillGapsAR(BaseProcessing):
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["model_"])
-        gaps = get_data_blocks(
-            X,
-            is_null=True,
-            return_combination=False,
-            lower_td_threshold=self.lower_gap_threshold,
-            upper_td_threshold=self.upper_gap_threshold,
-        )
-
+        gaps = self.get_gaps_dict_to_fill(X)
         for col in X:
             while gaps[col]:
                 data_blocks = get_data_blocks(X[col], return_combination=False)[col]
