@@ -732,30 +732,35 @@ class AddTimeLag(BaseProcessing):
         feature_marker: str = None,
         drop_resulting_nan=False,
     ):
-        super().__init__()
+        BaseProcessing.__init__(self)
         self.time_lag = time_lag
         self.features_to_lag = features_to_lag
         self.feature_marker = feature_marker
         self.drop_resulting_nan = drop_resulting_nan
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.features_to_lag = (
-            [self.features_to_lag]
-            if isinstance(self.features_to_lag, str)
-            else self.features_to_lag
-        )
+        if self.features_to_lag is None:
+            self.features_to_lag = X.columns
+        else:
+            self.features_to_lag = (
+                [self.features_to_lag]
+                if isinstance(self.features_to_lag, str)
+                else self.features_to_lag
+            )
         self.feature_marker = (
             str(self.time_lag) + "_"
             if self.feature_marker is None
             else self.feature_marker
         )
+        self.required_columns = self.features_to_lag
+        self.added_columns = [
+            self.feature_marker + name for name in self.required_columns
+        ]
         self.is_fitted_ = True
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["is_fitted_"])
-        if self.features_to_lag is None:
-            self.features_to_lag = X.columns
         to_lag = X[self.features_to_lag].copy()
         to_lag.index = to_lag.index + self.time_lag
         to_lag.columns = self.feature_marker + to_lag.columns

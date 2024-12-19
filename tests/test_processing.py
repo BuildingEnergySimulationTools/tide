@@ -385,7 +385,8 @@ class TestCustomTransformers:
         )
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
-
+        lager.fit(df)
+        assert lager.get_feature_names_out() == ['col0', 'col1', '1:00:00_col0', '1:00:00_col1']
         pd.testing.assert_frame_equal(ref, lager.fit_transform(df))
 
     def test_pd_gaussian_filter(self):
