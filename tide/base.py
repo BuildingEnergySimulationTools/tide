@@ -108,7 +108,7 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         self.check_features(X)
         self.feature_names_in_ = list(X.columns)
 
-    def get_feature_names_out(self):
+    def get_feature_names_out(self, input_features=None):
         check_is_fitted(self, attributes=["feature_names_in_"])
         added_columns = _ensure_list(self.added_columns)
         removed_columns = _ensure_list(self.removed_columns)
