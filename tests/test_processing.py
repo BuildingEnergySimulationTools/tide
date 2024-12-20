@@ -31,6 +31,7 @@ from tide.processing import (
     ExpressionCombine,
     FillOikoMeteo,
     AddOikoData,
+    AddSolarAngles,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -744,3 +745,20 @@ class TestCustomTransformers:
         res = add_oiko.fit_transform(data)
         assert not res.isnull().any().any()
         assert res.shape == (126, 13)
+
+    def test_add_solar_angles(self):
+        df = pd.DataFrame(
+            {"a": np.random.randn(24)},
+            index=pd.date_range("2024-12-19", freq="h", periods=24),
+        )
+
+        sun_angle = AddSolarAngles()
+        sun_angle.fit(df.copy())
+        assert sun_angle.get_feature_names_out() == [
+            "a",
+            "sun_el__angle_deg__OTHER__OTHER_SUB_BLOC",
+            "sun_az__angle_deg__OTHER__OTHER_SUB_BLOC",
+        ]
+
+        res = sun_angle.transform(df.copy())
+        assert res.shape == (24, 3)

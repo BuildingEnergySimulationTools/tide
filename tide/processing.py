@@ -17,6 +17,7 @@ from tide.utils import (
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
+from tide.meteo import sun_position
 
 MODEL_MAP = {"STL": SkSTLForecast}
 
@@ -1389,3 +1390,43 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
         df = self.get_meteo_at_x_freq(X, list(self.param_columns_map.keys()))
         X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
         return X
+
+
+class AddSolarAngles(BaseProcessing):
+    """
+    Transformer that adds solar elevation and azimuth angle to passed DataFrame.
+
+    Attributes:
+        lat (float): The latitude of the location in degrees.
+        lon (float): The longitude of the location in degrees.
+        data_bloc (str): Identifier for the tide data block.
+        Default to "OTHER".
+        data_sub_bloc (str): Identifier for the data sub-block;
+        Default to "OTHER_SUB_BLOC".
+    """
+    def __init__(
+        self,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        data_bloc: str = "OTHER",
+        data_sub_bloc: str = "OTHER_SUB_BLOC",
+    ):
+        self.lat = lat
+        self.lon = lon
+        self.data_bloc = data_bloc
+        self.data_sub_bloc = data_sub_bloc
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.added_columns = [
+            f"sun_el__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+            f"sun_az__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+        ]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        df = pd.DataFrame(
+            data=np.array([sun_position(date, self.lat, self.lon) for date in X.index]),
+            columns=self.added_columns,
+            index=X.index,
+        )
+        return pd.concat([X, df], axis=1)
