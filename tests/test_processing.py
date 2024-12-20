@@ -32,6 +32,7 @@ from tide.processing import (
     FillOikoMeteo,
     AddOikoData,
     AddSolarAngles,
+    ProjectSolarRadOnSurfaces,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -762,3 +763,29 @@ class TestCustomTransformers:
 
         res = sun_angle.transform(df.copy())
         assert res.shape == (24, 3)
+
+    def test_processing(self):
+        test_df = pd.read_csv(
+            RESOURCES_PATH / "solar_projection.csv", index_col=0, parse_dates=True
+        )
+
+        test_df["GHI"] = test_df["BHI"] + test_df["DHI"]
+
+        projector = ProjectSolarRadOnSurfaces(
+            bni_column_name="BNI",
+            dhi_column_name="DHI",
+            ghi_column_name="GHI",
+            lat=44.844,
+            lon=-0.564,
+            surface_azimuth_angles=[180.0, 154],
+            surface_tilt_angle=[90.0, 35],
+            albedo=0.25,
+            surface_name=["proj_180_90", "proj_tilt_35_az_154_alb_025"],
+            data_bloc="PV",
+            data_sub_bloc="Pyranometer",
+        )
+
+        projector.fit(test_df)
+        res = projector.transform(test_df.copy())
+
+        assert res.shape == (24, 9)

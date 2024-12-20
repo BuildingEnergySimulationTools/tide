@@ -14,10 +14,11 @@ from tide.utils import (
     get_outer_timestamps,
     check_and_return_dt_index_df,
     parse_request_to_col_names,
+    ensure_list,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
-from tide.meteo import sun_position
+from tide.meteo import sun_position, beam_component, sky_diffuse, ground_diffuse
 
 MODEL_MAP = {"STL": SkSTLForecast}
 
@@ -1404,6 +1405,7 @@ class AddSolarAngles(BaseProcessing):
         data_sub_bloc (str): Identifier for the data sub-block;
         Default to "OTHER_SUB_BLOC".
     """
+
     def __init__(
         self,
         lat: float = 43.47,
@@ -1430,3 +1432,95 @@ class AddSolarAngles(BaseProcessing):
             index=X.index,
         )
         return pd.concat([X, df], axis=1)
+
+
+class ProjectSolarRadOnSurfaces(BaseProcessing):
+    """
+    Project solar radiation on various surfaces with specific orientations and tilts.
+
+    Attributes:
+        bni_column_name (str): Name of the column containing beam normal irradiance
+            (BNI) data.
+        dhi_column_name (str): Name of the column containing diffuse horizontal
+            irradiance (DHI) data.
+        ghi_column_name (str): Name of the column containing global horizontal
+            irradiance (GHI) data.
+        lat (float): Latitude of the location (default is 43.47).
+        lon (float): Longitude of the location (default is -1.51).
+        surface_azimuth_angles (int | float | list[int | float]): Azimuth angles of
+            the surfaces in degrees east of north (default is 180.0,
+            which corresponds to a south-facing surface in the northern hemisphere).
+        surface_tilt_angle (float | list[float]): Tilt angles of the surfaces in
+            degrees (default is 35.0). 0 is façing ground.
+        albedo (float): Ground reflectivity or albedo (default is 0.25).
+        surface_name (str | list[str]): Names for the surfaces
+            (default is "az_180_tilt_35").
+        data_bloc (str): Tide bloc name Default is "OTHER".
+        data_sub_bloc (str): Tide sub_bloc_name default is "OTHER_SUB_BLOC".
+
+    Raises:
+        ValueError: If the number of azimuth angles, tilt angles, and surface names
+        do not match.
+    """
+
+    def __init__(
+        self,
+        bni_column_name: str,
+        dhi_column_name: str,
+        ghi_column_name: str,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        surface_azimuth_angles: int | float | list[int | float] = 180.0,
+        surface_tilt_angle: float | list[float] = 35.0,
+        albedo: float = 0.25,
+        surface_name: str | list[str] = "az_180_tilt_35",
+        data_bloc: str = "OTHER",
+        data_sub_bloc: str = "OTHER_SUB_BLOC",
+    ):
+        BaseProcessing.__init__(self)
+        self.bni_column_name = bni_column_name
+        self.dhi_column_name = dhi_column_name
+        self.ghi_column_name = ghi_column_name
+        self.lat = lat
+        self.lon = lon
+        self.surface_azimuth_angles = surface_azimuth_angles
+        self.surface_tilt_angle = surface_tilt_angle
+        self.albedo = albedo
+        self.surface_name = surface_name
+        self.data_bloc = data_bloc
+        self.data_sub_bloc = data_sub_bloc
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if (
+            not len(ensure_list(self.surface_azimuth_angles))
+            == len(ensure_list(self.surface_tilt_angle))
+            == len(ensure_list(self.surface_name))
+        ):
+            raise ValueError("Number of surface azimuth, tilt and name does not match")
+
+        self.required_columns = [
+            self.bni_column_name,
+            self.dhi_column_name,
+            self.ghi_column_name,
+        ]
+        self.added_columns = [
+            f"{name}__W/m²__{self.data_bloc}__{self.data_sub_bloc}"
+            for name in ensure_list(self.surface_name)
+        ]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        sun_pos = np.array([sun_position(date, self.lat, self.lon) for date in X.index])
+        for az, til, name in zip(
+            ensure_list(self.surface_azimuth_angles),
+            ensure_list(self.surface_tilt_angle),
+            self.added_columns,
+        ):
+            X[name] = (
+                beam_component(
+                    til, az, 90 - sun_pos[:, 0], sun_pos[:, 1], X[self.bni_column_name]
+                )
+                + sky_diffuse(til, X[self.dhi_column_name])
+                + ground_diffuse(til, X[self.ghi_column_name], self.albedo)
+            )
+
+        return X

@@ -432,3 +432,9 @@ def process_stl_odd_args(param_name, X, stl_kwargs):
         if processed_value % 2 == 0:
             processed_value += 1  # Ensure the value is odd
         stl_kwargs[param_name] = processed_value
+
+
+def ensure_list(item):
+    if item is None:
+        return []
+    return item if isinstance(item, list) else [item]

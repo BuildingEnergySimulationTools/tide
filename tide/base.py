@@ -18,15 +18,10 @@ from tide.utils import (
     process_stl_odd_args,
     get_data_blocks,
     get_freq_delta_or_min_time_interval,
+    ensure_list,
 )
 
 from tide.meteo import get_oikolab_df
-
-
-def _ensure_list(item):
-    if item is None:
-        return []
-    return item if isinstance(item, list) else [item]
 
 
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
@@ -115,8 +110,8 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
 
     def get_feature_names_out(self, input_features=None):
         check_is_fitted(self, attributes=["feature_names_in_"])
-        added_columns = _ensure_list(self.added_columns)
-        removed_columns = _ensure_list(self.removed_columns)
+        added_columns = ensure_list(self.added_columns)
+        removed_columns = ensure_list(self.removed_columns)
 
         features_out = self.feature_names_in_.copy() + added_columns
         return [feature for feature in features_out if feature not in removed_columns]
