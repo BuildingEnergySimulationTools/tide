@@ -1371,20 +1371,20 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
         BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
         BaseProcessing.__init__(self)
         self.param_columns_map = param_columns_map
+        self.added_columns = list(self.param_columns_map.values())
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         mask = X.columns.isin(self.param_columns_map.values())
         if mask.any():
             raise ValueError(
                 f"Cannot add Oikolab meteo data. {X.columns[mask]} already in columns"
             )
         self.get_api_key_from_env()
+        self.added_columns = list(self.param_columns_map.values())
         self.columns_check_ = True
         return self
 
-    def transform(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["columns_check_", "api_key_"])
         df = self.get_meteo_at_x_freq(X, list(self.param_columns_map.keys()))
         X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
