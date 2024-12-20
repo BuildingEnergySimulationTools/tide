@@ -23,18 +23,126 @@ from tide.utils import (
 from tide.meteo import get_oikolab_df
 
 
+def _ensure_list(item):
+    if item is None:
+        return []
+    return item if isinstance(item, list) else [item]
+
+
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
+    def _ensure_list(item):
+        """
+        Ensures the input is returned as a list.
+
+        Parameters
+        ----------
+        item : any
+            The input item to be converted to a list if it is not already one.
+            If the input is `None`, an empty list is returned.
+
+        Returns
+        -------
+        list
+            - If `item` is `None`, returns an empty list.
+            - If `item` is already a list, it is returned as is.
+            - Otherwise, wraps the `item` in a list and returns it.
+        """
+        if item is None:
+            return []
+        return item if isinstance(item, list) else [item]
+
+    class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
+        """
+        Abstract base class for processing pipelines with feature checks and
+        transformation logic.
+
+        This class is designed to facilitate transformations by checking input data
+        (DataFrame or Series with DatetimeIndex), ensuring the presence
+        of required features, tracking added and removed features, and enabling
+        seamless integration with scikit-learn's API through fit and transform
+        methods.
+
+        Parameters
+        ----------
+        required_columns : str or list[str], optional
+            Column names that must be present in the input data. Defaults to None.
+        removed_columns : str or list[str], optional
+            Column that will be removed during the transform process. Defaults to None.
+        added_columns : str or list[str], optional
+            Column that will be added to the output feature set during transform
+            process. Defaults to None.
+
+        Methods
+        -------
+        check_features(X):
+            Ensures that the required columns are present in the input DataFrame.
+        fit_check_features(X):
+            Checks required columns and stores the initial feature names.
+        get_feature_names_out():
+            Computes the final set of feature names, accounting for added and removed
+            columns.
+        get_feature_names_in():
+            Returns the names of the features as initially fitted.
+        fit(X, y=None):
+            Fits the transformer to the input data.
+        transform(X):
+            Applies the transformation to the input data.
+        _fit_implementation(X, y=None):
+            Abstract method for the fitting logic. Must be implemented by subclasses.
+        _transform_implementation(X):
+            Abstract method for the transformation logic. Must be implemented by
+            subclasses.
+        """
+
+    def __init__(
+        self,
+        required_columns: str | list[str] = None,
+        removed_columns: str | list[str] = None,
+        added_columns: str | list[str] = None,
+    ):
+        self.required_columns = required_columns
+        self.removed_columns = removed_columns
+        self.added_columns = added_columns
+
+    def check_features(self, X):
+        if self.required_columns is not None:
+            if not set(self.required_columns).issubset(X.columns):
+                raise ValueError("One or several required columns are missing")
+
+    def fit_check_features(self, X):
+        self.check_features(X)
+        self.feature_names_in_ = list(X.columns)
+
     def get_feature_names_out(self, input_features=None):
-        check_is_fitted(self, attributes=["features_"])
-        return self.features_
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        added_columns = _ensure_list(self.added_columns)
+        removed_columns = _ensure_list(self.removed_columns)
+
+        features_out = self.feature_names_in_.copy() + added_columns
+        return [feature for feature in features_out if feature not in removed_columns]
+
+    def get_feature_names_in(self):
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        return self.feature_names_in_
+
+    def fit(self, X: pd.Series | pd.DataFrame, y=None):
+        X = check_and_return_dt_index_df(X)
+        self.fit_check_features(X)
+        self._fit_implementation(X, y)
+        return self
+
+    def transform(self, X: pd.Series | pd.DataFrame):
+        self.check_features(X)
+        X = check_and_return_dt_index_df(X)
+        return self._transform_implementation(X)
 
     @abstractmethod
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         """Operations happening during fitting process"""
         pass
 
     @abstractmethod
-    def transform(self, X: pd.Series | pd.DataFrame):
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         """Operations happening during transforming process"""
         pass
 
