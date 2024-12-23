@@ -906,7 +906,7 @@ class GaussianFilter1D(BaseProcessing):
         return X.apply(gauss_filter)
 
 
-class ColumnsCombine(BaseProcessing):
+class CombineColumns(BaseProcessing):
     """
     A class that combines multiple columns in a pandas DataFrame using a specified
     function.

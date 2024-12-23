@@ -12,7 +12,7 @@ from tide.processing import (
     AddTimeLag,
     ApplyExpression,
     Resample,
-    ColumnsCombine,
+    CombineColumns,
     ReplaceThreshold,
     DropTimeGradient,
     Dropna,
@@ -459,7 +459,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2),
         )
 
-        trans = ColumnsCombine(
+        trans = CombineColumns(
             function=np.sum,
             columns=["a__°C", "b__°C"],
             function_kwargs={"axis": 1},
@@ -482,7 +482,7 @@ class TestCustomTransformers:
 
         pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
 
-        trans = ColumnsCombine(
+        trans = CombineColumns(
             function=np.sum,
             tide_format_columns="°C",
             function_kwargs={"axis": 1},
