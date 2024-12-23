@@ -12,7 +12,7 @@ from tide.processing import (
     AddTimeLag,
     ApplyExpression,
     Resample,
-    ColumnsCombine,
+    CombineColumns,
     ReplaceThreshold,
     DropTimeGradient,
     Dropna,
@@ -34,6 +34,7 @@ from tide.processing import (
     AddSolarAngles,
     ProjectSolarRadOnSurfaces,
     FillOtherColumns,
+    DropColumns,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -458,7 +459,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2),
         )
 
-        trans = ColumnsCombine(
+        trans = CombineColumns(
             function=np.sum,
             columns=["a__°C", "b__°C"],
             function_kwargs={"axis": 1},
@@ -481,7 +482,7 @@ class TestCustomTransformers:
 
         pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
 
-        trans = ColumnsCombine(
+        trans = CombineColumns(
             function=np.sum,
             tide_format_columns="°C",
             function_kwargs={"axis": 1},
@@ -820,3 +821,27 @@ class TestCustomTransformers:
             np.isnan(res["col_1"])
             == np.isnan([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, np.nan, np.nan])
         )
+
+    def test_drop_columns(self):
+        df = pd.DataFrame(
+            {"a": [1, 2], "b": [1, 2], "c": [1, 2]},
+            index=pd.date_range("2009", freq="h", periods=2),
+        )
+
+        col_dropper = DropColumns()
+        col_dropper.fit(df)
+        res = col_dropper.transform(df.copy())
+
+        pd.testing.assert_frame_equal(df, res)
+
+        col_dropper = DropColumns(columns="a")
+        col_dropper.fit(df)
+        res = col_dropper.transform(df.copy())
+
+        pd.testing.assert_frame_equal(df[["b", "c"]], res)
+
+        col_dropper = DropColumns(columns=["a", "b", "c"])
+        col_dropper.fit(df)
+        res = col_dropper.transform(df.copy())
+
+        assert res.shape == (2, 0)
