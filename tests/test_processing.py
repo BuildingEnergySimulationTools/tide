@@ -33,6 +33,7 @@ from tide.processing import (
     AddOikoData,
     AddSolarAngles,
     ProjectSolarRadOnSurfaces,
+    FillOtherColumns,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -789,3 +790,33 @@ class TestCustomTransformers:
         res = projector.transform(test_df.copy())
 
         assert res.shape == (24, 9)
+
+    def test_fill_other_columns(self):
+        df = pd.DataFrame(
+            {
+                "col_1": [np.nan, 2.0, 3.0, np.nan, 5.0, 6.0, 7.0, 8.0, np.nan, np.nan],
+                "col_2": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+                "col_1_fill": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            },
+            index=pd.date_range("2009", freq="h", periods=10),
+        )
+
+        col_filler = FillOtherColumns(columns_map={"col_1": "col_1_fill"})
+        col_filler.fit(df)
+        res = col_filler.transform(df.copy())
+        assert np.all(
+            res["col_1"].values == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        )
+
+        col_filler = FillOtherColumns(
+            gaps_lte="1h",
+            columns_map={"col_1": "col_1_fill"},
+            drop_filling_columns=True,
+        )
+        col_filler.fit(df)
+        res = col_filler.transform(df.copy())
+        assert res.shape == (10, 2)
+        assert np.all(
+            np.isnan(res["col_1"])
+            == np.isnan([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, np.nan, np.nan])
+        )
