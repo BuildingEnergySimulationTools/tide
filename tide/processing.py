@@ -1576,3 +1576,31 @@ class FillOtherColumns(BaseFiller, BaseProcessing):
             if self.drop_filling_columns
             else X
         )
+
+
+class DropColumns(BaseProcessing):
+    """
+    Drop specified columns.
+
+    Parameters
+    ----------
+    columns : str or list[str], optional
+        The column name or a list of column names to be dropped.
+        If None, no columns are dropped.
+
+    """
+
+    def __init__(self, columns: str | list[str] = None):
+        self.columns = columns
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.required_columns = self.columns
+        self.removed_columns = self.columns
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        return (
+            X.drop(self.removed_columns, axis="columns")
+            if self.columns is not None
+            else X
+        )
