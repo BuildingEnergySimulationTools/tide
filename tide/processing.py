@@ -1524,3 +1524,55 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
             )
 
         return X
+
+
+class FillOtherColumns(BaseFiller, BaseProcessing):
+    """
+    Fill gaps in specified columns using corresponding values from
+    other columns
+
+    Parameters
+    ----------
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional
+        Fill gaps of duration less than or equal to gaps_lte.
+        If None, no upper limit is applied.
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional
+        Fill gaps of duration greater than or equal to gaps_gte.
+        If None, no lower limit is applied.
+    columns_map : dict[str, str], optional
+        A mapping of target columns to the columns that will be used for filling
+        their gaps. Keys represent the columns with gaps, and values represent the
+        corresponding filler columns.
+    drop_filling_columns : bool, default=False
+        If True, removes the filler columns after filling the gaps.
+    """
+
+    def __init__(
+        self,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+        columns_map: dict[str, str] = {},
+        drop_filling_columns: bool = False,
+    ):
+        BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseProcessing.__init__(self)
+        self.columns_map = columns_map
+        self.drop_filling_columns = drop_filling_columns
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.required_columns = list(self.columns_map.keys()) + list(
+            self.columns_map.values()
+        )
+        if self.drop_filling_columns:
+            self.removed_columns = list(self.columns_map.values())
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        gap_dict = self.get_gaps_dict_to_fill(X[list(self.columns_map.keys())])
+        for col, idxs in gap_dict.items():
+            for idx in idxs:
+                X.loc[idx, col] = X.loc[idx, self.columns_map[col]]
+        return (
+            X.drop(self.removed_columns, axis="columns")
+            if self.drop_filling_columns
+            else X
+        )
