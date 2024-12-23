@@ -22,7 +22,7 @@ from tide.plot import (
 import tide.processing as pc
 
 
-def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:
+def _get_pipe_from_proc_list(proc_list: list, verbose: bool = False) -> Pipeline:
     proc_units = [
         getattr(pc, proc[0])(
             *proc[1] if len(proc) > 1 and isinstance(proc[1], list) else (),
@@ -30,11 +30,14 @@ def _get_pipe_from_proc_list(proc_list: list) -> Pipeline:
         )
         for proc in proc_list
     ]
-    return make_pipeline(*proc_units)
+    return make_pipeline(*proc_units, verbose=verbose)
 
 
 def _get_column_wise_transformer(
-    proc_dict, data_columns: pd.Index | list[str], process_name: str = None
+    proc_dict,
+    data_columns: pd.Index | list[str],
+    process_name: str = None,
+    verbose: bool = False,
 ) -> ColumnTransformer | None:
     col_trans_list = []
     for req, proc_list in proc_dict.items():
@@ -46,7 +49,7 @@ def _get_column_wise_transformer(
             col_trans_list.append(
                 (
                     f"{process_name}->{name}" if process_name is not None else name,
-                    _get_pipe_from_proc_list(proc_list),
+                    _get_pipe_from_proc_list(proc_list, verbose=verbose),
                     requested_col,
                 )
             )
@@ -58,6 +61,7 @@ def _get_column_wise_transformer(
             col_trans_list,
             remainder="passthrough",
             verbose_feature_names_out=False,
+            verbose=verbose,
         ).set_output(transform="pandas")
 
 
@@ -70,10 +74,12 @@ def get_pipeline_from_dict(
         steps_list = []
         for step, op_conf in pipe_dict.items():
             if isinstance(op_conf, list):
-                operation = _get_pipe_from_proc_list(op_conf)
+                operation = _get_pipe_from_proc_list(op_conf, verbose=verbose)
 
             elif isinstance(op_conf, dict):
-                operation = _get_column_wise_transformer(op_conf, data_columns, step)
+                operation = _get_column_wise_transformer(
+                    op_conf, data_columns, step, verbose
+                )
 
             else:
                 raise ValueError(f"{op_conf} is an invalid operation config")

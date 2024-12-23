@@ -30,6 +30,9 @@ from tide.processing import (
     Interpolate,
     ExpressionCombine,
     FillOikoMeteo,
+    AddOikoData,
+    AddSolarAngles,
+    ProjectSolarRadOnSurfaces,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -695,7 +698,7 @@ class TestCustomTransformers:
 
         assert res.shape == (3, 6)
 
-    @patch("tide.processing.get_oikolab_df", side_effect=mock_get_oikolab_df)
+    @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
     def test_fill_oiko_meteo(self, mock_get_oikolab):
         data = pd.read_csv(
             RESOURCES_PATH / "meteo_fill_df.csv", parse_dates=True, index_col=0
@@ -715,7 +718,7 @@ class TestCustomTransformers:
             gaps_gte="4h",
             lat=-48.87667,
             lon=-123.39333,
-            param_map={
+            columns_param_map={
                 "text__°C__outdoor": "temperature",
                 "gh__W/m²__outdoor": "surface_solar_radiation",
                 "rh__0-1__outdoor": "relative_humidity",
@@ -728,3 +731,61 @@ class TestCustomTransformers:
             data["gh__W/m²__outdoor"], data_gap["gh__W/m²__outdoor"]
         )
         assert float(data_gap["text__°C__outdoor"].isnull().sum()) == 13
+
+    @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
+    def test_add_oiko_data(self, mock_get_oikolab):
+        data_idx = pd.date_range(
+            start="2009-07-11 16:00:00+00:00",
+            end="2009-07-12 23:15:00+00:00",
+            freq="15min",
+        )
+        data = pd.DataFrame(
+            {"tin__°C__Building": np.random.randn(len(data_idx))}, index=data_idx
+        )
+        add_oiko = AddOikoData(lat=-48.87667, lon=-123.39333)
+        res = add_oiko.fit_transform(data)
+        assert not res.isnull().any().any()
+        assert res.shape == (126, 13)
+
+    def test_add_solar_angles(self):
+        df = pd.DataFrame(
+            {"a": np.random.randn(24)},
+            index=pd.date_range("2024-12-19", freq="h", periods=24),
+        )
+
+        sun_angle = AddSolarAngles()
+        sun_angle.fit(df.copy())
+        assert sun_angle.get_feature_names_out() == [
+            "a",
+            "sun_el__angle_deg__OTHER__OTHER_SUB_BLOC",
+            "sun_az__angle_deg__OTHER__OTHER_SUB_BLOC",
+        ]
+
+        res = sun_angle.transform(df.copy())
+        assert res.shape == (24, 3)
+
+    def test_processing(self):
+        test_df = pd.read_csv(
+            RESOURCES_PATH / "solar_projection.csv", index_col=0, parse_dates=True
+        )
+
+        test_df["GHI"] = test_df["BHI"] + test_df["DHI"]
+
+        projector = ProjectSolarRadOnSurfaces(
+            bni_column_name="BNI",
+            dhi_column_name="DHI",
+            ghi_column_name="GHI",
+            lat=44.844,
+            lon=-0.564,
+            surface_azimuth_angles=[180.0, 154],
+            surface_tilt_angle=[90.0, 35],
+            albedo=0.25,
+            surface_name=["proj_180_90", "proj_tilt_35_az_154_alb_025"],
+            data_bloc="PV",
+            data_sub_bloc="Pyranometer",
+        )
+
+        projector.fit(test_df)
+        res = projector.transform(test_df.copy())
+
+        assert res.shape == (24, 9)

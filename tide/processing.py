@@ -1,5 +1,3 @@
-import os
-
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -9,20 +7,35 @@ from collections.abc import Callable
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
 
-from tide.base import BaseProcessing, BaseFiller
+from tide.base import BaseProcessing, BaseFiller, BaseOikoMeteo
 from tide.math import time_gradient
 from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
     check_and_return_dt_index_df,
     parse_request_to_col_names,
-    get_freq_delta_or_min_time_interval,
+    ensure_list,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
-from tide.meteo import get_oikolab_df
+from tide.meteo import sun_position, beam_component, sky_diffuse, ground_diffuse
 
 MODEL_MAP = {"STL": SkSTLForecast}
+
+OIKOLAB_DEFAULT_MAP = {
+    "temperature": "t_ext__°C__outdoor__meteo",
+    "dewpoint_temperature": "t_dp__°C__outdoor__meteo",
+    "mean_sea_level_pressure": "pressure__Pa__outdoor__meteo",
+    "wind_speed": "wind_speed__m/s__outdoor__meteo",
+    "100m_wind_speed": "100m_wind_speed__m/s__outdoor__meteo",
+    "relative_humidity": "rh__0-1RH__outdoor__meteo",
+    "surface_solar_radiation": "gho__w/m²__outdoor__meteo",
+    "direct_normal_solar_radiation": "dni__w/m²__outdoor__meteo",
+    "surface_diffuse_solar_radiation": "dhi__w/m²__outdoor__meteo",
+    "surface_thermal_radiation": "thermal_radiation__w/m²__outdoor__meteo",
+    "total_cloud_cover": "total_cloud_cover__0-1cover__outdoor__meteo",
+    "total_precipitation": "total_precipitation__mm__outdoor__meteo",
+}
 
 
 class Identity(BaseProcessing):
@@ -1226,7 +1239,7 @@ class ExpressionCombine(BaseProcessing):
             return X
 
 
-class FillOikoMeteo(BaseFiller, BaseProcessing):
+class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
     """
     A processor that fills gaps using meteorological data from the Oikolab API.
 
@@ -1276,51 +1289,238 @@ class FillOikoMeteo(BaseFiller, BaseProcessing):
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
         lat: float = 43.47,
         lon: float = -1.51,
-        param_map: dict[str, str] = None,
+        columns_param_map: dict[str, str] = None,
         model: str = "era5",
         env_oiko_api_key: str = "OIKO_API_KEY",
     ):
         BaseFiller.__init__(self, gaps_lte, gaps_gte)
+        BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
         BaseProcessing.__init__(self)
-        self.lat = lat
-        self.lon = lon
-        self.param_map = param_map
-        self.model = model
-        self.env_oiko_api_key = env_oiko_api_key
+        self.columns_param_map = columns_param_map
 
     def _fit_implementation(self, X, y=None):
-        if self.param_map is None:
+        if self.columns_param_map is None:
             # Dumb action fill everything with temperature
-            self.param_map = {col: "temperature" for col in X.columns}
-        self.api_key_ = os.getenv(self.env_oiko_api_key)
+            self.columns_param_map = {col: "temperature" for col in X.columns}
+        self.get_api_key_from_env()
         self.fitted_ = True
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["fitted_", "api_key_"])
-        x_freq = get_freq_delta_or_min_time_interval(X)
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
             for idx in idx_list:
-                end = (
-                    idx[-1]
-                    if idx[-1] <= idx[-1].replace(hour=23, minute=0)
-                    else idx[-1] + pd.Timedelta("1h")
-                )
-                df = get_oikolab_df(
-                    lat=self.lat,
-                    lon=self.lon,
-                    start=idx[0],
-                    end=end,
-                    api_key=self.api_key_,
-                    param=[self.param_map[col]],
-                    model=self.model,
-                )
+                df = self.get_meteo_at_x_freq(X, [self.columns_param_map[col]])
+                X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
+        return X
 
-                ts = df[self.param_map[col]]
-                if x_freq < pd.Timedelta("1h"):
-                    ts = ts.asfreq(x_freq).interpolate("linear")
-                elif x_freq > pd.Timedelta("1h"):
-                    ts = ts.resample(x_freq).mean()
-                X.loc[idx, col] = ts.loc[idx]
+
+class AddOikoData(BaseOikoMeteo, BaseProcessing):
+    """
+    A transformer class to fetch and integrate Oikolab meteorological data
+    into a given time-indexed DataFrame or Series.
+
+    It retrieves weather data such as temperature, wind speed, or humidity
+    at specified latitude and longitude, and adds it to the input DataFrame
+    under user-specified column names.
+
+    Parameters
+    ----------
+    lat : float, optional
+        Latitude of the location for which meteorological data is to be fetched.
+        Default is 43.47.
+    lon : float, optional
+        Longitude of the location for which meteorological data is to be fetched.
+        Default is -1.51.
+    param_columns_map : dict[str, str], optional
+        A mapping of meteorological parameter names (keys) to column names (values)
+        in the resulting DataFrame. Default is `OIKOLAB_DEFAULT_MAP`.
+        Example:
+         `{"temperature": "text__°C__meteo", "wind_speed": "wind__m/s__meteo"}`
+    model : str, optional
+        The meteorological model to use for fetching data. Default is "era5".
+    env_oiko_api_key : str, optional
+        The name of the environment variable containing the Oikolab API key.
+        Default is "OIKO_API_KEY".
+
+    Methods
+    -------
+    fit(X: pd.Series | pd.DataFrame, y=None)
+        Checks the input DataFrame for conflicts with target column names
+        and validates the API key availability.
+
+    transform(X: pd.Series | pd.DataFrame)
+        Fetches meteorological data and appends it to the input DataFrame
+        under the specified column names at given frequency.
+
+    Notes
+    -----
+    - This class requires access to the Oikolab API, and a valid API key must
+      be set as an environment variable.
+    - The input DataFrame must have a DateTimeIndex for fetching data at specific
+      time frequencies.
+    """
+
+    def __init__(
+        self,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        param_columns_map: dict[str, str] = OIKOLAB_DEFAULT_MAP,
+        model: str = "era5",
+        env_oiko_api_key: str = "OIKO_API_KEY",
+    ):
+        BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
+        BaseProcessing.__init__(self)
+        self.param_columns_map = param_columns_map
+        self.added_columns = list(self.param_columns_map.values())
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        mask = X.columns.isin(self.param_columns_map.values())
+        if mask.any():
+            raise ValueError(
+                f"Cannot add Oikolab meteo data. {X.columns[mask]} already in columns"
+            )
+        self.get_api_key_from_env()
+        self.added_columns = list(self.param_columns_map.values())
+        self.columns_check_ = True
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["columns_check_", "api_key_"])
+        df = self.get_meteo_at_x_freq(X, list(self.param_columns_map.keys()))
+        X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
+        return X
+
+
+class AddSolarAngles(BaseProcessing):
+    """
+    Transformer that adds solar elevation and azimuth angle to passed DataFrame.
+
+    Attributes:
+        lat (float): The latitude of the location in degrees.
+        lon (float): The longitude of the location in degrees.
+        data_bloc (str): Identifier for the tide data block.
+        Default to "OTHER".
+        data_sub_bloc (str): Identifier for the data sub-block;
+        Default to "OTHER_SUB_BLOC".
+    """
+
+    def __init__(
+        self,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        data_bloc: str = "OTHER",
+        data_sub_bloc: str = "OTHER_SUB_BLOC",
+    ):
+        self.lat = lat
+        self.lon = lon
+        self.data_bloc = data_bloc
+        self.data_sub_bloc = data_sub_bloc
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.added_columns = [
+            f"sun_el__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+            f"sun_az__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+        ]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        df = pd.DataFrame(
+            data=np.array([sun_position(date, self.lat, self.lon) for date in X.index]),
+            columns=self.added_columns,
+            index=X.index,
+        )
+        return pd.concat([X, df], axis=1)
+
+
+class ProjectSolarRadOnSurfaces(BaseProcessing):
+    """
+    Project solar radiation on various surfaces with specific orientations and tilts.
+
+    Attributes:
+        bni_column_name (str): Name of the column containing beam normal irradiance
+            (BNI) data.
+        dhi_column_name (str): Name of the column containing diffuse horizontal
+            irradiance (DHI) data.
+        ghi_column_name (str): Name of the column containing global horizontal
+            irradiance (GHI) data.
+        lat (float): Latitude of the location (default is 43.47).
+        lon (float): Longitude of the location (default is -1.51).
+        surface_azimuth_angles (int | float | list[int | float]): Azimuth angles of
+            the surfaces in degrees east of north (default is 180.0,
+            which corresponds to a south-facing surface in the northern hemisphere).
+        surface_tilt_angle (float | list[float]): Tilt angles of the surfaces in
+            degrees (default is 35.0). 0 is façing ground.
+        albedo (float): Ground reflectivity or albedo (default is 0.25).
+        surface_name (str | list[str]): Names for the surfaces
+            (default is "az_180_tilt_35").
+        data_bloc (str): Tide bloc name Default is "OTHER".
+        data_sub_bloc (str): Tide sub_bloc_name default is "OTHER_SUB_BLOC".
+
+    Raises:
+        ValueError: If the number of azimuth angles, tilt angles, and surface names
+        do not match.
+    """
+
+    def __init__(
+        self,
+        bni_column_name: str,
+        dhi_column_name: str,
+        ghi_column_name: str,
+        lat: float = 43.47,
+        lon: float = -1.51,
+        surface_azimuth_angles: int | float | list[int | float] = 180.0,
+        surface_tilt_angle: float | list[float] = 35.0,
+        albedo: float = 0.25,
+        surface_name: str | list[str] = "az_180_tilt_35",
+        data_bloc: str = "OTHER",
+        data_sub_bloc: str = "OTHER_SUB_BLOC",
+    ):
+        BaseProcessing.__init__(self)
+        self.bni_column_name = bni_column_name
+        self.dhi_column_name = dhi_column_name
+        self.ghi_column_name = ghi_column_name
+        self.lat = lat
+        self.lon = lon
+        self.surface_azimuth_angles = surface_azimuth_angles
+        self.surface_tilt_angle = surface_tilt_angle
+        self.albedo = albedo
+        self.surface_name = surface_name
+        self.data_bloc = data_bloc
+        self.data_sub_bloc = data_sub_bloc
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if (
+            not len(ensure_list(self.surface_azimuth_angles))
+            == len(ensure_list(self.surface_tilt_angle))
+            == len(ensure_list(self.surface_name))
+        ):
+            raise ValueError("Number of surface azimuth, tilt and name does not match")
+
+        self.required_columns = [
+            self.bni_column_name,
+            self.dhi_column_name,
+            self.ghi_column_name,
+        ]
+        self.added_columns = [
+            f"{name}__W/m²__{self.data_bloc}__{self.data_sub_bloc}"
+            for name in ensure_list(self.surface_name)
+        ]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        sun_pos = np.array([sun_position(date, self.lat, self.lon) for date in X.index])
+        for az, til, name in zip(
+            ensure_list(self.surface_azimuth_angles),
+            ensure_list(self.surface_tilt_angle),
+            self.added_columns,
+        ):
+            X[name] = (
+                beam_component(
+                    til, az, 90 - sun_pos[:, 0], sun_pos[:, 1], X[self.bni_column_name]
+                )
+                + sky_diffuse(til, X[self.dhi_column_name])
+                + ground_diffuse(til, X[self.ghi_column_name], self.albedo)
+            )
+
         return X
