@@ -45,6 +45,7 @@ def _ensure_list(item):
         return []
     return item if isinstance(item, list) else [item]
 
+
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
     """
     Abstract base class for processing pipelines with feature checks and
