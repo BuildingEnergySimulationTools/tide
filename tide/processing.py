@@ -1311,7 +1311,7 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
             for idx in idx_list:
-                df = self.get_meteo_at_x_freq(X, [self.columns_param_map[col]])
+                df = self.get_meteo_from_idx(idx, [self.columns_param_map[col]])
                 X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
         return X
 
@@ -1388,7 +1388,7 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["columns_check_", "api_key_"])
-        df = self.get_meteo_at_x_freq(X, list(self.param_columns_map.keys()))
+        df = self.get_meteo_from_idx(X.index, list(self.param_columns_map.keys()))
         X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
         return X
 

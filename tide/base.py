@@ -17,7 +17,7 @@ from tide.utils import (
     validate_odd_param,
     process_stl_odd_args,
     get_data_blocks,
-    get_freq_delta_or_min_time_interval,
+    get_idx_freq_delta_or_min_time_interval,
     ensure_list,
 )
 
@@ -220,18 +220,18 @@ class BaseOikoMeteo:
     def get_api_key_from_env(self):
         self.api_key_ = os.getenv(self.env_oiko_api_key)
 
-    def get_meteo_at_x_freq(self, X: pd.Series | pd.DataFrame, param: list[str]):
+    def get_meteo_from_idx(self, dt_idx: pd.DatetimeIndex, param: list[str]):
         check_is_fitted(self, attributes=["api_key_"])
-        x_freq = get_freq_delta_or_min_time_interval(X)
+        x_freq = get_idx_freq_delta_or_min_time_interval(dt_idx)
         end = (
-            X.index[-1]
-            if X.index[-1] <= X.index[-1].replace(hour=23, minute=0)
-            else X.index[-1] + pd.Timedelta("1h")
+            dt_idx[-1]
+            if dt_idx[-1] <= dt_idx[-1].replace(hour=23, minute=0)
+            else dt_idx[-1] + pd.Timedelta("1h")
         )
         df = get_oikolab_df(
             lat=self.lat,
             lon=self.lon,
-            start=X.index[0],
+            start=dt_idx[0],
             end=end,
             api_key=self.api_key_,
             param=param,
@@ -243,4 +243,4 @@ class BaseOikoMeteo:
             df = df.asfreq(x_freq).interpolate("linear")
         elif x_freq > pd.Timedelta("1h"):
             df = df.resample(x_freq).mean()
-        return df.loc[X.index, :]
+        return df.loc[dt_idx, :]
