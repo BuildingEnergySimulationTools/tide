@@ -24,70 +24,69 @@ from tide.utils import (
 from tide.meteo import get_oikolab_df
 
 
+def _ensure_list(item):
+    """
+    Ensures the input is returned as a list.
+
+    Parameters
+    ----------
+    item : any
+        The input item to be converted to a list if it is not already one.
+        If the input is `None`, an empty list is returned.
+
+    Returns
+    -------
+    list
+        - If `item` is `None`, returns an empty list.
+        - If `item` is already a list, it is returned as is.
+        - Otherwise, wraps the `item` in a list and returns it.
+    """
+    if item is None:
+        return []
+    return item if isinstance(item, list) else [item]
+
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
-    def _ensure_list(item):
-        """
-        Ensures the input is returned as a list.
+    """
+    Abstract base class for processing pipelines with feature checks and
+    transformation logic.
 
-        Parameters
-        ----------
-        item : any
-            The input item to be converted to a list if it is not already one.
-            If the input is `None`, an empty list is returned.
+    This class is designed to facilitate transformations by checking input data
+    (DataFrame or Series with DatetimeIndex), ensuring the presence
+    of required features, tracking added and removed features, and enabling
+    seamless integration with scikit-learn's API through fit and transform
+    methods.
 
-        Returns
-        -------
-        list
-            - If `item` is `None`, returns an empty list.
-            - If `item` is already a list, it is returned as is.
-            - Otherwise, wraps the `item` in a list and returns it.
-        """
-        if item is None:
-            return []
-        return item if isinstance(item, list) else [item]
+    Parameters
+    ----------
+    required_columns : str or list[str], optional
+        Column names that must be present in the input data. Defaults to None.
+    removed_columns : str or list[str], optional
+        Column that will be removed during the transform process. Defaults to None.
+    added_columns : str or list[str], optional
+        Column that will be added to the output feature set during transform
+        process. Defaults to None.
 
-    class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
-        """
-        Abstract base class for processing pipelines with feature checks and
-        transformation logic.
-
-        This class is designed to facilitate transformations by checking input data
-        (DataFrame or Series with DatetimeIndex), ensuring the presence
-        of required features, tracking added and removed features, and enabling
-        seamless integration with scikit-learn's API through fit and transform
-        methods.
-
-        Parameters
-        ----------
-        required_columns : str or list[str], optional
-            Column names that must be present in the input data. Defaults to None.
-        removed_columns : str or list[str], optional
-            Column that will be removed during the transform process. Defaults to None.
-        added_columns : str or list[str], optional
-            Column that will be added to the output feature set during transform
-            process. Defaults to None.
-
-        Methods
-        -------
-        check_features(X):
-            Ensures that the required columns are present in the input DataFrame.
-        fit_check_features(X):
-            Checks required columns and stores the initial feature names.
-        get_feature_names_out():
-            Computes the final set of feature names, accounting for added and removed
-            columns.
-        get_feature_names_in():
-            Returns the names of the features as initially fitted.
-        fit(X, y=None):
-            Fits the transformer to the input data.
-        transform(X):
-            Applies the transformation to the input data.
-        _fit_implementation(X, y=None):
-            Abstract method for the fitting logic. Must be implemented by subclasses.
-        _transform_implementation(X):
-            Abstract method for the transformation logic. Must be implemented by
-            subclasses.
-        """
+    Methods
+    -------
+    check_features(X):
+        Ensures that the required columns are present in the input DataFrame.
+    fit_check_features(X):
+        Checks required columns and stores the initial feature names.
+    get_feature_names_out():
+        Computes the final set of feature names, accounting for added and removed
+        columns.
+    get_feature_names_in():
+        Returns the names of the features as initially fitted.
+    fit(X, y=None):
+        Fits the transformer to the input data.
+    transform(X):
+        Applies the transformation to the input data.
+    _fit_implementation(X, y=None):
+        Abstract method for the fitting logic. Must be implemented by subclasses.
+    _transform_implementation(X):
+        Abstract method for the transformation logic. Must be implemented by
+        subclasses.
+    """
 
     def __init__(
         self,
