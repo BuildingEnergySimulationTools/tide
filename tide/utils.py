@@ -221,7 +221,7 @@ def get_series_bloc(
     upper_threshold_inclusive: bool = True,
 ):
     data = check_and_return_dt_index_df(date_series).squeeze()
-    freq = get_freq_delta_or_min_time_interval(data)
+    freq = get_idx_freq_delta_or_min_time_interval(data.index)
     # If data index has no frequency, a frequency based on minimum
     # timedelta is set.
     df = data.asfreq(freq)
@@ -381,13 +381,12 @@ def get_data_blocks(
     return idx_dict
 
 
-def get_freq_delta_or_min_time_interval(df: pd.Series | pd.DataFrame):
-    df = check_and_return_dt_index_df(df)
-    freq = df.index.inferred_freq
+def get_idx_freq_delta_or_min_time_interval(dt_idx: pd.DatetimeIndex):
+    freq = dt_idx.inferred_freq
     if freq:
         freq = pd.to_timedelta("1" + freq) if freq.isalpha() else pd.to_timedelta(freq)
     else:
-        freq = df.index.to_frame().diff().min().iloc[0]
+        freq = dt_idx.to_frame().diff().min().iloc[0]
 
     return freq
 

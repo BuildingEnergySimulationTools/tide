@@ -111,7 +111,7 @@ class Plumber:
         else:
             return super().__repr__()
 
-    def show(self, steps: str | list[str] | slice = slice(None)):
+    def show(self, steps: None | str | list[str] | slice = slice(None)):
         if steps is None:
             if self.root is not None:
                 self.root.show()
@@ -132,7 +132,7 @@ class Plumber:
     def get_pipeline(
         self,
         select: str | pd.Index | list[str] = None,
-        steps: str | list[str] | slice = slice(None),
+        steps: None | str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> Pipeline:
         if self.data is None:
@@ -152,7 +152,7 @@ class Plumber:
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        steps: str | list[str] | slice = slice(None),
+        steps: None | str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> pd.DataFrame:
         if self.data is None:
@@ -169,7 +169,7 @@ class Plumber:
         select: str | pd.Index | list[str] = None,
         start: str | dt.datetime | pd.Timestamp = None,
         stop: str | dt.datetime | pd.Timestamp = None,
-        steps: str | list[str] | slice = slice(None),
+        steps: None | str | list[str] | slice = slice(None),
         time_step: str | pd.Timedelta | dt.timedelta = None,
         title: str = None,
         verbose: bool = False,
@@ -184,9 +184,9 @@ class Plumber:
         stop: str | dt.datetime | pd.Timestamp = None,
         y_axis_level: str = None,
         y_tag_list: list[str] = None,
-        steps_1: str | list[str] | slice = slice(None),
+        steps_1: None | str | list[str] | slice = slice(None),
         data_1_mode: str = "lines",
-        steps_2: str | list[str] | slice = None,
+        steps_2: None | str | list[str] | slice = None,
         data_2_mode: str = "markers",
         markers_opacity: float = 0.8,
         lines_width: float = 2.0,
