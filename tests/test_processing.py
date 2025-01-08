@@ -644,11 +644,36 @@ class TestCustomTransformers:
             toy_df_gaps.loc[gap[0], gap[1]] = np.nan
 
         filler = FillGapsAR()
-        res = filler.fit_transform(toy_df_gaps)
+        res = filler.fit_transform(toy_df_gaps.copy())
 
         for gap in holes_pairs[1:]:
             # Skip the first one. r2_score doesn't work for only value
             assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.99
+
+        toy_df_15min = toy_df.resample("15min").mean().interpolate()
+        hole_backast = pd.date_range("2009-06-05", "2009-06-06 01:15:00", freq="15min")
+        hole_forecast = pd.date_range("2009-08-05", "2009-08-06 01:45:00", freq="15min")
+        toy_df_15min_hole = toy_df_15min.copy()
+        toy_df_15min_hole.loc[hole_backast, "Temp_1"] = np.nan
+        toy_df_15min_hole.loc[hole_forecast, "Temp_1"] = np.nan
+
+        filler = FillGapsAR(resample_at_td="1h")
+        res = filler.fit_transform(toy_df_15min_hole.copy())
+
+        assert (
+            r2_score(
+                res.loc[hole_backast, "Temp_1"],
+                toy_df_15min.loc[hole_backast, "Temp_1"],
+            )
+            > 0.95
+        )
+        assert (
+            r2_score(
+                res.loc[hole_forecast, "Temp_1"],
+                toy_df_15min.loc[hole_forecast, "Temp_1"],
+            )
+            > 0.95
+        )
 
     def test_combiner(self):
         test_df = pd.DataFrame(
