@@ -157,8 +157,6 @@ class BaseSTL(BaseEstimator):
 
     def _pre_fit(self, X: pd.Series | pd.DataFrame):
         self.stl_kwargs = {} if self.stl_kwargs is None else self.stl_kwargs
-
-        X = check_and_return_dt_index_df(X)
         check_array(X)
 
         self.stl_kwargs["period"] = timedelta_to_int(self.period, X)
