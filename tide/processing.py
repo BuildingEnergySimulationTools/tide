@@ -1087,6 +1087,12 @@ class FillGapsAR(BaseFiller, BaseProcessing):
     thresholds.
     2- The biggest group of valid data is identified and is used to fit the model.
     3- The neighboring gaps are filled using backcasting or forecasting.
+    4- OPTIONAL When the data's timestep is too short compared to the periodic behavior
+    (e.g., 5-min data for a 24h pattern):
+        - Resample data to a larger timestep
+        - Perform predictions at the resampled timestep
+        - Use linear interpolation to restore original data resolution
+
 
     The process is repeated at step 2 until there are no more gaps to fill
 
@@ -1101,6 +1107,8 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         The lower threshold for the size of gaps to be considered, by default None.
     upper_gap_threshold : str or datetime.datetime, optional
         The upper threshold for the size of gaps to be considered, by default None.
+    resample_at_td: str or time delta, optinal
+        The time delta to resample fitting data before prediction
 
     Attributes
     ----------
@@ -1118,19 +1126,50 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         model_kwargs: dict = {},
         gaps_lte: str | dt.datetime | pd.Timestamp = None,
         gaps_gte: str | dt.datetime | pd.Timestamp = None,
+        resample_at_td: str | dt.timedelta | pd.Timedelta = None,
     ):
         BaseFiller.__init__(self, gaps_lte, gaps_gte)
         BaseProcessing.__init__(self)
         self.model_name = model_name
         self.model_kwargs = model_kwargs
+        self.resample_at_td = resample_at_td
+        gaps_lte = pd.Timedelta(gaps_lte) if isinstance(gaps_lte, str) else gaps_lte
+        resample_at_td = (
+            pd.Timedelta(resample_at_td)
+            if isinstance(resample_at_td, str)
+            else resample_at_td
+        )
+        if (
+            resample_at_td is not None
+            and gaps_lte is not None
+            and gaps_lte < resample_at_td
+        ):
+            raise ValueError(
+                f"Cannot predict data for gaps LTE to {gaps_lte} with data"
+                f"at a {resample_at_td} timestep"
+            )
 
     def _fit_and_fill_x(self, X, biggest_group, col, idx, backcast):
         check_is_fitted(self, attributes=["model_"])
         bc_model = self.model_(backcast=backcast, **self.model_kwargs)
-        bc_model.fit(X.loc[biggest_group, col])
+        if self.resample_at_td is not None:
+            x_fit = X.loc[biggest_group, col].resample(self.resample_at_td).mean()
+            idx_origin = idx
+            idx = pd.date_range(idx[0], idx[-1], freq=self.resample_at_td)
+            if not backcast and x_fit.index[-1] == idx[0]:
+                x_fit = x_fit[:-1]
+            elif x_fit.index[0] == idx[-1]:
+                x_fit = x_fit[1:]
+        else:
+            x_fit = X.loc[biggest_group, col]
+            idx_origin = None
+
+        bc_model.fit(x_fit)
         to_predict = idx.to_series()
         to_predict.name = col
         X.loc[idx, col] = bc_model.predict(to_predict).to_numpy().flatten()
+        if self.resample_at_td is not None:
+            X.loc[idx_origin, col] = X.loc[idx_origin, col].interpolate()
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.model_ = MODEL_MAP[self.model_name]
