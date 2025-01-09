@@ -102,7 +102,7 @@ Plot time series with missing data highlighted:
 
 ```python
 fig = plumber.plot(plot_gaps_1=True)
-fig.show()
+fig.show(None)
 ```
 
 ### 4- Building and testing Pipelines 🛠️
