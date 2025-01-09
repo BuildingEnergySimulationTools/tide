@@ -1155,11 +1155,18 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         if self.resample_at_td is not None:
             x_fit = X.loc[biggest_group, col].resample(self.resample_at_td).mean()
             idx_origin = idx
-            idx = pd.date_range(idx[0], idx[-1], freq=self.resample_at_td)
-            if not backcast and x_fit.index[-1] == idx[0]:
-                x_fit = x_fit[:-1]
-            elif x_fit.index[0] == idx[-1]:
-                x_fit = x_fit[1:]
+            if backcast:
+                idx = pd.date_range(
+                    idx[0],
+                    x_fit.index[0] - pd.Timedelta(self.resample_at_td),
+                    freq=self.resample_at_td,
+                )
+            else:
+                idx = pd.date_range(
+                    x_fit.index[-1] + pd.Timedelta(self.resample_at_td),
+                    idx[-1],
+                    freq=self.resample_at_td,
+                )
         else:
             x_fit = X.loc[biggest_group, col]
             idx_origin = None
@@ -1169,7 +1176,15 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         to_predict.name = col
         X.loc[idx, col] = bc_model.predict(to_predict).to_numpy().flatten()
         if self.resample_at_td is not None:
-            X.loc[idx_origin, col] = X.loc[idx_origin, col].interpolate()
+            beg = idx_origin[0] - idx_origin.freq
+            end = idx_origin[-1] + idx_origin.freq
+            # Interpolate linearly between inferred values and using neighbor data
+            X.loc[idx_origin, col] = X.loc[beg:end, col].interpolate()
+            # If gap is at boundaries
+            if beg < X.index[0]:
+                X.loc[idx_origin, col] = X.loc[idx_origin, col].bfill()
+            if end > X.index[-1]:
+                X.loc[idx_origin, col] = X.loc[idx_origin, col].ffill()
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.model_ = MODEL_MAP[self.model_name]
