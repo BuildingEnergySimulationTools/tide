@@ -656,6 +656,8 @@ class TestCustomTransformers:
         toy_df_15min_hole = toy_df_15min.copy()
         toy_df_15min_hole.loc[hole_backast, "Temp_1"] = np.nan
         toy_df_15min_hole.loc[hole_forecast, "Temp_1"] = np.nan
+        toy_df_15min_hole.iloc[:12, 0] = np.nan
+        toy_df_15min_hole.iloc[-12:, 0] = np.nan
 
         filler = FillGapsAR(resample_at_td="1h")
         res = filler.fit_transform(toy_df_15min_hole.copy())
