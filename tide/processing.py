@@ -538,7 +538,7 @@ class Ffill(BaseFiller, BaseProcessing):
             return filled_x
 
         gaps_mask = self.get_gaps_mask(X)
-        X.values[gaps_mask.to_numpy()] = filled_x.values[gaps_mask.to_numpy()]
+        X[gaps_mask] = filled_x[gaps_mask]
         return X
 
 
@@ -585,8 +585,15 @@ class Bfill(BaseFiller, BaseProcessing):
             return filled_x
 
         gaps_mask = self.get_gaps_mask(X)
-        X.values[gaps_mask.to_numpy()] = filled_x.values[gaps_mask.to_numpy()]
+        X[gaps_mask] = filled_x[gaps_mask]
         return X
+
+        # https://stackoverflow.com/questions/34321025/replace-values-in-numpy-2d-array-based-on-pandas-dataframe
+        # x_arr = np.array(X)
+        # gaps_mask = self.get_gaps_mask(X)
+        # gaps_idx_raveled = np.where(gaps_mask.to_numpy().ravel())[0]
+        # x_arr.flat[gaps_idx_raveled] = filled_x.to_numpy().ravel()[gaps_idx_raveled]
+        # return pd.DataFrame(data=x_arr, columns=X.columns, index=X.index)
 
 
 class FillNa(BaseFiller, BaseProcessing):
@@ -1364,9 +1371,10 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
         check_is_fitted(self, attributes=["fitted_", "api_key_"])
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
-            for idx in idx_list:
-                df = self.get_meteo_from_idx(idx, [self.columns_param_map[col]])
-                X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
+            if col in self.columns_param_map.keys():
+                for idx in idx_list:
+                    df = self.get_meteo_from_idx(idx, [self.columns_param_map[col]])
+                    X.loc[idx, col] = df.loc[idx, self.columns_param_map[col]]
         return X
 
 
