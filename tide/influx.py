@@ -1,5 +1,7 @@
+import time
 import datetime as dt
 from zoneinfo import ZoneInfo
+from urllib3.exceptions import ReadTimeoutError
 
 import pandas as pd
 from influxdb_client import InfluxDBClient
@@ -72,6 +74,8 @@ def get_influx_data(
     token: str,
     split_td: str | dt.timedelta | pd.Timedelta = None,
     tz_info: str = "UTC",
+    max_retry: int = 5,
+    waited_seconds_at_retry: int = 5,
     verbose: bool = False,
 ) -> pd.DataFrame:
     """
@@ -121,6 +125,11 @@ def get_influx_data(
         If `True`, prints progress messages for each time chunk being fetched.
         Defaults to `False`.
 
+    max_retry: int, default 5
+        Number of retries for a query in case of ReadTimeoutError.
+
+    waited_seconds_at_retry:  int default 5
+        Number of seconds waited before re-sending the query
     """
 
     if isinstance(start, str) and isinstance(stop, str):
@@ -136,19 +145,31 @@ def get_influx_data(
     for i in range(len(dates_index) - 1):
         if verbose:
             print(f"Getting period {i + 1} / {len(dates_index) - 1}")
-        df_list.append(
-            _single_influx_request(
-                start=dates_index[i],
-                stop=dates_index[i + 1],
-                bucket=bucket,
-                measurement=measurement,
-                tide_tags=tide_tags,
-                url=url,
-                org=org,
-                token=token,
-                tz_info=tz_info,
-            )
-        )
+        for attempt in range(max_retry):
+            try:
+                df_list.append(
+                    _single_influx_request(
+                        start=dates_index[i],
+                        stop=dates_index[i + 1],
+                        bucket=bucket,
+                        measurement=measurement,
+                        tide_tags=tide_tags,
+                        url=url,
+                        org=org,
+                        token=token,
+                        tz_info=tz_info,
+                    )
+                )
+                break
+            except ReadTimeoutError:
+                if attempt < max_retry - 1:
+                    if verbose:
+                        print(f"Attempt {attempt + 1} failed")
+                    time.sleep(waited_seconds_at_retry)
+                else:
+                    if verbose:
+                        print("Max retries reached. Unable to get data.")
+                    raise
 
     return df_list[0] if len(df_list) == 1 else pd.concat(df_list)
 
