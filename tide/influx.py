@@ -183,14 +183,63 @@ def push_influx_data(
     token: str,
     measurement: str = "tide",
 ):
+    """
+    Pushes data from a pandas DataFrame to an InfluxDB bucket.
+
+    This function processes a DataFrame indexed by datetime and writes the data
+    to an InfluxDB bucket. Each row in the DataFrame is expanded based on Tide tags
+    extracted from a specific column and written to InfluxDB with corresponding
+    timestamp and tag values.
+
+    Parameters:
+        data (pd.DataFrame): Input DataFrame with a datetime index and
+            one or more columns of values.
+
+        tide_tags (list[str]): List of tag names to extract from the
+            "full_index" column after splitting it. For exemple : ["Name", "Unit",
+            "bloc", "sub_bloc"
+
+        bucket (str): InfluxDB bucket name where the data will be written.
+
+        url (str): URL of the InfluxDB instance.
+
+        org (str): InfluxDB organization name.
+
+        token (str): Authentication token for the InfluxDB instance.
+
+        measurement (str, optional): Name of the measurement to use in InfluxDB.
+            Defaults to "tide".
+
+    Raises:
+        ValueError: If the input `data` is not a DataFrame with a datetime index.
+
+    Example:
+        >>> data = pd.DataFrame(
+            {
+                "name1__°C__bloc1": [1.0, 2.0],
+                "name2__W__bloc1": [3.0, 4.0],
+            },
+            index=pd.to_datetime(["2009-01-01T00:00:00Z", "2009-01-01T01:00:00Z"]),
+        )
+
+        >>> push_influx_data(
+                data=data,
+                tide_tags=['Name', 'Unit', "bloc"],
+                bucket='my-bucket',
+                url='http://localhost:8086',
+                org='my-org',
+                token='my-token'
+            )
+    """
+
     data = check_and_return_dt_index_df(data)
     influx_df_list = []
-    for time, row in data.iterrows():
+    for t, row in data.iterrows():
         df = row.reset_index()
         df.columns = ["full_index", "_value"]
         df[tide_tags] = df["full_index"].str.split("__", expand=True)
         df = df.drop("full_index", axis=1)
-        df.index = pd.to_datetime([time] * df.shape[0])
+        df.index = pd.to_datetime([t] * df.shape[0])
         influx_df_list.append(df)
 
     influx_df = pd.concat(influx_df_list).dropna()
