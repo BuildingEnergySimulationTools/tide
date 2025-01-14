@@ -32,13 +32,20 @@ def _single_influx_request(
     query_api = client.query_api()
     query = f"""
         from(bucket: "{bucket}")
-        |> range(start: {_date_objects_tostring(start, tz_info)}, stop: {_date_objects_tostring(stop, tz_info)})
+        |> range(start: {_date_objects_tostring(start, tz_info)}, 
+                 stop: {_date_objects_tostring(stop, tz_info)})
         |> filter(fn: (r) => r["_measurement"] == "{measurement}")
-        |> map(fn: (r) => ({{r with tide: r.{tide_tags[0]} + "__" + r.{tide_tags[1]} + "__" + r.{tide_tags[2]} + "__" + r.{tide_tags[3]}}}))
+        |> map(fn: (r) => ({{r with tide: r.{tide_tags[0]}
+    """
+    if len(tide_tags) > 1:
+        for tag in tide_tags[1:]:
+            query += f' + "__" + r.{tag}'
+    query += "}))"
+    query += """
         |> keep(columns: ["_time", "_value", "tide"])
         |> pivot(rowKey: ["_time"], columnKey: ["tide"], valueColumn: "_value")
         |> sort(columns: ["_time"])
-    """
+        """
 
     tables = query_api.query(query)
 
@@ -67,7 +74,6 @@ def get_influx_data(
     tz_info: str = "UTC",
     verbose: bool = False,
 ) -> pd.DataFrame:
-
     """
     Fetches data from an InfluxDB instance for the specified time range,
     bucket, and measurement, optionally splitting the request into smaller time
