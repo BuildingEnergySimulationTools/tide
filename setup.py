@@ -39,6 +39,7 @@ setup(
         "matplotlib>=3.5.1",
         "plotly>=5.3.1",
         "requests>=2.32.3",
+        "influxdb-client>=1.48.0",
     ],
     packages=find_packages(exclude=["tests*"]),
     include_package_data=True,
