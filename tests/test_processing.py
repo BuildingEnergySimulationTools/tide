@@ -897,4 +897,5 @@ class TestCustomTransformers:
         rep = ReplaceTag({"Whr": "Wh"})
         rep.fit_transform(df)
 
+        assert rep.get_feature_names_out() == ["energy_1__Wh", "energy_2__Wh__bloc"]
         assert list(df.columns) == ["energy_1__Wh", "energy_2__Wh__bloc"]

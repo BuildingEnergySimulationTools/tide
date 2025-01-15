@@ -15,6 +15,7 @@ from tide.utils import (
     check_and_return_dt_index_df,
     parse_request_to_col_names,
     ensure_list,
+    get_added_removed_col,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
@@ -452,12 +453,19 @@ class ApplyExpression(BaseProcessing):
         self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.new_unit is not None:
+            self.new_cols_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
+            )
+            self.added_columns, self.removed_columns = get_added_removed_col(
+                X.columns, self.new_cols_
+            )
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X = eval(self.expression)
         if self.new_unit is not None:
-            self.set_tags_values(X, 1, self.new_unit)
+            X.columns = self.new_cols_
         return X
 
 
@@ -492,6 +500,13 @@ class TimeGradient(BaseProcessing):
         self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.new_unit is not None:
+            self.new_cols_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
+            )
+            self.added_columns, self.removed_columns = get_added_removed_col(
+                X.columns, self.new_cols_
+            )
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
@@ -499,7 +514,7 @@ class TimeGradient(BaseProcessing):
         derivative = time_gradient(X)
         derivative.reindex(original_index)
         if self.new_unit is not None:
-            self.set_tags_values(derivative, 1, self.new_unit)
+            derivative.columns = self.new_cols_
         return derivative
 
 
@@ -1699,10 +1714,9 @@ class ReplaceTag(BaseProcessing):
             updated_parts = [self.tag_map.get(part, part) for part in parts]
             self.new_columns_.append("__".join(updated_parts))
         pass
-        self.added_columns = [col for col in self.new_columns_ if col not in X.columns]
-        self.removed_columns = [
-            col for col in X.columns if col not in self.new_columns_
-        ]
+        self.added_columns, self.removed_columns = get_added_removed_col(
+            X.columns, self.new_columns_
+        )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["new_columns_"])

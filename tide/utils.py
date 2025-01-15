@@ -43,6 +43,12 @@ class NamedList:
             raise TypeError("Invalid key type")
 
 
+def get_added_removed_col(original_idx: list | pd.Index, new_idx: list | pd.Index):
+    added_columns = list(set(new_idx) - set(original_idx))
+    removed_columns = list(set(original_idx) - set(new_idx))
+    return added_columns, removed_columns
+
+
 def get_tag_levels(data_columns: pd.Index | list[str]) -> int:
     """
     Returns max number of used tags from data columns names
