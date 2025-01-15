@@ -446,15 +446,19 @@ class ApplyExpression(BaseProcessing):
 
     """
 
-    def __init__(self, expression):
+    def __init__(self, expression: str, new_unit: str = None):
         super().__init__()
         self.expression = expression
+        self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return eval(self.expression)
+        X = eval(self.expression)
+        if self.new_unit is not None:
+            self.set_tags_values(X, 1, self.new_unit)
+        return X
 
 
 class TimeGradient(BaseProcessing):
@@ -483,8 +487,9 @@ class TimeGradient(BaseProcessing):
 
     """
 
-    def __init__(self):
+    def __init__(self, new_unit: str = None):
         super().__init__()
+        self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
@@ -492,7 +497,10 @@ class TimeGradient(BaseProcessing):
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
-        return derivative.reindex(original_index)
+        derivative.reindex(original_index)
+        if self.new_unit is not None:
+            self.set_tags_values(derivative, 1, self.new_unit)
+        return derivative
 
 
 class Ffill(BaseFiller, BaseProcessing):
