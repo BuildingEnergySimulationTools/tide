@@ -232,10 +232,24 @@ class TestCustomTransformers:
 
         pd.testing.assert_frame_equal(ref, transformer.fit_transform(df))
 
+        df = pd.DataFrame(
+            {"a__W": [1.0, 2.0], "b__W": [3.0, 4.0]},
+            index=pd.date_range("2009", freq="h", periods=2),
+        )
+
+        ref = pd.DataFrame(
+            {"a__kW": [0.001, 0.002], "b__kW": [0.003, 0.004]},
+            index=pd.date_range("2009", freq="h", periods=2),
+        )
+
+        transformer = ApplyExpression("X / 1000", "kW")
+
+        pd.testing.assert_frame_equal(ref, transformer.fit_transform(df))
+
     def test_pd_time_gradient(self):
         test = (
             pd.DataFrame(
-                {"cpt1": [0, 1, 2, 2, 2, 3], "cpt2": [0, 1, 2, 2, 2, 3]},
+                {"cpt1__J": [0, 1, 2, 2, 2, 3], "cpt2__J": [0, 1, 2, 2, 2, 3]},
                 index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6),
             )
             * 3600
@@ -243,13 +257,13 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {
-                "cpt1": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
-                "cpt2": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
+                "cpt1__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
+                "cpt2__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
             },
             index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6),
         )
 
-        derivator = TimeGradient()
+        derivator = TimeGradient(new_unit="W")
 
         pd.testing.assert_frame_equal(ref, derivator.fit_transform(test), rtol=0.01)
 
