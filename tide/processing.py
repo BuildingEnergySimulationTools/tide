@@ -1693,14 +1693,18 @@ class ReplaceTag(BaseProcessing):
         BaseProcessing.__init__(self)
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        pass
-
-    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        new_columns = []
+        self.new_columns_ = []
         for col in X.columns:
             parts = col.split("__")
             updated_parts = [self.tag_map.get(part, part) for part in parts]
-            new_columns.append("__".join(updated_parts))
+            self.new_columns_.append("__".join(updated_parts))
+        pass
+        self.added_columns = [col for col in self.new_columns_ if col not in X.columns]
+        self.removed_columns = [
+            col for col in X.columns if col not in self.new_columns_
+        ]
 
-        X.columns = new_columns
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["new_columns_"])
+        X.columns = self.new_columns_
         return X
