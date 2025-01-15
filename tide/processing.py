@@ -1666,3 +1666,33 @@ class DropColumns(BaseProcessing):
             if self.columns is not None
             else X
         )
+
+
+class ReplaceTag(BaseProcessing):
+    """
+    Replaces Tide tag components with new values based on a specified mapping.
+    Tags are structured as strings separated by "__", typically following the format
+    "Name__unit__bloc__sub_bloc".
+
+    Attributes:
+        tag_map (dict[str, str]): A dictionary mapping old tag substrings to new
+        tag substrings.
+
+    """
+
+    def __init__(self, tag_map: dict[str, str] = None):
+        self.tag_map = tag_map
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        new_columns = []
+        for col in X.columns:
+            parts = col.split("__")
+            updated_parts = [self.tag_map.get(part, part) for part in parts]
+            new_columns.append("__".join(updated_parts))
+
+        X.columns = new_columns
+        return X

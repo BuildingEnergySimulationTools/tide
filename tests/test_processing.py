@@ -35,6 +35,7 @@ from tide.processing import (
     ProjectSolarRadOnSurfaces,
     FillOtherColumns,
     DropColumns,
+    ReplaceTag,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -872,3 +873,14 @@ class TestCustomTransformers:
         res = col_dropper.transform(df.copy())
 
         assert res.shape == (2, 0)
+
+    def test_replace_tag(self):
+        df = pd.DataFrame(
+            {"energy_1__Wh": [1.0, 2.0], "energy_2__Whr__bloc": [3.0, 4.0]},
+            index=pd.date_range("2009", freq="h", periods=2),
+        )
+
+        rep = ReplaceTag({"Whr": "Wh"})
+        rep.fit_transform(df)
+
+        assert list(df.columns) == ["energy_1__Wh", "energy_2__Wh__bloc"]
