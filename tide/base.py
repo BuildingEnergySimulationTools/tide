@@ -100,7 +100,7 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         self.removed_columns = removed_columns
         self.added_columns = added_columns
 
-    def set_tags_values(self, X, tag_level: int, value: str):
+    def get_set_tags_values_columns(self, X, tag_level: int, value: str):
         nb_tags = get_tag_levels(X.columns)
         if tag_level > nb_tags - 1:
             raise ValueError(
@@ -114,7 +114,10 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
             parts[tag_level] = value
             new_columns.append("__".join(parts))
 
-        X.columns = new_columns
+        return new_columns
+
+    def set_tags_values(self, X, tag_level: int, value: str):
+        X.columns = self.get_set_tags_values_columns(X, tag_level, value)
 
     def check_features(self, X):
         if self.required_columns is not None:
