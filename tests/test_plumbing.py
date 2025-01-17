@@ -24,7 +24,7 @@ TEST_DF = pd.DataFrame(
         "light__DIMENSIONLESS__building": [100, 200, 300],
         "mass_flwr__m3/h__hvac": [300, 500, 600],
     },
-    index=pd.date_range("2009", freq="h", periods=3),
+    index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
 )
 
 TEST_DF_2 = pd.DataFrame(
@@ -33,7 +33,7 @@ TEST_DF_2 = pd.DataFrame(
         "b__°C__zone_1": np.random.randn(24),
         "c__Wh__zone_2": np.random.randn(24) * 100,
     },
-    index=pd.date_range("2009", freq="h", periods=24),
+    index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
 )
 
 TEST_DF_2["c__Wh__zone_2"] = abs(TEST_DF_2).cumsum()["c__Wh__zone_2"]
@@ -73,7 +73,7 @@ class TestPlumbing:
         test_df = TEST_DF.copy()
         test_df.iloc[1, 0] = np.nan
         test_df.iloc[0, 1] = np.nan
-        pipe = _get_pipe_from_proc_list(test_df.columns, PIPE_DICT["common"])
+        pipe = _get_pipe_from_proc_list(test_df.columns, PIPE_DICT["common"], tz="UTC")
 
         res = pipe.fit_transform(test_df)
 
@@ -86,6 +86,7 @@ class TestPlumbing:
         col_trans = _get_column_wise_transformer(
             proc_dict=PIPE_DICT["pre_processing"],
             data_columns=TEST_DF.columns,
+            tz="UTC",
             process_name="test",
         )
 
@@ -99,6 +100,7 @@ class TestPlumbing:
             data_columns=TEST_DF[
                 [col for col in TEST_DF.columns if col != "radiation__W/m2__outdoor"]
             ].columns,
+            tz="UTC",
             process_name="test",
         )
 
@@ -122,6 +124,7 @@ class TestPlumbing:
         col_trans = _get_column_wise_transformer(
             proc_dict=PIPE_DICT["pre_processing"],
             data_columns=cols_none,
+            tz="UTC",
             process_name="test",
         )
 

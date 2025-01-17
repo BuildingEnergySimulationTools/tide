@@ -15,6 +15,7 @@ from tide.utils import (
     check_and_return_dt_index_df,
     parse_request_to_col_names,
     ensure_list,
+    get_added_removed_col,
 )
 from tide.regressors import SkSTLForecast
 from tide.classifiers import STLEDetector
@@ -446,15 +447,26 @@ class ApplyExpression(BaseProcessing):
 
     """
 
-    def __init__(self, expression):
+    def __init__(self, expression: str, new_unit: str = None):
         super().__init__()
         self.expression = expression
+        self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.new_unit is not None:
+            self.new_cols_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
+            )
+            self.added_columns, self.removed_columns = get_added_removed_col(
+                X.columns, self.new_cols_
+            )
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return eval(self.expression)
+        X = eval(self.expression)
+        if self.new_unit is not None:
+            X.columns = self.new_cols_
+        return X
 
 
 class TimeGradient(BaseProcessing):
@@ -483,16 +495,27 @@ class TimeGradient(BaseProcessing):
 
     """
 
-    def __init__(self):
+    def __init__(self, new_unit: str = None):
         super().__init__()
+        self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.new_unit is not None:
+            self.new_cols_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
+            )
+            self.added_columns, self.removed_columns = get_added_removed_col(
+                X.columns, self.new_cols_
+            )
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
-        return derivative.reindex(original_index)
+        derivative.reindex(original_index)
+        if self.new_unit is not None:
+            derivative.columns = self.new_cols_
+        return derivative
 
 
 class Ffill(BaseFiller, BaseProcessing):
@@ -1666,3 +1689,36 @@ class DropColumns(BaseProcessing):
             if self.columns is not None
             else X
         )
+
+
+class ReplaceTag(BaseProcessing):
+    """
+    Replaces Tide tag components with new values based on a specified mapping.
+    Tags are structured as strings separated by "__", typically following the format
+    "Name__unit__bloc__sub_bloc".
+
+    Attributes:
+        tag_map (dict[str, str]): A dictionary mapping old tag substrings to new
+        tag substrings.
+
+    """
+
+    def __init__(self, tag_map: dict[str, str] = None):
+        self.tag_map = tag_map
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.new_columns_ = []
+        for col in X.columns:
+            parts = col.split("__")
+            updated_parts = [self.tag_map.get(part, part) for part in parts]
+            self.new_columns_.append("__".join(updated_parts))
+        pass
+        self.added_columns, self.removed_columns = get_added_removed_col(
+            X.columns, self.new_columns_
+        )
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["new_columns_"])
+        X.columns = self.new_columns_
+        return X

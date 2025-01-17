@@ -23,16 +23,19 @@ from tide.plot import (
 import tide.processing as pc
 
 
-def _dummy_df(columns):
+def _dummy_df(columns, tz):
     return pd.DataFrame(
         data=np.ones((2, len(columns))),
         columns=columns,
-        index=pd.date_range("2009", freq="h", periods=2),
+        index=pd.date_range("2009", freq="h", periods=2, tz=tz),
     )
 
 
 def _get_pipe_from_proc_list(
-    data_columns: pd.Index | list[str], proc_list: list, verbose: bool = False
+    data_columns: pd.Index | list[str],
+    proc_list: list,
+    tz: str | dt.timezone,
+    verbose: bool = False,
 ) -> Pipeline:
     proc_units = [
         getattr(pc, proc[0])(
@@ -43,13 +46,14 @@ def _get_pipe_from_proc_list(
     ]
     pipe = make_pipeline(*proc_units, verbose=verbose)
     pipe.set_output(transform="pandas")
-    pipe.fit(_dummy_df(data_columns))
+    pipe.fit(_dummy_df(data_columns, tz))
     return pipe
 
 
 def _get_column_wise_transformer(
     proc_dict,
     data_columns: pd.Index | list[str],
+    tz: str | dt.timezone,
     process_name: str = None,
     verbose: bool = False,
 ) -> ColumnTransformer | None:
@@ -63,7 +67,7 @@ def _get_column_wise_transformer(
             col_trans_list.append(
                 (
                     f"{process_name}->{name}" if process_name is not None else name,
-                    _get_pipe_from_proc_list(requested_col, proc_list, verbose),
+                    _get_pipe_from_proc_list(requested_col, proc_list, tz, verbose),
                     requested_col,
                 )
             )
@@ -77,12 +81,15 @@ def _get_column_wise_transformer(
             verbose_feature_names_out=False,
             verbose=verbose,
         ).set_output(transform="pandas")
-        transformer.fit(_dummy_df(data_columns))
+        transformer.fit(_dummy_df(data_columns, tz))
         return transformer
 
 
 def get_pipeline_from_dict(
-    data_columns: pd.Index | list[str], pipe_dict: dict = None, verbose: bool = False
+    data_columns: pd.Index | list[str],
+    pipe_dict: dict = None,
+    tz: str | dt.timezone = "UTC",
+    verbose: bool = False,
 ):
     if pipe_dict is None:
         return Pipeline([("Identity", pc.Identity())], verbose=verbose)
@@ -91,11 +98,11 @@ def get_pipeline_from_dict(
         step_columns = data_columns.copy()
         for step, op_conf in pipe_dict.items():
             if isinstance(op_conf, list):
-                operation = _get_pipe_from_proc_list(step_columns, op_conf, verbose)
+                operation = _get_pipe_from_proc_list(step_columns, op_conf, tz, verbose)
 
             elif isinstance(op_conf, dict):
                 operation = _get_column_wise_transformer(
-                    op_conf, step_columns, step, verbose
+                    op_conf, step_columns, tz, step, verbose
                 )
 
             else:
@@ -103,7 +110,7 @@ def get_pipeline_from_dict(
 
             if operation is not None:
                 steps_list.append((step, operation))
-                step_columns = operation.get_feature_names_out()
+                step_columns = [str(feat) for feat in operation.get_feature_names_out()]
 
         return Pipeline(steps_list, verbose=verbose)
 
@@ -134,7 +141,7 @@ class Plumber:
             if self.root is not None:
                 self.root.show()
         elif self.data is not None:
-            pipe = self.get_pipeline(steps=steps).fit(self.data)
+            pipe = self.get_pipeline(steps=steps)
             data_columns_to_tree(pipe.get_feature_names_out()).show()
 
     def set_data(self, data: pd.Series | pd.DataFrame):
@@ -163,7 +170,9 @@ class Plumber:
             selected_steps = pipe_named_keys[steps]
             dict_to_pipe = {key: self.pipe_dict[key] for key in selected_steps}
 
-        return get_pipeline_from_dict(selection, dict_to_pipe, verbose)
+        return get_pipeline_from_dict(
+            selection, dict_to_pipe, self.data.index.tz, verbose
+        )
 
     def get_corrected_data(
         self,

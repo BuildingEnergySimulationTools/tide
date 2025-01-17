@@ -102,7 +102,7 @@ class TestUtils:
     def test_get_series_bloc(self):
         toy_sr = pd.Series(
             data=np.arange(24).astype(float),
-            index=pd.date_range("2009", freq="h", periods=24),
+            index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
             name="data_1",
         )
 
@@ -159,7 +159,7 @@ class TestUtils:
         # Get isolated gaps
         ser = pd.Series(
             [np.nan, 1, 2, np.nan, 3, 4, np.nan],
-            index=pd.date_range("2009", freq="h", periods=7),
+            index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
         res = get_series_bloc(ser, is_null=True)
         assert len(res) == 3
@@ -167,7 +167,7 @@ class TestUtils:
         # No gaps case
         ser = pd.Series(
             [0.0, 1.0, 2.0, 2.5, 3, 4, 5.0],
-            index=pd.date_range("2009", freq="h", periods=7),
+            index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
         res = get_series_bloc(ser, is_null=True)
 
@@ -176,7 +176,7 @@ class TestUtils:
         # No gaps case
         ser = pd.Series(
             [0.0, 1.0, 2.0, np.nan, 3, 4, 5.0],
-            index=pd.date_range("2009", freq="h", periods=7),
+            index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
         res = get_series_bloc(ser, is_null=True)
 
@@ -185,7 +185,7 @@ class TestUtils:
     def test_get_data_blocks(self):
         toy_df = pd.DataFrame(
             {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
-            index=pd.date_range("2009-01-01", freq="h", periods=24),
+            index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
         )
 
         toy_df.loc["2009-01-01 01:00:00", "data_1"] = np.nan
@@ -203,10 +203,11 @@ class TestUtils:
         res = get_data_blocks(toy_df, is_null=True)
         assert len(res["combination"]) == 3
         pd.testing.assert_index_equal(
-            res["data_1"][0], pd.DatetimeIndex(["2009-01-01 01:00:00"])
+            res["data_1"][0], pd.DatetimeIndex(["2009-01-01 01:00:00"], tz="UTC")
         )
         pd.testing.assert_index_equal(
-            res["data_2"][0], pd.date_range("2009-01-01 15:00:00", freq="h", periods=9)
+            res["data_2"][0],
+            pd.date_range("2009-01-01 15:00:00", freq="h", periods=9, tz="UTC"),
         )
 
         res = get_data_blocks(toy_df, is_null=True, lower_td_threshold="1h30min")
@@ -217,7 +218,9 @@ class TestUtils:
 
         # CAREFUL !!! Remove timestamps to get indexes without frequency
         toy_df.drop(
-            pd.date_range("2009-01-01 02:00:00", "2009-01-01 04:00:00", freq="h"),
+            pd.date_range(
+                "2009-01-01 02:00:00", "2009-01-01 04:00:00", freq="h", tz="UTC"
+            ),
             axis=0,
             inplace=True,
         )
@@ -243,12 +246,12 @@ class TestUtils:
         assert res["data_1"] == []
 
     def test_outer_timestamps(self):
-        ref_index = pd.date_range("2009-01-01", freq="d", periods=5)
-        idx = pd.date_range("2009-01-02", freq="d", periods=2)
+        ref_index = pd.date_range("2009-01-01", freq="d", periods=5, tz="UTC")
+        idx = pd.date_range("2009-01-02", freq="d", periods=2, tz="UTC")
         start, end = get_outer_timestamps(idx, ref_index)
 
-        assert start == pd.to_datetime("2009-01-01")
-        assert end == pd.to_datetime("2009-01-04")
+        assert start == pd.to_datetime("2009-01-01", utc=True)
+        assert end == pd.to_datetime("2009-01-04", utc=True)
 
         start, end = get_outer_timestamps(ref_index, ref_index)
         assert start == ref_index[0]
@@ -257,7 +260,9 @@ class TestUtils:
     def test_timedelta_to_int(self):
         X = pd.DataFrame(
             {"a": np.arange(10 * 6 * 24)},
-            index=pd.date_range(dt.datetime.now(), freq="10min", periods=10 * 6 * 24),
+            index=pd.date_range(
+                dt.datetime.now(), freq="10min", periods=10 * 6 * 24, tz="UTC"
+            ),
         )
 
         assert timedelta_to_int("24h", X) == 144

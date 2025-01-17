@@ -19,6 +19,7 @@ from tide.utils import (
     get_data_blocks,
     get_idx_freq_delta_or_min_time_interval,
     ensure_list,
+    get_tag_levels,
 )
 
 from tide.meteo import get_oikolab_df
@@ -98,6 +99,25 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         self.required_columns = required_columns
         self.removed_columns = removed_columns
         self.added_columns = added_columns
+
+    def get_set_tags_values_columns(self, X, tag_level: int, value: str):
+        nb_tags = get_tag_levels(X.columns)
+        if tag_level > nb_tags - 1:
+            raise ValueError(
+                f"Asking for level {tag_level} tag (indexing from 0). "
+                f"Only {nb_tags} tags found in columns"
+            )
+
+        new_columns = []
+        for col in X.columns:
+            parts = col.split("__")
+            parts[tag_level] = value
+            new_columns.append("__".join(parts))
+
+        return new_columns
+
+    def set_tags_values(self, X, tag_level: int, value: str):
+        X.columns = self.get_set_tags_values_columns(X, tag_level, value)
 
     def check_features(self, X):
         if self.required_columns is not None:

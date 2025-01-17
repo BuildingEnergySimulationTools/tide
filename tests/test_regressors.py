@@ -8,7 +8,7 @@ from tide.regressors import SkSTLForecast
 
 class TestRegressors:
     def test_stl_forecaster(self):
-        index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h")
+        index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h", tz="UTC")
         cumsum_second = np.arange(
             start=0, stop=(index[-1] - index[0]).total_seconds() + 1, step=3600
         )

@@ -43,6 +43,12 @@ class NamedList:
             raise TypeError("Invalid key type")
 
 
+def get_added_removed_col(original_idx: list | pd.Index, new_idx: list | pd.Index):
+    added_columns = list(set(new_idx) - set(original_idx))
+    removed_columns = list(set(original_idx) - set(new_idx))
+    return added_columns, removed_columns
+
+
 def get_tag_levels(data_columns: pd.Index | list[str]) -> int:
     """
     Returns max number of used tags from data columns names
@@ -185,6 +191,9 @@ def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
         )
     if not isinstance(X.index, pd.DatetimeIndex):
         raise ValueError("X index is not a pandas DateTime index")
+
+    if X.index.tz is None:
+        raise ValueError("X index must be tz_localized")
 
     return X.to_frame() if isinstance(X, pd.Series) else X
 
