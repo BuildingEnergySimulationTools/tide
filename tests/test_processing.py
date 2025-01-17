@@ -87,7 +87,7 @@ class TestCustomTransformers:
         identity = Identity()
         res = identity.fit_transform(df)
 
-        assert df.columns == identity.get_feature_names_out()
+        assert list(df.columns) == list(identity.get_feature_names_out())
         pd.testing.assert_frame_equal(df, res)
 
     def test_pd_replace_duplicated(self):
@@ -134,8 +134,8 @@ class TestCustomTransformers:
         renamer = RenameColumns(new_names=new_cols)
 
         renamer.fit(df)
-        assert list(df.columns) == renamer.get_feature_names_in()
-        assert renamer.get_feature_names_out() == new_cols
+        assert list(df.columns) == list(renamer.get_feature_names_in())
+        assert list(renamer.get_feature_names_out()) == new_cols
         assert list(renamer.transform(df).columns) == new_cols
 
         new_cols_dict = {"d": "a"}
@@ -425,7 +425,7 @@ class TestCustomTransformers:
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
         lager.fit(df)
-        assert lager.get_feature_names_out() == [
+        assert list(lager.get_feature_names_out()) == [
             "col0",
             "col1",
             "1:00:00_col0",
@@ -474,7 +474,7 @@ class TestCustomTransformers:
             ),
         )
 
-        assert trans.get_feature_names_out() == ["c", "combined"]
+        assert list(trans.get_feature_names_out()) == ["c", "combined"]
 
         ref = x_in.copy()
         ref["combined"] = [2, 4]
@@ -703,7 +703,7 @@ class TestCustomTransformers:
         )
 
         res = combiner.fit_transform(test_df.copy())
-        assert combiner.get_feature_names_out() == [
+        assert list(combiner.get_feature_names_out()) == [
             "Tin__°C__building",
             "Text__°C__outdoor",
             "radiation__W/m2__outdoor",
@@ -784,7 +784,7 @@ class TestCustomTransformers:
 
         sun_angle = AddSolarAngles()
         sun_angle.fit(df.copy())
-        assert sun_angle.get_feature_names_out() == [
+        assert list(sun_angle.get_feature_names_out()) == [
             "a",
             "sun_el__angle_deg__OTHER__OTHER_SUB_BLOC",
             "sun_az__angle_deg__OTHER__OTHER_SUB_BLOC",

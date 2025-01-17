@@ -1,5 +1,6 @@
 import datetime as dt
 
+import numpy as np
 import pandas as pd
 
 import plotly.graph_objects as go
@@ -22,7 +23,17 @@ from tide.plot import (
 import tide.processing as pc
 
 
-def _get_pipe_from_proc_list(proc_list: list, verbose: bool = False) -> Pipeline:
+def _dummy_df(columns):
+    return pd.DataFrame(
+        data=np.ones((2, len(columns))),
+        columns=columns,
+        index=pd.date_range("2009", freq="h", periods=2),
+    )
+
+
+def _get_pipe_from_proc_list(
+    data_columns: pd.Index | list[str], proc_list: list, verbose: bool = False
+) -> Pipeline:
     proc_units = [
         getattr(pc, proc[0])(
             *proc[1] if len(proc) > 1 and isinstance(proc[1], list) else (),
@@ -30,7 +41,10 @@ def _get_pipe_from_proc_list(proc_list: list, verbose: bool = False) -> Pipeline
         )
         for proc in proc_list
     ]
-    return make_pipeline(*proc_units, verbose=verbose)
+    pipe = make_pipeline(*proc_units, verbose=verbose)
+    pipe.set_output(transform="pandas")
+    pipe.fit(_dummy_df(data_columns))
+    return pipe
 
 
 def _get_column_wise_transformer(
@@ -49,7 +63,7 @@ def _get_column_wise_transformer(
             col_trans_list.append(
                 (
                     f"{process_name}->{name}" if process_name is not None else name,
-                    _get_pipe_from_proc_list(proc_list, verbose=verbose),
+                    _get_pipe_from_proc_list(requested_col, proc_list, verbose),
                     requested_col,
                 )
             )
@@ -57,12 +71,14 @@ def _get_column_wise_transformer(
     if not col_trans_list:
         return None
     else:
-        return ColumnTransformer(
+        transformer = ColumnTransformer(
             col_trans_list,
             remainder="passthrough",
             verbose_feature_names_out=False,
             verbose=verbose,
         ).set_output(transform="pandas")
+        transformer.fit(_dummy_df(data_columns))
+        return transformer
 
 
 def get_pipeline_from_dict(
@@ -72,13 +88,14 @@ def get_pipeline_from_dict(
         return Pipeline([("Identity", pc.Identity())], verbose=verbose)
     else:
         steps_list = []
+        step_columns = data_columns.copy()
         for step, op_conf in pipe_dict.items():
             if isinstance(op_conf, list):
-                operation = _get_pipe_from_proc_list(op_conf, verbose=verbose)
+                operation = _get_pipe_from_proc_list(step_columns, op_conf, verbose)
 
             elif isinstance(op_conf, dict):
                 operation = _get_column_wise_transformer(
-                    op_conf, data_columns, step, verbose
+                    op_conf, step_columns, step, verbose
                 )
 
             else:
@@ -86,6 +103,7 @@ def get_pipeline_from_dict(
 
             if operation is not None:
                 steps_list.append((step, operation))
+                step_columns = operation.get_feature_names_out()
 
         return Pipeline(steps_list, verbose=verbose)
 

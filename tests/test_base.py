@@ -36,7 +36,10 @@ class TestBase:
 
         dp.fit(data.copy())
         assert dp.get_feature_names_in() == list(data.columns)
-        assert dp.get_feature_names_out() == ["hr__%hr__meteo", "new_col__°C__meteo"]
+        assert list(dp.get_feature_names_out()) == [
+            "hr__%hr__meteo",
+            "new_col__°C__meteo",
+        ]
 
         res = dp.transform(data.copy())
 
@@ -45,7 +48,7 @@ class TestBase:
 
         dp = DumbProcessor(required_columns=["text__°C__meteo"], keep_required=True)
         dp.fit(data)
-        assert dp.get_feature_names_out() == [
+        assert list(dp.get_feature_names_out()) == [
             "text__°C__meteo",
             "hr__%hr__meteo",
             "new_col__°C__meteo",

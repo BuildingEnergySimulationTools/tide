@@ -73,7 +73,7 @@ class TestPlumbing:
         test_df = TEST_DF.copy()
         test_df.iloc[1, 0] = np.nan
         test_df.iloc[0, 1] = np.nan
-        pipe = _get_pipe_from_proc_list(PIPE_DICT["common"])
+        pipe = _get_pipe_from_proc_list(test_df.columns, PIPE_DICT["common"])
 
         res = pipe.fit_transform(test_df)
 
