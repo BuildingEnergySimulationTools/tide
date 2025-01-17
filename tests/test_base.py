@@ -29,7 +29,7 @@ class TestBase:
                 "text__°C__meteo": np.random.randn(24),
                 "hr__%hr__meteo": np.random.randn(24),
             },
-            index=pd.date_range("2024-12-05 00:00:00", freq="h", periods=24),
+            index=pd.date_range("2024-12-05 00:00:00", freq="h", periods=24, tz="UTC"),
         )
 
         dp = DumbProcessor(required_columns=["text__°C__meteo"], keep_required=False)

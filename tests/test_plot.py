@@ -52,7 +52,7 @@ class TestPlot:
                 "a": np.random.randn(24),
                 "b": np.random.randn(24),
             },
-            index=pd.date_range("2009", freq="h", periods=24),
+            index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
         )
 
         df.loc["2009-01-01 05:00:00":"2009-01-01 09:00:00", :] = np.nan
@@ -71,7 +71,7 @@ class TestPlot:
                 "b__W": np.random.randn(24) * 100,
                 "e__Wh": np.random.randn(24) * 100,
             },
-            index=pd.date_range("2009", freq="h", periods=24),
+            index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
         )
         df["e__Wh"] = abs(df).cumsum()["e__Wh"]
 
@@ -94,14 +94,12 @@ class TestPlot:
             y_title_standoff=1,
         )
 
-        assert True
-
     def test_get_gaps_scatter_dict(self):
         np.random.seed(42)
         measure = pd.Series(
             np.random.randn(24),
             name="name",
-            index=pd.date_range("2009", freq="h", periods=24),
+            index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
         )
 
         measure.loc["2009-01-01 02:00:00":"2009-01-01 05:00:00"] = np.nan
@@ -114,10 +112,10 @@ class TestPlot:
         assert gap_dict == [
             {
                 "x": [
-                    pd.Timestamp("2009-01-01 01:00:00"),
-                    pd.Timestamp("2009-01-01 01:00:00"),
-                    pd.Timestamp("2009-01-01 06:00:00"),
-                    pd.Timestamp("2009-01-01 06:00:00"),
+                    pd.Timestamp("2009-01-01 01:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 01:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 06:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 06:00:00", tz="UTC"),
                 ],
                 "y": [
                     -1.913280244657798,
@@ -133,10 +131,10 @@ class TestPlot:
             },
             {
                 "x": [
-                    pd.Timestamp("2009-01-01 11:00:00"),
-                    pd.Timestamp("2009-01-01 11:00:00"),
-                    pd.Timestamp("2009-01-01 13:00:00"),
-                    pd.Timestamp("2009-01-01 13:00:00"),
+                    pd.Timestamp("2009-01-01 11:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 11:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 13:00:00", tz="UTC"),
+                    pd.Timestamp("2009-01-01 13:00:00", tz="UTC"),
                 ],
                 "y": [
                     -1.913280244657798,

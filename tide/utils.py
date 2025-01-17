@@ -192,6 +192,9 @@ def check_and_return_dt_index_df(X: pd.Series | pd.DataFrame) -> pd.DataFrame:
     if not isinstance(X.index, pd.DatetimeIndex):
         raise ValueError("X index is not a pandas DateTime index")
 
+    if X.index.tz is None:
+        raise ValueError("X index must be tz_localized")
+
     return X.to_frame() if isinstance(X, pd.Series) else X
 
 

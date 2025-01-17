@@ -82,7 +82,7 @@ def mock_get_oikolab_df(**kwargs):
 class TestCustomTransformers:
     def test_pd_identity(self):
         df = pd.DataFrame(
-            {"a": [1.0]}, index=pd.date_range("2009", freq="h", periods=1)
+            {"a": [1.0]}, index=pd.date_range("2009", freq="h", periods=1, tz="UTC")
         )
 
         identity = Identity()
@@ -94,12 +94,12 @@ class TestCustomTransformers:
     def test_pd_replace_duplicated(self):
         df = pd.DataFrame(
             {"a": [1.0, 1.0, 2.0], "b": [3.0, np.nan, 3.0]},
-            pd.date_range("2009-01-01", freq="h", periods=3),
+            pd.date_range("2009-01-01", freq="h", periods=3, tz="UTC"),
         )
 
         res = pd.DataFrame(
             {"a": [1.0, np.nan, 2.0], "b": [3.0, np.nan, np.nan]},
-            pd.date_range("2009-01-01", freq="h", periods=3),
+            pd.date_range("2009-01-01", freq="h", periods=3, tz="UTC"),
         )
 
         rep_dup = ReplaceDuplicated(keep="first", value=np.nan)
@@ -110,12 +110,12 @@ class TestCustomTransformers:
     def test_pd_dropna(self):
         df = pd.DataFrame(
             {"a": [1.0, 2.0, np.nan], "b": [3.0, 4.0, 5.0]},
-            index=pd.date_range("2009", freq="h", periods=3),
+            index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
         ref = pd.DataFrame(
             {"a": [1.0, 2.0], "b": [3.0, 4.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         dropper = Dropna(how="any")
@@ -127,7 +127,7 @@ class TestCustomTransformers:
     def test_pd_rename_columns(self):
         df = pd.DataFrame(
             {"a": [1.0, 2.0, np.nan], "b": [3.0, 4.0, 5.0]},
-            index=pd.date_range("2009", freq="h", periods=3),
+            index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
         new_cols = ["c", "d"]
@@ -145,14 +145,16 @@ class TestCustomTransformers:
         assert list(renamer.fit_transform(df).columns) == ["c", "a"]
 
         inversed = renamer.inverse_transform(
-            pd.DataFrame(np.zeros((2, 2)), pd.date_range("2009", freq="h", periods=2))
+            pd.DataFrame(
+                np.zeros((2, 2)), pd.date_range("2009", freq="h", periods=2, tz="UTC")
+            )
         )
         assert list(inversed.columns) == ["c", "a"]
 
     def test_pd_sk_transformer(self):
         df = pd.DataFrame(
             {"a": [1.0, 2.0], "b": [3.0, 4.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         scaler = SkTransform(StandardScaler())
@@ -160,7 +162,7 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {"a": [-1.0, 1.0], "b": [-1.0, 1.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         pd.testing.assert_frame_equal(to_test, ref)
@@ -171,12 +173,12 @@ class TestCustomTransformers:
     def test_pd_replace_threshold(self):
         df = pd.DataFrame(
             {"col1": [1, 2, 3, np.nan, 4], "col2": [1, np.nan, np.nan, 4, 5]},
-            index=pd.date_range("2009", freq="h", periods=5),
+            index=pd.date_range("2009", freq="h", periods=5, tz="UTC"),
         )
 
         ref = pd.DataFrame(
             {"col1": [0.0, 2, 3, np.nan, 4], "col2": [0.0, np.nan, np.nan, 4, 5]},
-            index=pd.date_range("2009", freq="h", periods=5),
+            index=pd.date_range("2009", freq="h", periods=5, tz="UTC"),
         )
 
         dropper = ReplaceThreshold(lower=1.1, upper=5, value=0.0)
@@ -191,7 +193,7 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(dropper.transform(df), df)
 
     def test_pd_drop_time_gradient(self):
-        time_index = pd.date_range("2021-01-01 00:00:00", freq="h", periods=8)
+        time_index = pd.date_range("2021-01-01 00:00:00", freq="h", periods=8, tz="UTC")
 
         df = pd.DataFrame(
             {
@@ -220,12 +222,12 @@ class TestCustomTransformers:
     def test_pd_apply_expression(self):
         df = pd.DataFrame(
             {"a": [1.0, 2.0], "b": [3.0, 4.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         ref = pd.DataFrame(
             {"a": [2.0, 4.0], "b": [6.0, 8.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         transformer = ApplyExpression("X * 2")
@@ -234,12 +236,12 @@ class TestCustomTransformers:
 
         df = pd.DataFrame(
             {"a__W": [1.0, 2.0], "b__W": [3.0, 4.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         ref = pd.DataFrame(
             {"a__kW": [0.001, 0.002], "b__kW": [0.003, 0.004]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         transformer = ApplyExpression("X / 1000", "kW")
@@ -250,7 +252,9 @@ class TestCustomTransformers:
         test = (
             pd.DataFrame(
                 {"cpt1__J": [0, 1, 2, 2, 2, 3], "cpt2__J": [0, 1, 2, 2, 2, 3]},
-                index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6),
+                index=pd.date_range(
+                    "2009-01-01 00:00:00", freq="10s", periods=6, tz="UTC"
+                ),
             )
             * 3600
         )
@@ -260,7 +264,7 @@ class TestCustomTransformers:
                 "cpt1__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
                 "cpt2__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
             },
-            index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6),
+            index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6, tz="UTC"),
         )
 
         derivator = TimeGradient(new_unit="W")
@@ -273,7 +277,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         ref = pd.DataFrame(
@@ -281,7 +285,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 2.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         filler = Ffill()
@@ -292,7 +296,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, 0.0, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 2.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         filler = Ffill(gaps_lte="1h")
@@ -304,7 +308,7 @@ class TestCustomTransformers:
                 "cpt1": [np.nan, np.nan, 2.0, 2.0, np.nan, 3.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         ref = pd.DataFrame(
@@ -312,7 +316,7 @@ class TestCustomTransformers:
                 "cpt1": [2.0, 2.0, 2.0, 2.0, 3.0, 3.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 3.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         filler = Bfill()
@@ -324,7 +328,7 @@ class TestCustomTransformers:
                 "cpt1": [np.nan, np.nan, 2.0, 2.0, 3.0, 3.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 3.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
         pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
 
@@ -334,7 +338,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, np.nan, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, np.nan, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         ref = pd.DataFrame(
@@ -342,7 +346,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, 0.0, 2.0, 2.0, 0.0, 0.0],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 0.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
 
         filler = FillNa(value=0.0)
@@ -354,7 +358,7 @@ class TestCustomTransformers:
                 "cpt1": [0.0, 0.0, 2.0, 2.0, np.nan, np.nan],
                 "cpt2": [0.0, 1.0, 2.0, 2.0, 0.0, 3.0],
             },
-            index=pd.date_range("2009", freq="h", periods=6),
+            index=pd.date_range("2009", freq="h", periods=6, tz="UTC"),
         )
         pd.testing.assert_frame_equal(ref, filler.fit_transform(test.copy()))
 
@@ -369,7 +373,7 @@ class TestCustomTransformers:
                 "col2__°C": np.random.random(10),
                 "col3": np.random.random(10) * 10,
             },
-            index=pd.date_range("2009-01-01", freq="h", periods=10),
+            index=pd.date_range("2009-01-01", freq="h", periods=10, tz="UTC"),
         ).astype("float")
 
         ref = pd.DataFrame(
@@ -379,7 +383,7 @@ class TestCustomTransformers:
                 "col2__°C": [0.56239, 0.47789],
                 "col3": [9.69910, 5.24756],
             },
-            index=pd.date_range("2009-01-01 00:00:00", freq="5h", periods=2),
+            index=pd.date_range("2009-01-01 00:00:00", freq="5h", periods=2, tz="UTC"),
         ).astype("float")
 
         column_resampler = Resample(
@@ -423,7 +427,7 @@ class TestCustomTransformers:
                 "col0": np.arange(2),
                 "col1": np.arange(2) * 10,
             },
-            index=pd.date_range("2009-01-01", freq="h", periods=2),
+            index=pd.date_range("2009-01-01", freq="h", periods=2, tz="UTC"),
         )
 
         ref = pd.DataFrame(
@@ -434,7 +438,7 @@ class TestCustomTransformers:
                 "1:00:00_col1": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns]", freq="h"
+                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
             ),
         )
 
@@ -451,7 +455,7 @@ class TestCustomTransformers:
     def test_pd_gaussian_filter(self):
         df = pd.DataFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]},
-            index=pd.date_range("2009", freq="h", periods=3),
+            index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
         gfilter = GaussianFilter1D()
@@ -471,7 +475,7 @@ class TestCustomTransformers:
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(
             {"a__°C": [1, 2], "b__°C": [1, 2], "c": [1, 2]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         trans = CombineColumns(
@@ -485,7 +489,7 @@ class TestCustomTransformers:
             trans.fit_transform(x_in.copy()),
             pd.DataFrame(
                 {"c": [1, 2], "combined": [2, 4]},
-                index=pd.date_range("2009", freq="h", periods=2),
+                index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
             ),
         )
 
@@ -540,7 +544,7 @@ class TestCustomTransformers:
                 "data_1": np.arange(24).astype(float),
                 "data_2": 2 * np.arange(24).astype(float),
             },
-            index=pd.date_range("2009", freq="h", periods=24),
+            index=pd.date_range("2009", freq="h", periods=24, tz="UTC"),
         )
 
         toy_holes = toy_df.copy()
@@ -623,7 +627,7 @@ class TestCustomTransformers:
         )
 
     def test_pd_fill_gap(self):
-        index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h")
+        index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h", tz="UTC")
         cumsum_second = np.arange(
             start=0, stop=(index[-1] - index[0]).total_seconds() + 1, step=3600
         )
@@ -641,15 +645,19 @@ class TestCustomTransformers:
         holes_pairs = [
             ("2009-06-14 12:00:00", "Temp_1"),
             ("2009-05-24", "Temp_1"),
-            (pd.date_range("2009-07-05", "2009-07-06", freq="h"), "Temp_1"),
+            (pd.date_range("2009-07-05", "2009-07-06", freq="h", tz="UTC"), "Temp_1"),
             (
-                pd.date_range("2009-12-24 14:00:00", "2009-12-24 16:00:00", freq="h"),
+                pd.date_range(
+                    "2009-12-24 14:00:00", "2009-12-24 16:00:00", freq="h", tz="UTC"
+                ),
                 "Temp_1",
             ),
             ("2009-04-24", "Temp_2"),
-            (pd.date_range("2009-06-05", "2009-06-06", freq="h"), "Temp_2"),
+            (pd.date_range("2009-06-05", "2009-06-06", freq="h", tz="UTC"), "Temp_2"),
             (
-                pd.date_range("2009-11-24 14:00:00", "2009-11-24 16:00:00", freq="h"),
+                pd.date_range(
+                    "2009-11-24 14:00:00", "2009-11-24 16:00:00", freq="h", tz="UTC"
+                ),
                 "Temp_2",
             ),
         ]
@@ -666,8 +674,12 @@ class TestCustomTransformers:
             assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.99
 
         toy_df_15min = toy_df.resample("15min").mean().interpolate()
-        hole_backast = pd.date_range("2009-06-05", "2009-06-06 01:15:00", freq="15min")
-        hole_forecast = pd.date_range("2009-08-05", "2009-08-06 01:45:00", freq="15min")
+        hole_backast = pd.date_range(
+            "2009-06-05", "2009-06-06 01:15:00", freq="15min", tz="UTC"
+        )
+        hole_forecast = pd.date_range(
+            "2009-08-05", "2009-08-06 01:45:00", freq="15min", tz="UTC"
+        )
         toy_df_15min_hole = toy_df_15min.copy()
         toy_df_15min_hole.loc[hole_backast, "Temp_1"] = np.nan
         toy_df_15min_hole.loc[hole_forecast, "Temp_1"] = np.nan
@@ -704,7 +716,7 @@ class TestCustomTransformers:
                 "light__DIMENSIONLESS__building": [100, 200, 300],
                 "mass_flwr__m3/h__hvac": [300, 500, 600],
             },
-            index=pd.date_range("2009", freq="h", periods=3),
+            index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
         combiner = ExpressionCombine(
@@ -782,6 +794,7 @@ class TestCustomTransformers:
             start="2009-07-11 16:00:00+00:00",
             end="2009-07-12 23:15:00+00:00",
             freq="15min",
+            tz="UTC",
         )
         data = pd.DataFrame(
             {"tin__°C__Building": np.random.randn(len(data_idx))}, index=data_idx
@@ -794,7 +807,7 @@ class TestCustomTransformers:
     def test_add_solar_angles(self):
         df = pd.DataFrame(
             {"a": np.random.randn(24)},
-            index=pd.date_range("2024-12-19", freq="h", periods=24),
+            index=pd.date_range("2024-12-19", freq="h", periods=24, tz="UTC"),
         )
 
         sun_angle = AddSolarAngles()
@@ -841,7 +854,7 @@ class TestCustomTransformers:
                 "col_2": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
                 "col_1_fill": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             },
-            index=pd.date_range("2009", freq="h", periods=10),
+            index=pd.date_range("2009", freq="h", periods=10, tz="UTC"),
         )
 
         col_filler = FillOtherColumns(columns_map={"col_1": "col_1_fill"})
@@ -867,7 +880,7 @@ class TestCustomTransformers:
     def test_drop_columns(self):
         df = pd.DataFrame(
             {"a": [1, 2], "b": [1, 2], "c": [1, 2]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         col_dropper = DropColumns()
@@ -891,11 +904,14 @@ class TestCustomTransformers:
     def test_replace_tag(self):
         df = pd.DataFrame(
             {"energy_1__Wh": [1.0, 2.0], "energy_2__Whr__bloc": [3.0, 4.0]},
-            index=pd.date_range("2009", freq="h", periods=2),
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         rep = ReplaceTag({"Whr": "Wh"})
         rep.fit_transform(df)
 
-        assert rep.get_feature_names_out() == ["energy_1__Wh", "energy_2__Wh__bloc"]
+        assert list(rep.get_feature_names_out()) == [
+            "energy_1__Wh",
+            "energy_2__Wh__bloc",
+        ]
         assert list(df.columns) == ["energy_1__Wh", "energy_2__Wh__bloc"]
