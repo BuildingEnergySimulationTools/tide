@@ -109,12 +109,18 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         self.feature_names_in_ = list(X.columns)
 
     def get_feature_names_out(self, input_features=None):
-        check_is_fitted(self, attributes=["feature_names_in_"])
+        if input_features is None:
+            check_is_fitted(self, attributes=["feature_names_in_"])
+            input_features = self.feature_names_in_
+
         added_columns = ensure_list(self.added_columns)
         removed_columns = ensure_list(self.removed_columns)
-
-        features_out = self.feature_names_in_.copy() + added_columns
-        return [feature for feature in features_out if feature not in removed_columns]
+        if isinstance(input_features, list):
+            input_features = np.array(input_features)
+        features_out = np.concatenate([input_features.copy(), np.array(added_columns)])
+        return np.array(
+            [feature for feature in features_out if feature not in removed_columns]
+        )
 
     def get_feature_names_in(self):
         check_is_fitted(self, attributes=["feature_names_in_"])
