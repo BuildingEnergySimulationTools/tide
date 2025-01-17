@@ -794,7 +794,6 @@ class TestCustomTransformers:
             start="2009-07-11 16:00:00+00:00",
             end="2009-07-12 23:15:00+00:00",
             freq="15min",
-            tz="UTC",
         )
         data = pd.DataFrame(
             {"tin__°C__Building": np.random.randn(len(data_idx))}, index=data_idx
