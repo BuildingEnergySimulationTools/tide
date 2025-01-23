@@ -218,14 +218,16 @@ class BaseFiller:
 
     def get_gaps_mask(self, X: pd.Series | pd.DataFrame):
         gaps_dict = self.get_gaps_dict_to_fill(X)
-        df_mask = pd.DataFrame(index=X.index)
+        mask_data = {}
+
         for col, idx_list in gaps_dict.items():
             if idx_list:
                 combined_idx = pd.concat([idx.to_series() for idx in idx_list]).index
-                df_mask[col] = X.index.isin(combined_idx)
+                mask_data[col] = X.index.isin(combined_idx)
             else:
-                df_mask[col] = np.zeros_like(X.shape[0]).astype(bool)
+                mask_data[col] = np.zeros(X.shape[0], dtype=bool)
 
+        df_mask = pd.DataFrame(mask_data, index=X.index)
         return df_mask
 
 
