@@ -40,6 +40,7 @@ setup(
         "plotly>=5.3.1",
         "requests>=2.32.3",
         "influxdb-client>=1.48.0",
+        "prophet>=1.1.6",
     ],
     packages=find_packages(exclude=["tests*"]),
     include_package_data=True,
