@@ -57,6 +57,16 @@ def get_tag_levels(data_columns: pd.Index | list[str]) -> int:
     return max(len(col.split("__")) for col in data_columns)
 
 
+def edit_tag_name_by_level(col_name: str, tag_level: int, new_tag_name: str) -> str:
+    parts = col_name.split("__")
+    if tag_level > len(parts) - 1:
+        raise ValueError(
+            f"Cannot edit tag name at level index {tag_level}. Columns have only {len(parts)} tag levels."
+        )
+    parts[tag_level] = new_tag_name
+    return "__".join(parts)
+
+
 def col_name_tag_enrichment(col_name: str, tag_levels: int) -> str:
     """
     Enriches a column name by adding default tags until it reaches the specified
@@ -443,6 +453,22 @@ def process_stl_odd_args(param_name, X, stl_kwargs):
 
 
 def ensure_list(item):
+    """
+    Ensures the input is returned as a list.
+
+    Parameters
+    ----------
+    item : any
+        The input item to be converted to a list if it is not already one.
+        If the input is `None`, an empty list is returned.
+
+    Returns
+    -------
+    list
+        - If `item` is `None`, returns an empty list.
+        - If `item` is already a list, it is returned as is.
+        - Otherwise, wraps the `item` in a list and returns it.
+    """
     if item is None:
         return []
     return item if isinstance(item, list) else [item]

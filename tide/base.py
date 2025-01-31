@@ -25,29 +25,94 @@ from tide.utils import (
 from tide.meteo import get_oikolab_df
 
 
-def _ensure_list(item):
+class TideBaseMixin:
     """
-    Ensures the input is returned as a list.
+    This class is designed to provide Tide base functionalities including :
+    - checking features in and out
+    - checking mandatory features
+    - Modifying features names according to tide's tags
 
     Parameters
     ----------
-    item : any
-        The input item to be converted to a list if it is not already one.
-        If the input is `None`, an empty list is returned.
+    required_columns : str or list[str], optional
+        Column names that must be present in the input data. Defaults to None.
+    removed_columns : str or list[str], optional
+        Column that will be removed during the transform process. Defaults to None.
+    added_columns : str or list[str], optional
+        Column that will be added to the output feature set during transform
+        process. Defaults to None.
 
-    Returns
+    Methods
     -------
-    list
-        - If `item` is `None`, returns an empty list.
-        - If `item` is already a list, it is returned as is.
-        - Otherwise, wraps the `item` in a list and returns it.
+    check_features(X):
+        Ensures that the required columns are present in the input DataFrame.
+    fit_check_features(X):
+        Checks required columns and stores the initial feature names.
+    get_feature_names_out():
+        Computes the final set of feature names, accounting for added and removed
+        columns.
+    get_feature_names_in():
+        Returns the names of the features as initially fitted.
     """
-    if item is None:
-        return []
-    return item if isinstance(item, list) else [item]
+
+    def __init__(
+        self,
+        required_columns: str | list[str] = None,
+        removed_columns: str | list[str] = None,
+        added_columns: str | list[str] = None,
+    ):
+        self.required_columns = required_columns
+        self.removed_columns = removed_columns
+        self.added_columns = added_columns
+
+    def check_required_features(self, X):
+        if self.required_columns is not None:
+            if not set(self.required_columns).issubset(X.columns):
+                raise ValueError("One or several required columns are missing")
+
+    def fit_check_features(self, X):
+        self.check_required_features(X)
+        self.feature_names_in_ = list(X.columns)
+
+    def get_set_tags_values_columns(self, X, tag_level: int, value: str):
+        nb_tags = get_tag_levels(X.columns)
+        if tag_level > nb_tags - 1:
+            raise ValueError(
+                f"Asking for level {tag_level} tag (indexing from 0). "
+                f"Only {nb_tags} tags found in columns"
+            )
+
+        new_columns = []
+        for col in X.columns:
+            parts = col.split("__")
+            parts[tag_level] = value
+            new_columns.append("__".join(parts))
+
+        return new_columns
+
+    def set_tags_values(self, X, tag_level: int, value: str):
+        X.columns = self.get_set_tags_values_columns(X, tag_level, value)
+
+    def get_feature_names_out(self, input_features=None):
+        if input_features is None:
+            check_is_fitted(self, attributes=["feature_names_in_"])
+            input_features = self.feature_names_in_
+
+        added_columns = ensure_list(self.added_columns)
+        removed_columns = ensure_list(self.removed_columns)
+        if isinstance(input_features, list):
+            input_features = np.array(input_features)
+        features_out = np.concatenate([input_features.copy(), np.array(added_columns)])
+        return np.array(
+            [feature for feature in features_out if feature not in removed_columns]
+        )
+
+    def get_feature_names_in(self):
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        return self.feature_names_in_
 
 
-class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
+class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
     """
     Abstract base class for processing pipelines with feature checks and
     transformation logic.
@@ -96,55 +161,14 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         removed_columns: str | list[str] = None,
         added_columns: str | list[str] = None,
     ):
-        self.required_columns = required_columns
-        self.removed_columns = removed_columns
-        self.added_columns = added_columns
-
-    def get_set_tags_values_columns(self, X, tag_level: int, value: str):
-        nb_tags = get_tag_levels(X.columns)
-        if tag_level > nb_tags - 1:
-            raise ValueError(
-                f"Asking for level {tag_level} tag (indexing from 0). "
-                f"Only {nb_tags} tags found in columns"
-            )
-
-        new_columns = []
-        for col in X.columns:
-            parts = col.split("__")
-            parts[tag_level] = value
-            new_columns.append("__".join(parts))
-
-        return new_columns
-
-    def set_tags_values(self, X, tag_level: int, value: str):
-        X.columns = self.get_set_tags_values_columns(X, tag_level, value)
-
-    def check_features(self, X):
-        if self.required_columns is not None:
-            if not set(self.required_columns).issubset(X.columns):
-                raise ValueError("One or several required columns are missing")
-
-    def fit_check_features(self, X):
-        self.check_features(X)
-        self.feature_names_in_ = list(X.columns)
-
-    def get_feature_names_out(self, input_features=None):
-        if input_features is None:
-            check_is_fitted(self, attributes=["feature_names_in_"])
-            input_features = self.feature_names_in_
-
-        added_columns = ensure_list(self.added_columns)
-        removed_columns = ensure_list(self.removed_columns)
-        if isinstance(input_features, list):
-            input_features = np.array(input_features)
-        features_out = np.concatenate([input_features.copy(), np.array(added_columns)])
-        return np.array(
-            [feature for feature in features_out if feature not in removed_columns]
+        TideBaseMixin.__init__(
+            self,
+            required_columns=required_columns,
+            removed_columns=removed_columns,
+            added_columns=added_columns,
         )
-
-    def get_feature_names_in(self):
-        check_is_fitted(self, attributes=["feature_names_in_"])
-        return self.feature_names_in_
+        TransformerMixin.__init__(self)
+        BaseEstimator.__init__(self)
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
@@ -153,7 +177,7 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator):
         return self
 
     def transform(self, X: pd.Series | pd.DataFrame):
-        self.check_features(X)
+        self.check_required_features(X)
         X = check_and_return_dt_index_df(X)
         return self._transform_implementation(X)
 

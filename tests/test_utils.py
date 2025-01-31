@@ -2,6 +2,7 @@ import datetime as dt
 
 import pandas as pd
 import numpy as np
+import pytest
 
 from tide.utils import (
     get_data_blocks,
@@ -13,6 +14,7 @@ from tide.utils import (
     timedelta_to_int,
     NamedList,
     get_series_bloc,
+    edit_tag_name_by_level,
 )
 
 DF_COLUMNS = pd.DataFrame(
@@ -29,6 +31,18 @@ DF_COLUMNS = pd.DataFrame(
 
 
 class TestUtils:
+    def test_edit_tag_name_by_level(self):
+        col_name = "temp__°C__bloc1"
+        new_name = edit_tag_name_by_level(col_name, 0, "temp_1")
+
+        assert new_name == "temp_1__°C__bloc1"
+
+        with pytest.raises(
+            ValueError,
+            match=r"Cannot edit tag name at level index 3. Columns have only 3 tag levels.",
+        ):
+            edit_tag_name_by_level(col_name, 3, "temp_1")
+
     def test_named_list(self):
         test = NamedList(["a", "b", "c", "d"])
 
