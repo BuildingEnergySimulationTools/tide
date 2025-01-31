@@ -25,27 +25,6 @@ from tide.utils import (
 from tide.meteo import get_oikolab_df
 
 
-def _ensure_list(item):
-    """
-    Ensures the input is returned as a list.
-
-    Parameters
-    ----------
-    item : any
-        The input item to be converted to a list if it is not already one.
-        If the input is `None`, an empty list is returned.
-
-    Returns
-    -------
-    list
-        - If `item` is `None`, returns an empty list.
-        - If `item` is already a list, it is returned as is.
-        - Otherwise, wraps the `item` in a list and returns it.
-    """
-    if item is None:
-        return []
-    return item if isinstance(item, list) else [item]
-
 class TideBaseMixin:
     """
     This class is designed to provide Tide base functionalities including :
@@ -95,7 +74,6 @@ class TideBaseMixin:
         self.check_required_features(X)
         self.feature_names_in_ = list(X.columns)
 
-
     def get_set_tags_values_columns(self, X, tag_level: int, value: str):
         nb_tags = get_tag_levels(X.columns)
         if tag_level > nb_tags - 1:
@@ -132,6 +110,7 @@ class TideBaseMixin:
     def get_feature_names_in(self):
         check_is_fitted(self, attributes=["feature_names_in_"])
         return self.feature_names_in_
+
 
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
     """
@@ -175,6 +154,7 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
         Abstract method for the transformation logic. Must be implemented by
         subclasses.
     """
+
     def __init__(
         self,
         required_columns: str | list[str] = None,
