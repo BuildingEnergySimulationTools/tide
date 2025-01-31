@@ -185,61 +185,70 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
 
 class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
     """
-     A scikit-learn compatible wrapper for Meta Prophet forecasting model.
+    A scikit-learn compatible wrapper for Meta Prophet forecasting model.
 
-     This class combines the functionality of Prophet with scikit-learn's API,
-     allowing it to be used in scikit-learn pipelines and model selection tools.
-     It supports multi-feature forecasting, with a separate Prophet model fitted
-     for each feature.
+    This class combines the functionality of Prophet with scikit-learn's API,
+    allowing it to be used in scikit-learn pipelines and model selection tools.
+    It supports multi-feature forecasting, with a separate Prophet model fitted
+    for each feature.
 
-     Parameters
-     ----------
-     prophet_kwargs : dict, optional (default={})
-         Additional keyword arguments to be passed to the Prophet model.
-     changepoint_prior_scale : float, optional (default=0.05)
-         Determines the flexibility of the automatic changepoint selection.
-         Large values allow many changepoints, small values allow few changepoints.
-     seasonality_prior_scale : float, optional (default=10.0)
-         Parameter modulating the strength of the seasonality model.
-         Larger values allow the model to fit larger seasonal fluctuations.
-     return_upper_lower_bounds : bool, optional (default=False)
-         If True, return upper and lower prediction bounds along with the forecast.
-     backcast : bool, optional (default=False)
-         No effect, just here for tide FillGapAR compatibility.
+    Parameters
+    ----------
+    prophet_kwargs : dict, optional (default={})
+        Additional keyword arguments to be passed to the Prophet model.
+    changepoint_prior_scale : float, optional (default=0.05)
+        Determines the flexibility of the automatic changepoint selection.
+        Large values allow many changepoints, small values allow few changepoints.
+    seasonality_prior_scale : float, optional (default=10.0)
+        Parameter modulating the strength of the seasonality model.
+        Larger values allow the model to fit larger seasonal fluctuations.
+    return_upper_lower_bounds : bool, optional (default=False)
+        If True, return upper and lower prediction bounds along with the forecast.
+    backcast : bool, optional (default=False)
+        No effect, just here for tide FillGapAR compatibility.
 
-     Attributes
-     ----------
-     forecaster_ : dict
-         A dictionary of fitted Prophet models, one for each feature.
-     feature_names_in_ : list
-         The feature names seen during fit.
+    Attributes
+    ----------
+    forecaster_ : dict
+        A dictionary of fitted Prophet models, one for each feature.
+    feature_names_in_ : list
+        The feature names seen during fit.
 
-     Methods
-     -------
-     fit(X, y=None)
-         Fit the Prophet model to the input data.
-     predict(X)
-         Make predictions using the fitted Prophet model.
-     """
+    Methods
+    -------
+    fit(X, y=None)
+        Fit the Prophet model to the input data.
+    predict(X)
+        Make predictions using the fitted Prophet model.
+    """
+
     def __init__(
         self,
         prophet_kwargs: dict = {},
         changepoint_prior_scale: float = 0.05,
         seasonality_prior_scale: float = 10.0,
-        return_upper_lower_bounds:bool = False,
+        return_upper_lower_bounds: bool = False,
         backcast: bool = False,
     ):
         super().__init__()
         self.seasonality_prior_scale = seasonality_prior_scale
         self.changepoint_prior_scale = changepoint_prior_scale
         self.prophet_kwargs = prophet_kwargs
-        self.return_upper_lower_bounds: return_upper_lower_bounds
+        self.return_upper_lower_bounds = return_upper_lower_bounds
         self.backcast = backcast
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
         self.forecaster_ = {}
         self.fit_check_features(X)
+        if self.return_upper_lower_bounds:
+            self.added_columns = []
+            for bound in ["upper", "lower"]:
+                for feat in self.feature_names_in_:
+                    parts = feat.split("__")
+                    parts[0] = f"{parts[0]}_{bound}"
+                    self.added_columns.append("__".join(parts))
+
         for feat in X:
             x = series_to_prophet_df(X[feat])
             self.forecaster_[feat] = Prophet(
@@ -263,6 +272,13 @@ class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
         inferred_df = pd.DataFrame(index=X.index)
         for feat in self.forecaster_.keys():
             x = series_to_prophet_df(X.index)
-            inferred_df[feat] = self.forecaster_[feat].predict(x)["yhat"].values
+            prediction = self.forecaster_[feat].predict(x)
+            inferred_df[feat] = prediction["yhat"].values
+            if self.return_upper_lower_bounds:
+                for bound in ["upper", "lower"]:
+                    parts = feat.split("__")
+                    parts[0] = f"{parts[0]}_{bound}"
+                    bound_feat = "__".join(parts)
+                    inferred_df[bound_feat] = prediction[f"yhat_{bound}"].values
 
         return inferred_df.sort_index()
