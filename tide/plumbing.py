@@ -211,17 +211,17 @@ class Plumber:
         stop: str | dt.datetime | pd.Timestamp = None,
         y_axis_level: str = None,
         y_tag_list: list[str] = None,
-        steps_1: None | str | list[str] | slice = slice(None),
-        data_1_mode: str = "lines",
+        steps: None | str | list[str] | slice = slice(None),
+        data_mode: str = "lines",
         steps_2: None | str | list[str] | slice = None,
         data_2_mode: str = "markers",
         markers_opacity: float = 0.8,
         lines_width: float = 2.0,
         title: str = None,
-        plot_gaps_1: bool = False,
-        gaps_1_lower_td: str | pd.Timedelta | dt.timedelta = None,
-        gaps_1_rgb: tuple[int, int, int] = (31, 73, 125),
-        gaps_1_alpha: float = 0.5,
+        plot_gaps: bool = False,
+        gaps_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_rgb: tuple[int, int, int] = (31, 73, 125),
+        gaps_alpha: float = 0.5,
         plot_gaps_2: bool = False,
         gaps_2_lower_td: str | pd.Timedelta | dt.timedelta = None,
         gaps_2_rgb: tuple[int, int, int] = (254, 160, 34),
@@ -241,7 +241,7 @@ class Plumber:
             else select
         )
 
-        data_1 = self.get_corrected_data(select_corr, start, stop, steps_1, verbose)
+        data_1 = self.get_corrected_data(select_corr, start, stop, steps, verbose)
         if steps_2 is not None:
             data_2 = self.get_corrected_data(select_corr, start, stop, steps_2)
             data_2.columns = [f"data_2->{col}" for col in data_2.columns]
@@ -256,7 +256,7 @@ class Plumber:
         conf_dict_list.append({col: {"name": f"{col}"} for col in cols})
         conf_dict_list.append(col_axes_map)
         conf_dict_list.append(
-            {col: {"mode": data_1_mode} for col in data_1}
+            {col: {"mode": data_mode} for col in data_1}
             | {col: {"mode": data_2_mode} for col in data_2}
         )
         conf_dict_list.append({col: dict(line=dict(width=lines_width)) for col in cols})
@@ -293,9 +293,9 @@ class Plumber:
             return gaps_list
 
         gap_conf_list = []
-        if plot_gaps_1:
+        if plot_gaps:
             gap_conf_list += gap_dict_config(
-                data_1, gaps_1_lower_td, gaps_1_rgb, gaps_1_alpha
+                data_1, gaps_lower_td, gaps_rgb, gaps_alpha
             )
 
         if plot_gaps_2:

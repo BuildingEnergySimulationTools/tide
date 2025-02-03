@@ -172,8 +172,8 @@ Visualize pipeline effects:
 
 ````python
 plumber.plot(
-    steps_1=None,
-    plot_gaps_1=True,
+    steps=None,
+    plot_gaps=True,
     steps_2=slice(None, "interpolate_temps"),
     plot_gaps_2=True,
     verbose=True
@@ -191,8 +191,8 @@ Compare full pipeline to raw data:
 
 ````python
 plumber.plot(
-    steps_1=None,
-    plot_gaps_1=True,
+    steps=None,
+    plot_gaps=True,
     steps_2=slice(None),
     plot_gaps_2=True,
     verbose=True
