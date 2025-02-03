@@ -8,7 +8,7 @@ from tide.utils import (
     check_and_return_dt_index_df,
     parse_request_to_col_names,
     data_columns_to_tree,
-    get_data_level_names,
+    get_data_level_values,
     get_data_blocks,
     get_outer_timestamps,
 )
@@ -56,7 +56,7 @@ def get_cols_axis_maps_and_labels(
         root = data_columns_to_tree(columns)
         if root.max_depth >= 3:
             level = y_axis_level if y_axis_level else "unit"
-            y_tags = get_data_level_names(root, level)
+            y_tags = get_data_level_values(root, level)
         else:
             return {col: {"yaxis": "y"} for col in columns}, {"y": columns}, columns
 

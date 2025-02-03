@@ -11,7 +11,8 @@ from tide.utils import (
     parse_request_to_col_names,
     check_and_return_dt_index_df,
     data_columns_to_tree,
-    get_data_level_names,
+    get_data_level_values,
+    get_tree_depth_from_level,
     NamedList,
 )
 from tide.plot import (
@@ -92,7 +93,8 @@ def get_pipeline_from_dict(
     verbose: bool = False,
 ):
     if pipe_dict is None:
-        return Pipeline([("Identity", pc.Identity())], verbose=verbose)
+        pipe = Pipeline([("Identity", pc.Identity())], verbose=verbose)
+        return pipe.fit(_dummy_df(data_columns, "UTC"))
     else:
         steps_list = []
         step_columns = data_columns.copy()
@@ -129,20 +131,24 @@ class Plumber:
             rep_str += f"Number of tags : {tree_depth - 2} \n"
             for tag in range(1, tree_depth - 1):
                 rep_str += f"=== {tag_levels[tag]} === \n"
-                for lvl_name in get_data_level_names(self.root, tag_levels[tag]):
+                for lvl_name in get_data_level_values(self.root, tag_levels[tag]):
                     rep_str += f"{lvl_name}\n"
                 rep_str += "\n"
             return rep_str
         else:
             return super().__repr__()
 
-    def show(self, steps: None | str | list[str] | slice = slice(None)):
-        if steps is None:
-            if self.root is not None:
-                self.root.show()
-        elif self.data is not None:
-            pipe = self.get_pipeline(steps=steps)
-            data_columns_to_tree(pipe.get_feature_names_out()).show()
+    def show(
+        self,
+        select: str | pd.Index | list[str] = None,
+        steps: None | str | list[str] | slice = slice(None),
+        depth_level: int | str = None,
+    ):
+        pipe = self.get_pipeline(select=select, steps=steps)
+        loc_tree = data_columns_to_tree(pipe.get_feature_names_out())
+        if depth_level is not None:
+            depth_level = get_tree_depth_from_level(loc_tree.max_depth, depth_level)
+        loc_tree.show(max_depth=depth_level)
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         self.data = check_and_return_dt_index_df(data)

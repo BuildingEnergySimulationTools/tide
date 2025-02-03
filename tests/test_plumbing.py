@@ -160,27 +160,28 @@ class TestPlumbing:
         pipe = {
             "fill_1": {"a__°C__zone_1": [["Interpolate"]]},
             "fill_2": {"b": [["Interpolate"]]},
-            "combine": [
-                [
-                    "ExpressionCombine",
+            "combine": {
+                "zone_1": [
                     [
-                        {
-                            "T1": "a__°C__zone_1",
-                            "T2": "b__°C__zone_1",
-                        },
-                        "T1 * T2",
-                        "new_unit__°C²__zone_1",
-                        True,
-                    ],
-                ]
-            ],
+                        "ExpressionCombine",
+                        [
+                            {
+                                "T1": "a__°C__zone_1",
+                                "T2": "b__°C__zone_1",
+                            },
+                            "T1 * T2",
+                            "new_unit__°C²__zone_1",
+                            True,
+                        ],
+                    ]
+                ],
+            },
             "fill_3": [["Interpolate"]],
         }
 
         plumber = Plumber()
         plumber.set_data(TEST_DF_2)
         plumber.pipe_dict = pipe
-
         plumber.get_pipeline()
         plumber.get_pipeline(steps=["fill_3", "combine"])
 

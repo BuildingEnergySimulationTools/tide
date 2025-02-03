@@ -9,12 +9,12 @@ from tide.utils import (
     get_outer_timestamps,
     data_columns_to_tree,
     get_data_col_names_from_root,
-    get_data_level_names,
+    get_data_level_values,
     parse_request_to_col_names,
     timedelta_to_int,
     NamedList,
     get_series_bloc,
-    edit_tag_name_by_level,
+    edit_tag_value_by_level,
 )
 
 DF_COLUMNS = pd.DataFrame(
@@ -33,7 +33,7 @@ DF_COLUMNS = pd.DataFrame(
 class TestUtils:
     def test_edit_tag_name_by_level(self):
         col_name = "temp__°C__bloc1"
-        new_name = edit_tag_name_by_level(col_name, 0, "temp_1")
+        new_name = edit_tag_value_by_level(col_name, 0, "temp_1")
 
         assert new_name == "temp_1__°C__bloc1"
 
@@ -41,7 +41,7 @@ class TestUtils:
             ValueError,
             match=r"Cannot edit tag name at level index 3. Columns have only 3 tag levels.",
         ):
-            edit_tag_name_by_level(col_name, 3, "temp_1")
+            edit_tag_value_by_level(col_name, 3, "temp_1")
 
     def test_named_list(self):
         test = NamedList(["a", "b", "c", "d"])
@@ -96,7 +96,7 @@ class TestUtils:
 
     def test_get_data_level_names(self):
         root = data_columns_to_tree(DF_COLUMNS.columns)
-        res = get_data_level_names(root, "name")
+        res = get_data_level_values(root, "name")
         assert res == [
             "name_1",
             "name_1",
@@ -107,10 +107,10 @@ class TestUtils:
             "name4",
         ]
 
-        res = get_data_level_names(root, "unit")
+        res = get_data_level_values(root, "unit")
         assert res == ["°C", "DIMENSIONLESS", "kWh/m²", "kWh"]
 
-        res = get_data_level_names(root, "bloc")
+        res = get_data_level_values(root, "bloc")
         assert res == ["bloc1", "bloc2", "OTHER", "bloc4"]
 
     def test_get_series_bloc(self):

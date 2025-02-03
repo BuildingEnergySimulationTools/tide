@@ -16,11 +16,80 @@ DEFAULT_TAGS = ["DIMENSIONLESS", "OTHER", "OTHER_SUB_BLOC"]
 # To 3 levels of tags unit__bloc_sub_bloc
 
 LEVEL_FORMAT = {
-    1: lambda pt: f"DATA__{pt[0]}",
-    2: lambda pt: f"DATA__{pt[1]}__{pt[0]}",
-    3: lambda pt: f"DATA__{pt[2]}__{pt[1]}__{pt[0]}",
-    4: lambda pt: f"DATA__{pt[2]}__{pt[3]}__{pt[1]}__{pt[0]}",
+    0: lambda pt: f"DATA__{pt[0]}",
+    1: lambda pt: f"DATA__{pt[1]}__{pt[0]}",
+    2: lambda pt: f"DATA__{pt[2]}__{pt[1]}__{pt[0]}",
+    3: lambda pt: f"DATA__{pt[2]}__{pt[3]}__{pt[1]}__{pt[0]}",
 }
+
+LEVEL_NAME_MAP = {0: "name", 1: "unit", 2: "bloc", 3: "sub_bloc"}
+NAME_LEVEL_MAP = {name: level for level, name in LEVEL_NAME_MAP.items()}
+
+TREE_LEVEL_NAME_MAP = {
+    5: {"name": 4, "unit": 3, "bloc": 1, "sub_bloc": 2},
+    4: {"name": 3, "unit": 2, "bloc": 1},
+    3: {"name": 2, "unit": 1},
+    2: {"name": 1},
+}
+
+
+def get_tree_depth_from_level(tree_max_depth: int, level: int | str):
+    level = LEVEL_NAME_MAP[level] if isinstance(level, int) else level
+    if tree_max_depth not in TREE_LEVEL_NAME_MAP:
+        raise ValueError(
+            f"Unsupported root depth of {tree_max_depth}. Allowed depths are 2 to 5."
+        )
+
+    level_indices = TREE_LEVEL_NAME_MAP[tree_max_depth]
+
+    if level not in level_indices:
+        raise ValueError(
+            f"Unknown level {level}. Allowed levels are{level_indices.keys()}"
+        )
+
+    return level_indices[level]
+
+
+def get_data_level_values(data_root, level: int | str):
+    """
+    Return a list of string containing values of tag at specified level.
+    Warning bloc, unit and sub_bloc level ar unique
+    :param data_root: big tree root
+    :param level: int or string corresponding to tag level
+    :return: list of values
+    """
+    tree_level = get_tree_depth_from_level(data_root.max_depth, level)
+
+    nodes = [
+        [node.name for node in node_group]
+        for node_group in levelordergroup_iter(data_root)
+    ]
+
+    selected_nodes = nodes[tree_level]
+
+    if level in ["bloc", "unit", "sub_bloc"]:
+        # Return list with no duplicates
+        return list(dict.fromkeys(selected_nodes))
+    else:
+        return selected_nodes
+
+
+def get_tags_max_level(data_columns: pd.Index | list[str]) -> int:
+    """
+    Returns max used tag level from data columns names
+    :param data_columns: DataFrame columns holding time series names with tags
+    """
+    return max(len(col.split("__")) - 1 for col in data_columns)
+
+
+def edit_tag_value_by_level(col_name: str, level: int | str, new_tag_name: str) -> str:
+    parts = col_name.split("__")
+    if level > len(parts) - 1:
+        raise ValueError(
+            f"Cannot edit tag name at level index {level}. Columns have only {len(parts)} tag levels."
+        )
+    parts[level] = new_tag_name
+    return "__".join(parts)
 
 
 class NamedList:
@@ -47,24 +116,6 @@ def get_added_removed_col(original_idx: list | pd.Index, new_idx: list | pd.Inde
     added_columns = list(set(new_idx) - set(original_idx))
     removed_columns = list(set(original_idx) - set(new_idx))
     return added_columns, removed_columns
-
-
-def get_tag_levels(data_columns: pd.Index | list[str]) -> int:
-    """
-    Returns max number of used tags from data columns names
-    :param data_columns: DataFrame columns holding time series names with tags
-    """
-    return max(len(col.split("__")) for col in data_columns)
-
-
-def edit_tag_name_by_level(col_name: str, tag_level: int, new_tag_name: str) -> str:
-    parts = col_name.split("__")
-    if tag_level > len(parts) - 1:
-        raise ValueError(
-            f"Cannot edit tag name at level index {tag_level}. Columns have only {len(parts)} tag levels."
-        )
-    parts[tag_level] = new_tag_name
-    return "__".join(parts)
 
 
 def col_name_tag_enrichment(col_name: str, tag_levels: int) -> str:
@@ -98,38 +149,6 @@ def get_data_col_names_from_root(data_root):
     ][-1]
 
 
-def get_data_level_names(data_root, level: str):
-    depth_levels = {
-        5: {"name": 4, "unit": 3, "bloc": 1, "sub_bloc": 2},
-        4: {"name": 3, "unit": 2, "bloc": 1},
-        3: {"name": 2, "unit": 1},
-        2: {"name": 1},
-    }
-
-    max_depth = data_root.max_depth
-    if max_depth not in depth_levels:
-        raise ValueError(
-            f"Unsupported root depth of {max_depth}. Allowed depths are 2 to 5."
-        )
-
-    level_indices = depth_levels[max_depth]
-
-    if level not in level_indices:
-        raise ValueError(f"Unknown level {level}")
-
-    nodes = [
-        [node.name for node in node_group]
-        for node_group in levelordergroup_iter(data_root)
-    ]
-
-    selected_nodes = nodes[level_indices[level]]
-
-    if level in {"bloc", "unit", "sub_bloc"}:
-        return list(dict.fromkeys(selected_nodes))
-    else:
-        return selected_nodes
-
-
 def parse_request_to_col_names(
     data_columns: pd.Index | list[str], request: str | pd.Index | list[str] = None
 ) -> list[str]:
@@ -150,7 +169,7 @@ def parse_request_to_col_names(
             )
 
         full_tag_col_map = {
-            col_name_tag_enrichment(col, get_tag_levels(data_columns)): col
+            col_name_tag_enrichment(col, get_tags_max_level(data_columns)): col
             for col in data_columns
         }
 
@@ -181,10 +200,12 @@ def data_columns_to_tree(columns: pd.Index | list[str]) -> T:
     data time series. Names should follow the "name__unit__bloc_sub_bloc"
     naming convention
     """
-    tag_levels = get_tag_levels(columns)
+    tag_levels = get_tags_max_level(columns)
 
-    if not 1 <= tag_levels <= 4:
-        raise ValueError(f"Only up to 4 tags are allowed; found {tag_levels}.")
+    if not 0 <= tag_levels <= 3:
+        raise ValueError(
+            f"Only up to 4 tags are allowed; found tag level {tag_levels}."
+        )
 
     parsed_dict = {}
     for col in columns:

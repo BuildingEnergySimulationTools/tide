@@ -19,7 +19,8 @@ from tide.utils import (
     get_data_blocks,
     get_idx_freq_delta_or_min_time_interval,
     ensure_list,
-    get_tag_levels,
+    get_tags_max_level,
+    NAME_LEVEL_MAP,
 )
 
 from tide.meteo import get_oikolab_df
@@ -74,18 +75,19 @@ class TideBaseMixin:
         self.check_required_features(X)
         self.feature_names_in_ = list(X.columns)
 
-    def get_set_tags_values_columns(self, X, tag_level: int, value: str):
-        nb_tags = get_tag_levels(X.columns)
-        if tag_level > nb_tags - 1:
+    def get_set_tags_values_columns(self, X, level: int | str, value: str):
+        nb_tags = get_tags_max_level(X.columns)
+        level = NAME_LEVEL_MAP(level) if isinstance(level, str) else level
+        if level > nb_tags:
             raise ValueError(
-                f"Asking for level {tag_level} tag (indexing from 0). "
+                f"Asking for level {level} tag (indexing from 0). "
                 f"Only {nb_tags} tags found in columns"
             )
 
         new_columns = []
         for col in X.columns:
             parts = col.split("__")
-            parts[tag_level] = value
+            parts[level] = value
             new_columns.append("__".join(parts))
 
         return new_columns
