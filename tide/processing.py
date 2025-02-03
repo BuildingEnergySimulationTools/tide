@@ -17,11 +17,11 @@ from tide.utils import (
     ensure_list,
     get_added_removed_col,
 )
-from tide.regressors import SkSTLForecast
+from tide.regressors import SkSTLForecast, SkProphet
 from tide.classifiers import STLEDetector
 from tide.meteo import sun_position, beam_component, sky_diffuse, ground_diffuse
 
-MODEL_MAP = {"STL": SkSTLForecast}
+MODEL_MAP = {"STL": SkSTLForecast, "Prophet": SkProphet}
 
 OIKOLAB_DEFAULT_MAP = {
     "temperature": "t_ext__°C__outdoor__meteo",
