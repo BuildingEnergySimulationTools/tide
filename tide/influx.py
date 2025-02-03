@@ -57,9 +57,10 @@ def _single_influx_request(
             records.append(record.values)
 
     df = pd.DataFrame(records)
-    df["_time"] = pd.to_datetime(df["_time"])
-    df.set_index("_time", inplace=True)
-    df.drop(["result", "table"], axis=1, inplace=True)
+    if not df.empty:
+        df["_time"] = pd.to_datetime(df["_time"])
+        df.set_index("_time", inplace=True)
+        df.drop(["result", "table"], axis=1, inplace=True)
     return df
 
 
