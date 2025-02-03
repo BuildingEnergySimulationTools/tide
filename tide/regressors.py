@@ -259,6 +259,7 @@ class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
         return self
 
     def predict(self, X: pd.Series | pd.DataFrame):
+        X = check_and_return_dt_index_df(X)
         check_is_fitted(
             self,
             attributes=["forecaster_", "feature_names_in_"],
