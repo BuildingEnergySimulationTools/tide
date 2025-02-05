@@ -231,10 +231,16 @@ class BaseFiller:
 
     def get_gaps_dict_to_fill(self, X: pd.Series | pd.DataFrame):
         X = check_and_return_dt_index_df(X)
+        if self.gaps_gte is not None and self.gaps_lte is not None:
+            select_inner = pd.to_timedelta(self.gaps_gte) < pd.to_timedelta(
+                self.gaps_lte
+            )
+        else:
+            select_inner = False
         return get_data_blocks(
             X,
             is_null=True,
-            select_inner=False,
+            select_inner=select_inner,
             lower_td_threshold=self.gaps_lte,
             upper_td_threshold=self.gaps_gte,
             upper_threshold_inclusive=True,
