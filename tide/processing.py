@@ -1183,6 +1183,15 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         check_is_fitted(self, attributes=["model_"])
         bc_model = self.model_(backcast=backcast, **self.model_kwargs)
         if self.resample_at_td is not None:
+            idx_dt = idx[-1] - idx[0]
+            if idx_dt == dt.timedelta(0):
+                idx_dt = idx.freq
+            if idx_dt < pd.to_timedelta(self.resample_at_td):
+                raise ValueError(
+                    f"Forecaster is asked to predict at {idx_dt} in the future "
+                    f"or in the past."
+                    f" But data used for fitting have a {self.resample_at_td} frequency"
+                )
             x_fit = X.loc[biggest_group, col].resample(self.resample_at_td).mean()
             idx_origin = idx
             if backcast:
