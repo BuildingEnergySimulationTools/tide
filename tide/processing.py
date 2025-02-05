@@ -1722,7 +1722,6 @@ class ReplaceTag(BaseProcessing):
             parts = col.split("__")
             updated_parts = [self.tag_map.get(part, part) for part in parts]
             self.new_columns_.append("__".join(updated_parts))
-        pass
         self.added_columns, self.removed_columns = get_added_removed_col(
             X.columns, self.new_columns_
         )
