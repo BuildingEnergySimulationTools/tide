@@ -444,6 +444,7 @@ class TestCustomTransformers:
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
         lager.fit(df)
+        lager.get_feature_names_out()
         assert list(lager.get_feature_names_out()) == [
             "col0",
             "col1",
@@ -501,11 +502,13 @@ class TestCustomTransformers:
 
         pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
 
+        ref["combined_2"] = [2, 4]
         trans = CombineColumns(
             function=np.sum,
             tide_format_columns="°C",
             function_kwargs={"axis": 1},
             drop_columns=False,
+            result_column_name="combined_2",
         )
 
         pd.testing.assert_frame_equal(trans.fit_transform(x_in), ref)
@@ -720,13 +723,13 @@ class TestCustomTransformers:
         )
 
         combiner = ExpressionCombine(
-            variables_dict={
+            columns_dict={
                 "T1": "Tin__°C__building",
                 "T2": "Text__°C__outdoor",
                 "m": "mass_flwr__m3/h__hvac",
             },
             expression="(T1 - T2) * m * 1004 * 1.204",
-            result_col_name="loss_ventilation__J__hvac",
+            result_column_name="loss_ventilation__J__hvac",
         )
 
         res = combiner.fit_transform(test_df.copy())
@@ -748,7 +751,7 @@ class TestCustomTransformers:
             decimal=1,
         )
 
-        combiner.set_params(drop_variables=True)
+        combiner.set_params(drop_columns=True)
 
         res = combiner.fit_transform(test_df.copy())
 

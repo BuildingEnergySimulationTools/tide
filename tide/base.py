@@ -18,7 +18,6 @@ from tide.utils import (
     process_stl_odd_args,
     get_data_blocks,
     get_idx_freq_delta_or_min_time_interval,
-    ensure_list,
     get_tags_max_level,
     NAME_LEVEL_MAP,
 )
@@ -56,15 +55,8 @@ class TideBaseMixin:
         Returns the names of the features as initially fitted.
     """
 
-    def __init__(
-        self,
-        required_columns: str | list[str] = None,
-        removed_columns: str | list[str] = None,
-        added_columns: str | list[str] = None,
-    ):
+    def __init__(self, required_columns: str | list[str] = None):
         self.required_columns = required_columns
-        self.removed_columns = removed_columns
-        self.added_columns = added_columns
 
     def check_required_features(self, X):
         if self.required_columns is not None:
@@ -73,7 +65,7 @@ class TideBaseMixin:
 
     def fit_check_features(self, X):
         self.check_required_features(X)
-        self.feature_names_in_ = list(X.columns)
+        self.feature_names_in_ = self.feature_names_out_ = list(X.columns)
 
     def get_set_tags_values_columns(self, X, level: int | str, value: str):
         nb_tags = get_tags_max_level(X.columns)
@@ -96,18 +88,8 @@ class TideBaseMixin:
         X.columns = self.get_set_tags_values_columns(X, tag_level, value)
 
     def get_feature_names_out(self, input_features=None):
-        if input_features is None:
-            check_is_fitted(self, attributes=["feature_names_in_"])
-            input_features = self.feature_names_in_
-
-        added_columns = ensure_list(self.added_columns)
-        removed_columns = ensure_list(self.removed_columns)
-        if isinstance(input_features, list):
-            input_features = np.array(input_features)
-        features_out = np.concatenate([input_features.copy(), np.array(added_columns)])
-        return np.array(
-            [feature for feature in features_out if feature not in removed_columns]
-        )
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+        return self.feature_names_out_
 
     def get_feature_names_in(self):
         check_is_fitted(self, attributes=["feature_names_in_"])
@@ -160,15 +142,8 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
     def __init__(
         self,
         required_columns: str | list[str] = None,
-        removed_columns: str | list[str] = None,
-        added_columns: str | list[str] = None,
     ):
-        TideBaseMixin.__init__(
-            self,
-            required_columns=required_columns,
-            removed_columns=removed_columns,
-            added_columns=added_columns,
-        )
+        TideBaseMixin.__init__(self, required_columns=required_columns)
         TransformerMixin.__init__(self)
         BaseEstimator.__init__(self)
 
