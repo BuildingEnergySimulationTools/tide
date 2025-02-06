@@ -11,14 +11,18 @@ class DumbProcessor(BaseProcessing):
         self.keep_required = keep_required
 
     def _fit_implementation(self, X, y=None):
+        self.fit_check_features(X)
         if not self.keep_required:
-            self.removed_columns = self.required_columns
-        self.added_columns = ["new_col__°C__meteo"]
+            self.feature_names_out_ = [
+                col for col in X.columns if col not in self.required_columns
+            ]
+        self.feature_names_out_.append("new_col__°C__meteo")
         return self
 
     def _transform_implementation(self, X):
-        X[self.added_columns[0]] = X[self.required_columns] * 2
-        X.drop(self.removed_columns, axis=1, inplace=True)
+        X["new_col__°C__meteo"] = X[self.required_columns] * 2
+        if not self.keep_required:
+            X.drop(self.required_columns, axis=1, inplace=True)
         return X
 
 

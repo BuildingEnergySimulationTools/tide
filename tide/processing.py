@@ -203,24 +203,21 @@ class RenameColumns(BaseProcessing):
         self.new_names = new_names
 
     def _fit_implementation(self, X, y=None):
-        self.feature_names_in_ = list(X.columns)
-        if isinstance(self.new_names, list):
-            self.removed_columns = list(X.columns)
-            self.added_columns = self.new_names
-        else:
-            self.removed_columns = self.required_columns = list(self.new_names.keys())
-            self.added_columns = list(self.new_names.values())
-
-        return self
-
-    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["feature_names_in_"])
+        self.fit_check_features(X)
         if isinstance(self.new_names, list):
             if len(self.new_names) != len(X.columns):
                 raise ValueError(
                     "Length of new_names list must match the number "
                     "of columns in the DataFrame."
                 )
+            self.feature_names_out_ = self.new_names
+        elif isinstance(self.new_names, dict):
+            X.rename(columns=self.new_names, inplace=True)
+            self.feature_names_out_ = X.columns
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+        if isinstance(self.new_names, list):
             X.columns = self.new_names
         elif isinstance(self.new_names, dict):
             X.rename(columns=self.new_names, inplace=True)
@@ -850,15 +847,14 @@ class AddTimeLag(BaseProcessing):
             if self.feature_marker is None
             else self.feature_marker
         )
+
         self.required_columns = self.features_to_lag
-        self.added_columns = [
-            self.feature_marker + name for name in self.required_columns
-        ]
-        self.is_fitted_ = True
-        return self
+        self.feature_names_out_.extend(
+            [self.feature_marker + name for name in self.required_columns]
+        )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["is_fitted_"])
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         to_lag = X[self.features_to_lag].copy()
         to_lag.index = to_lag.index + self.time_lag
         to_lag.columns = self.feature_marker + to_lag.columns
@@ -981,42 +977,41 @@ class CombineColumns(BaseProcessing):
         columns=None,
         function_kwargs: dict = {},
         drop_columns: bool = False,
-        label_name: str = "combined",
+        result_column_name: str = "combined",
     ):
-        BaseProcessing.__init__(self, added_columns=[label_name])
+        BaseProcessing.__init__(self)
         self.function = function
         self.tide_format_columns = tide_format_columns
         self.columns = columns
         self.function_kwargs = function_kwargs
         self.drop_columns = drop_columns
-        self.label_name = label_name
+        self.result_column_name = result_column_name
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.columns is None and self.tide_format_columns is None:
             raise ValueError("Provide at least one of columns or tide_format_columns")
 
-        self.columns_to_combine_ = (
+        self.required_columns = (
             parse_request_to_col_names(X.columns, self.tide_format_columns)
             if self.tide_format_columns
             else self.columns
         )
-        self.required_columns = self.columns_to_combine_
-        self.removed_columns = self.columns_to_combine_ if self.drop_columns else None
-        return self
+        self.fit_check_features(X)
+        if self.drop_columns:
+            self.feature_names_out_ = list(X.columns.drop(self.required_columns))
+        if self.result_column_name in self.feature_names_out_:
+            raise ValueError(
+                f"label_name {self.result_column_name} already in X columns. "
+                f"It cannot be overwritten"
+            )
+        self.feature_names_out_.append(self.result_column_name)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["columns_to_combine_"])
-        X[self.label_name] = self.function(
-            X[self.columns_to_combine_], **self.function_kwargs
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+        X[self.result_column_name] = self.function(
+            X[self.required_columns], **self.function_kwargs
         )
-
-        if self.drop_columns:
-            col_to_return = [
-                col for col in X.columns if col not in self.columns_to_combine_
-            ]
-            return X[col_to_return]
-        else:
-            return X
+        return X[self.feature_names_out_]
 
 
 class STLFilter(BaseProcessing):
@@ -1264,7 +1259,7 @@ class ExpressionCombine(BaseProcessing):
 
     Parameters
     ----------
-    variables_dict : dict[str, str]
+    columns_dict : dict[str, str]
         A dictionary mapping variable names (as used in the expression) to the
         column names in the X DataFrame. Keys are variable names in the expression,
         and values are the corresponding column names in the DataFrame.
@@ -1274,62 +1269,60 @@ class ExpressionCombine(BaseProcessing):
         specified columns from the DataFrame. Variables in the expression should
         match the keys in `variables_dict`.
 
-    result_col_name : str
+    result_column_name : str
         Name of the new column in which the result of the evaluated expression
         will be stored.
 
-    drop_variables : bool, default=False
+    drop_columns : bool, default=False
         If True, the columns used in the calculation will be dropped
         from the resulting DataFrame after the transformation.
 
     Examples
     --------
     combiner = Combiner(
-        variables_dict={
+        columns_dict={
             "T1": "Tin__°C__building",
             "T2": "Text__°C__outdoor",
             "m": "mass_flwr__m3/h__hvac",
         },
         expression="(T1 - T2) * m * 1004 * 1.204",
-        result_col_name="loss_ventilation__J__hvac",
-        drop_variables = True
+        result_column_name="loss_ventilation__J__hvac",
+        drop_columns = True
     )
     """
 
     def __init__(
         self,
-        variables_dict: dict[str, str],
+        columns_dict: dict[str, str],
         expression: str,
-        result_col_name: str,
-        drop_variables: bool = False,
+        result_column_name: str,
+        drop_columns: bool = False,
     ):
-        BaseProcessing.__init__(
-            self,
-            required_columns=list(variables_dict.values()),
-            removed_columns=list(variables_dict.values()) if drop_variables else None,
-            added_columns=result_col_name,
-        )
-
-        self.variables_dict = variables_dict
+        BaseProcessing.__init__(self, required_columns=list(columns_dict.values()))
+        self.columns_dict = columns_dict
+        self.required_columns = list(columns_dict.values())
         self.expression = expression
-        self.result_col_name = result_col_name
-        self.drop_variables = drop_variables
+        self.result_column_name = result_column_name
+        self.drop_columns = drop_columns
 
     def _fit_implementation(self, X, y=None):
-        return self
+        self.fit_check_features(X)
+        if self.drop_columns:
+            self.feature_names_out_ = list(X.columns.drop(self.required_columns))
+        if self.result_column_name in self.feature_names_out_:
+            raise ValueError(
+                f"label_name {self.result_column_name} already in X columns. "
+                f"It cannot be overwritten"
+            )
+        self.feature_names_out_.append(self.result_column_name)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         exp = self.expression
-        for key, val in self.variables_dict.items():
+        for key, val in self.columns_dict.items():
             exp = exp.replace(key, f'X["{val}"]')
 
-        X.loc[:, self.result_col_name] = pd.eval(exp, target=X)
-        if self.drop_variables:
-            return X[
-                [col for col in X.columns if col not in self.variables_dict.values()]
-            ]
-        else:
-            return X
+        X.loc[:, self.result_column_name] = pd.eval(exp, target=X)
+        return X[self.feature_names_out_]
 
 
 class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
@@ -1514,15 +1507,18 @@ class AddSolarAngles(BaseProcessing):
         BaseProcessing.__init__(self)
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.added_columns = [
-            f"sun_el__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
-            f"sun_az__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
-        ]
+        self.fit_check_features(X)
+        self.feature_names_out_.extend(
+            [
+                f"sun_el__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+                f"sun_az__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
+            ]
+        )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         df = pd.DataFrame(
             data=np.array([sun_position(date, self.lat, self.lon) for date in X.index]),
-            columns=self.added_columns,
+            columns=self.feature_names_out_[-2:],
             index=X.index,
         )
         return pd.concat([X, df], axis=1)
@@ -1717,16 +1713,14 @@ class ReplaceTag(BaseProcessing):
         BaseProcessing.__init__(self)
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.new_columns_ = []
-        for col in X.columns:
+        self.fit_check_features(X)
+        self.feature_names_out_ = []
+        for col in self.feature_names_in_:
             parts = col.split("__")
             updated_parts = [self.tag_map.get(part, part) for part in parts]
-            self.new_columns_.append("__".join(updated_parts))
-        self.added_columns, self.removed_columns = get_added_removed_col(
-            X.columns, self.new_columns_
-        )
+            self.feature_names_out_.append("__".join(updated_parts))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["new_columns_"])
-        X.columns = self.new_columns_
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+        X.columns = self.feature_names_out_
         return X
