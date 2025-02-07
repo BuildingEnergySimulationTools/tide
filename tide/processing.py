@@ -1221,6 +1221,7 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         bc_model.fit(x_fit)
         to_predict = idx_pred.to_series()
         to_predict.name = col
+        to_predict = to_predict[to_predict.index.isin(X.index)]
         # Here a bit dirty. STL doesn't allow forecast on its fitting set
         if self.model_name == "STL":
             to_predict = to_predict[~to_predict.isin(x_fit.index)]
@@ -1484,7 +1485,6 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
         self.get_api_key_from_env()
         self.added_columns = list(self.param_columns_map.values())
         self.columns_check_ = True
-        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["columns_check_", "api_key_"])
