@@ -1320,7 +1320,6 @@ class ExpressionCombine(BaseProcessing):
         self.drop_columns = drop_columns
 
     def _fit_implementation(self, X, y=None):
-        self.fit_check_features(X)
         if self.drop_columns:
             self.feature_names_out_ = list(X.columns.drop(self.required_columns))
         if self.result_column_name in self.feature_names_out_:
@@ -1403,11 +1402,10 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
             # Dumb action fill everything with temperature
             self.columns_param_map = {col: "temperature" for col in X.columns}
         self.get_api_key_from_env()
-        self.fitted_ = True
-        return self
+
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["fitted_", "api_key_"])
+        check_is_fitted(self, attributes=["api_key_"])
         gaps_dict = self.get_gaps_dict_to_fill(X)
         for col, idx_list in gaps_dict.items():
             if col in self.columns_param_map.keys():
@@ -1474,7 +1472,6 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
         BaseOikoMeteo.__init__(self, lat, lon, model, env_oiko_api_key)
         BaseProcessing.__init__(self)
         self.param_columns_map = param_columns_map
-        self.added_columns = list(self.param_columns_map.values())
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         mask = X.columns.isin(self.param_columns_map.values())
@@ -1483,11 +1480,12 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
                 f"Cannot add Oikolab meteo data. {X.columns[mask]} already in columns"
             )
         self.get_api_key_from_env()
-        self.added_columns = list(self.param_columns_map.values())
-        self.columns_check_ = True
+        self.feature_names_out_.extend(list(self.param_columns_map.values()))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["columns_check_", "api_key_"])
+        check_is_fitted(
+            self, attributes=["api_key_", "feature_names_in_", "feature_names_out_"]
+        )
         df = self.get_meteo_from_idx(X.index, list(self.param_columns_map.keys()))
         X.loc[:, list(self.param_columns_map.values())] = df.to_numpy()
         return X
@@ -1610,6 +1608,7 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
             f"{name}__W/m²__{self.data_bloc}__{self.data_sub_bloc}"
             for name in ensure_list(self.surface_name)
         ]
+        self.feature_names_out_.extend(self.added_columns)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         sun_pos = np.array([sun_position(date, self.lat, self.lon) for date in X.index])
@@ -1668,6 +1667,7 @@ class FillOtherColumns(BaseFiller, BaseProcessing):
         )
         if self.drop_filling_columns:
             self.removed_columns = list(self.columns_map.values())
+            self.feature_names_out_ = list(X.columns.drop(self.removed_columns))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         gap_dict = self.get_gaps_dict_to_fill(X[list(self.columns_map.keys())])
@@ -1699,11 +1699,12 @@ class DropColumns(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.required_columns = self.columns
-        self.removed_columns = self.columns
+        if self.columns is not None:
+            self.feature_names_out_ = list(X.columns.drop(self.columns))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         return (
-            X.drop(self.removed_columns, axis="columns")
+            X.drop(self.required_columns, axis="columns")
             if self.columns is not None
             else X
         )
