@@ -1147,11 +1147,12 @@ class FillGapsAR(BaseFiller, BaseProcessing):
 
     def __init__(
         self,
-        model_name: str = "STL",
+        model_name: str = "Prophet",
         model_kwargs: dict = {},
         gaps_lte: str | dt.datetime | pd.Timestamp = None,
         gaps_gte: str | dt.datetime | pd.Timestamp = None,
         resample_at_td: str | dt.timedelta | pd.Timedelta = None,
+        recursive_fill: bool = False,
     ):
         BaseFiller.__init__(self, gaps_lte, gaps_gte)
         BaseProcessing.__init__(self)
@@ -1173,79 +1174,91 @@ class FillGapsAR(BaseFiller, BaseProcessing):
                 f"Cannot predict data for gaps LTE to {gaps_lte} with data"
                 f"at a {resample_at_td} timestep"
             )
+        self.recursive_fill = recursive_fill
 
-    def _fit_and_fill_x(self, X, biggest_group, col, idx, backcast):
+    def _check_forecast_horizon(self, idx):
+        idx_dt = idx[-1] - idx[0]
+        if idx_dt == dt.timedelta(0):
+            idx_dt = idx.freq
+        if idx_dt < pd.to_timedelta(self.resample_at_td):
+            raise ValueError(
+                f"Forecaster is asked to predict at {idx_dt} in the future "
+                f"or in the past."
+                f" But data used for fitting have a {self.resample_at_td} frequency"
+            )
+
+    def _get_x_and_idx_at_freq(self, x, idx, backcast):
+        if self.resample_at_td is not None:
+            self._check_forecast_horizon(idx)
+            x_out = x.resample(self.resample_at_td).mean()
+            idx_out = pd.date_range(idx[0], idx[-1], freq=self.resample_at_td).floor(
+                self.resample_at_td
+            )
+            idx_out.freq = idx_out.inferred_freq
+        else:
+            x_out = x
+            idx_out = idx
+
+        return x_out, idx_out
+
+    def _fill_up_sampling(self, X, idx, col):
+        beg = idx[0] - idx.freq
+        end = idx[-1] + idx.freq
+        # Interpolate linearly between inferred values and using neighbor data
+        X.loc[idx, col] = X.loc[beg:end, col].interpolate()
+        # If gap is at boundaries
+        if beg < X.index[0]:
+            X.loc[idx, col] = X.loc[idx, col].bfill()
+        if end > X.index[-1]:
+            X.loc[idx, col] = X.loc[idx, col].ffill()
+
+    def fill_x(self, X, group, col, idx, backcast):
         check_is_fitted(self, attributes=["model_"])
         bc_model = self.model_(backcast=backcast, **self.model_kwargs)
-        if self.resample_at_td is not None:
-            idx_dt = idx[-1] - idx[0]
-            if idx_dt == dt.timedelta(0):
-                idx_dt = idx.freq
-            if idx_dt < pd.to_timedelta(self.resample_at_td):
-                raise ValueError(
-                    f"Forecaster is asked to predict at {idx_dt} in the future "
-                    f"or in the past."
-                    f" But data used for fitting have a {self.resample_at_td} frequency"
-                )
-            x_fit = X.loc[biggest_group, col].resample(self.resample_at_td).mean()
-            idx_origin = idx
-            if backcast:
-                idx = pd.date_range(
-                    idx[0],
-                    x_fit.index[0] - pd.Timedelta(self.resample_at_td),
-                    freq=self.resample_at_td,
-                )
-            else:
-                idx = pd.date_range(
-                    x_fit.index[-1] + pd.Timedelta(self.resample_at_td),
-                    idx[-1],
-                    freq=self.resample_at_td,
-                )
-        else:
-            x_fit = X.loc[biggest_group, col]
-            idx_origin = None
-
+        if self.resample_at_td:
+            self._check_forecast_horizon(idx)
+        x_fit, idx_pred = self._get_x_and_idx_at_freq(X.loc[group, col], idx, backcast)
         bc_model.fit(x_fit)
-        to_predict = idx.to_series()
+        to_predict = idx_pred.to_series()
         to_predict.name = col
-        X.loc[idx, col] = bc_model.predict(to_predict).to_numpy().flatten()
+        # Here a bit dirty. STL doesn't allow forecast on its fitting set
+        if self.model_name == "STL":
+            to_predict = to_predict[~to_predict.isin(x_fit.index)]
+
+        X.loc[to_predict, col] = bc_model.predict(to_predict).to_numpy().flatten()
+
         if self.resample_at_td is not None:
-            beg = idx_origin[0] - idx_origin.freq
-            end = idx_origin[-1] + idx_origin.freq
-            # Interpolate linearly between inferred values and using neighbor data
-            X.loc[idx_origin, col] = X.loc[beg:end, col].interpolate()
-            # If gap is at boundaries
-            if beg < X.index[0]:
-                X.loc[idx_origin, col] = X.loc[idx_origin, col].bfill()
-            if end > X.index[-1]:
-                X.loc[idx_origin, col] = X.loc[idx_origin, col].ffill()
+            self._fill_up_sampling(X, idx, col)
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.model_ = MODEL_MAP[self.model_name]
-        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["model_"])
         gaps = self.get_gaps_dict_to_fill(X)
         for col in X:
-            while gaps[col]:
-                data_blocks = get_data_blocks(X[col], return_combination=False)[col]
-                data_timedelta = [block[-1] - block[0] for block in data_blocks]
-                biggest_group = data_blocks[data_timedelta.index(max(data_timedelta))]
-                start, end = get_outer_timestamps(biggest_group, X.index)
+            if not self.recursive_fill:
+                for idx in gaps[col]:
+                    self.fill_x(X, X.index, col, idx, backcast=None)
+            else:
+                while gaps[col]:
+                    data_blocks = get_data_blocks(X[col], return_combination=False)[col]
+                    data_timedelta = [block[-1] - block[0] for block in data_blocks]
+                    biggest_group = data_blocks[
+                        data_timedelta.index(max(data_timedelta))
+                    ]
+                    start, end = get_outer_timestamps(biggest_group, X.index)
+                    indices_to_delete = []
+                    for i, idx in enumerate(gaps[col]):
+                        if start in idx:
+                            self.fill_x(X, biggest_group, col, idx, backcast=True)
+                            indices_to_delete.append(i)
+                        elif end in idx:
+                            self.fill_x(X, biggest_group, col, idx, backcast=False)
+                            indices_to_delete.append(i)
 
-                indices_to_delete = []
-                for i, idx in enumerate(gaps[col]):
-                    if start in idx:
-                        self._fit_and_fill_x(X, biggest_group, col, idx, backcast=True)
-                        indices_to_delete.append(i)
-                    elif end in idx:
-                        self._fit_and_fill_x(X, biggest_group, col, idx, backcast=False)
-                        indices_to_delete.append(i)
-
-                for i in sorted(indices_to_delete, reverse=True):
-                    del gaps[col][i]
-
+                    for i in sorted(indices_to_delete, reverse=True):
+                        del gaps[col][i]
         return X
 
 
