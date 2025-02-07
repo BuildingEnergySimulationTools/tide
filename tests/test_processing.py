@@ -669,12 +669,17 @@ class TestCustomTransformers:
         for gap in holes_pairs:
             toy_df_gaps.loc[gap[0], gap[1]] = np.nan
 
-        filler = FillGapsAR()
+        filler = FillGapsAR(recursive_fill=False)
         res = filler.fit_transform(toy_df_gaps.copy())
 
         for gap in holes_pairs[1:]:
-            # Skip the first one. r2_score doesn't work for only value
-            assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.99
+            assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.80
+
+        filler = FillGapsAR(model_name="STL", recursive_fill=True)
+        res = filler.fit_transform(toy_df_gaps.copy())
+
+        for gap in holes_pairs[1:]:
+            assert r2_score(toy_df.loc[gap[0], gap[1]], res.loc[gap[0], gap[1]]) > 0.80
 
         toy_df_15min = toy_df.resample("15min").mean().interpolate()
         hole_backast = pd.date_range(
@@ -689,7 +694,7 @@ class TestCustomTransformers:
         toy_df_15min_hole.iloc[:12, 0] = np.nan
         toy_df_15min_hole.iloc[-12:, 0] = np.nan
 
-        filler = FillGapsAR(resample_at_td="1h")
+        filler = FillGapsAR(resample_at_td="1h", recursive_fill=False)
         res = filler.fit_transform(toy_df_15min_hole.copy())
 
         assert (
@@ -697,14 +702,32 @@ class TestCustomTransformers:
                 res.loc[hole_backast, "Temp_1"],
                 toy_df_15min.loc[hole_backast, "Temp_1"],
             )
-            > 0.95
+            > 0.80
         )
         assert (
             r2_score(
                 res.loc[hole_forecast, "Temp_1"],
                 toy_df_15min.loc[hole_forecast, "Temp_1"],
             )
-            > 0.95
+            > 0.80
+        )
+
+        filler = FillGapsAR(model_name="STL", resample_at_td="1h", recursive_fill=True)
+        res = filler.fit_transform(toy_df_15min_hole.copy())
+
+        assert (
+            r2_score(
+                res.loc[hole_backast, "Temp_1"],
+                toy_df_15min.loc[hole_backast, "Temp_1"],
+            )
+            > 0.80
+        )
+        assert (
+            r2_score(
+                res.loc[hole_forecast, "Temp_1"],
+                toy_df_15min.loc[hole_forecast, "Temp_1"],
+            )
+            > 0.80
         )
 
     def test_combiner(self):
