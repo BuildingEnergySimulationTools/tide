@@ -1403,7 +1403,6 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
             self.columns_param_map = {col: "temperature" for col in X.columns}
         self.get_api_key_from_env()
 
-
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["api_key_"])
         gaps_dict = self.get_gaps_dict_to_fill(X)
