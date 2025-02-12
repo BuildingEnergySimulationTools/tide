@@ -111,13 +111,6 @@ class NamedList:
         else:
             raise TypeError("Invalid key type")
 
-
-def get_added_removed_col(original_idx: list | pd.Index, new_idx: list | pd.Index):
-    added_columns = list(set(new_idx) - set(original_idx))
-    removed_columns = list(set(original_idx) - set(new_idx))
-    return added_columns, removed_columns
-
-
 def col_name_tag_enrichment(col_name: str, tag_levels: int) -> str:
     """
     Enriches a column name by adding default tags until it reaches the specified

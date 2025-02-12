@@ -15,7 +15,6 @@ from tide.utils import (
     check_and_return_dt_index_df,
     parse_request_to_col_names,
     ensure_list,
-    get_added_removed_col,
 )
 from tide.regressors import SkSTLForecast, SkProphet
 from tide.classifiers import STLEDetector
@@ -203,7 +202,6 @@ class RenameColumns(BaseProcessing):
         self.new_names = new_names
 
     def _fit_implementation(self, X, y=None):
-        self.fit_check_features(X)
         if isinstance(self.new_names, list):
             if len(self.new_names) != len(X.columns):
                 raise ValueError(
@@ -212,8 +210,7 @@ class RenameColumns(BaseProcessing):
                 )
             self.feature_names_out_ = self.new_names
         elif isinstance(self.new_names, dict):
-            X.rename(columns=self.new_names, inplace=True)
-            self.feature_names_out_ = X.columns
+            self.feature_names_out_ = list(X.rename(columns=self.new_names))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
@@ -222,13 +219,6 @@ class RenameColumns(BaseProcessing):
         elif isinstance(self.new_names, dict):
             X.rename(columns=self.new_names, inplace=True)
         return X
-
-    def inverse_transform(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["feature_names_in_"])
-        if not isinstance(X, pd.DataFrame):
-            X = pd.DataFrame(X)
-        X.columns = self.feature_names_in_
-        return self.transform(X)
 
 
 class SkTransform(BaseProcessing):
@@ -311,7 +301,7 @@ class ReplaceThreshold(BaseProcessing):
         self.value = value
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        return self
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         if self.lower is not None:
@@ -377,7 +367,7 @@ class DropTimeGradient(BaseProcessing):
         self.lower_rate = lower_rate
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        return self
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X_transformed = []
@@ -451,18 +441,14 @@ class ApplyExpression(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.new_unit is not None:
-            self.new_cols_ = self.get_set_tags_values_columns(
+            self.feature_names_out_ = self.get_set_tags_values_columns(
                 X.copy(), 1, self.new_unit
             )
-            self.added_columns, self.removed_columns = get_added_removed_col(
-                X.columns, self.new_cols_
-            )
-        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X = eval(self.expression)
         if self.new_unit is not None:
-            X.columns = self.new_cols_
+            X.columns = self.feature_names_out_
         return X
 
 
@@ -498,20 +484,16 @@ class TimeGradient(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.new_unit is not None:
-            self.new_cols_ = self.get_set_tags_values_columns(
+            self.feature_names_out_ = self.get_set_tags_values_columns(
                 X.copy(), 1, self.new_unit
             )
-            self.added_columns, self.removed_columns = get_added_removed_col(
-                X.columns, self.new_cols_
-            )
-        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
         derivative.reindex(original_index)
         if self.new_unit is not None:
-            derivative.columns = self.new_cols_
+            derivative.columns = self.feature_names_out_
         return derivative
 
 
