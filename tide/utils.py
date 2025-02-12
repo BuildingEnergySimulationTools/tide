@@ -111,6 +111,7 @@ class NamedList:
         else:
             raise TypeError("Invalid key type")
 
+
 def col_name_tag_enrichment(col_name: str, tag_levels: int) -> str:
     """
     Enriches a column name by adding default tags until it reaches the specified

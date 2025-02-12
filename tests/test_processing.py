@@ -40,8 +40,10 @@ from tide.processing import (
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
 
+
 def check_feature_names_out(processor, res_df):
     assert processor.get_feature_names_out() == list(res_df.columns)
+
 
 def mock_get_oikolab_df(**kwargs):
     data = pd.read_csv(
@@ -435,7 +437,6 @@ class TestCustomTransformers:
         )
         check_feature_names_out(column_resampler, res)
 
-
     def test_pd_add_time_lag(self):
         df = pd.DataFrame(
             {
@@ -479,7 +480,6 @@ class TestCustomTransformers:
             res.to_numpy()[:, 0],
             decimal=5,
         )
-
 
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(
