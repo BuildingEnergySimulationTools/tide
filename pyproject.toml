@@ -1,0 +1,52 @@
+[project]
+name = "python-tide"
+version = "0.1.4"
+description = "Measured data visualization and pipelines creation"
+readme = "README.md"
+license = { file = "LICENSE.md" }
+authors = [{ name = "Baptiste Durand-Estebe", email = "b.durandestebe@gmail.com" }]
+maintainers = [
+    { name = "Baptiste Durand-Estebe", email = "b.durandestebe@gmail.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.22.4, <2.0",
+    "pandas>=2.0.0, <3.0",
+    "scipy>=1.9.1, <2.0",
+    "bigtree>=0.21.3",
+    "scikit-learn>=1.2.2, <2.0",
+    "statsmodels>=0.14.4",
+    "matplotlib>=3.5.1",
+    "plotly>=5.3.1",
+    "requests>=2.32.3",
+    "influxdb-client>=1.48.0",
+    "prophet>=1.1.6",
+]
+
+[project.urls]
+Source = "https://github.com/BuildingEnergySimulationTools/tide"
+
+
+
+[build-system]
+requires = ["flit_core<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.ruff]
+fix = true
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.flit.module]
+name = "tide"

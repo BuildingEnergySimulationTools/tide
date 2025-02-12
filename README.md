@@ -101,7 +101,7 @@ plumber.plot_gaps_heatmap(time_step='d')
 Plot time series with missing data highlighted:
 
 ```python
-fig = plumber.plot(plot_gaps_1=True)
+fig = plumber.plot(plot_gaps=True)
 fig.show(None)
 ```
 
@@ -142,14 +142,13 @@ pipe_dict = {
             [
                 "FillGapsAR",
                 {
-                    "model_kwargs": {
-                        "ar_kwargs": {"order": (4, 1, 2), "trend": "t"},
-                        "seasonal": "2d",
-                        "trend": "2d",
-                    }
-                },
-            ],
-        ],
+                    "model_name": "Prophet",
+                    "resample_at_td": "1h",
+                    "gaps_gte": "3h",
+                    "gaps_lte": "3d"
+                }
+            ]
+        ]
     }
 }
 
