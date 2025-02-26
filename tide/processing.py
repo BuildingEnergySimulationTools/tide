@@ -491,7 +491,7 @@ class TimeGradient(BaseProcessing):
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
-        derivative.reindex(original_index)
+        derivative = derivative.reindex(original_index)
         if self.new_unit is not None:
             derivative.columns = self.feature_names_out_
         return derivative
