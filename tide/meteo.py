@@ -20,6 +20,7 @@ OIKOLAB_PARAM_MAP = {
     "surface_thermal_radiation": "surface_thermal_radiation (W/m^2)",
     "total_cloud_cover": "total_cloud_cover (0-1)",
     "total_precipitation": "total_precipitation (mm of water equivalent)",
+    "wind_direction": "wind_direction (deg)"
 }
 
 
