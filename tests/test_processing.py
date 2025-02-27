@@ -483,14 +483,12 @@ class TestCustomTransformers:
 
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(
-            {"a__°C": [1, 2], "b__°C": [1, 2], "c": [1, 2]},
+            {"a__°C": [1, 2], "b__°C": [2, 4]},
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         trans = CombineColumns(
-            function=np.sum,
-            columns=["a__°C", "b__°C"],
-            function_kwargs={"axis": 1},
+            function="sum",
             drop_columns=True,
         )
 
@@ -498,29 +496,44 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(
             res,
             pd.DataFrame(
-                {"c": [1, 2], "combined": [2, 4]},
+                {"combined": [3, 6]},
                 index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
             ),
         )
+
+        trans = CombineColumns(
+            function="mean",
+            drop_columns=True,
+        )
+
+        res = trans.fit_transform(x_in.copy())
+        pd.testing.assert_frame_equal(
+            res,
+            pd.DataFrame(
+                {"combined": [1.5, 3]},
+                index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
+            ),
+        )
+
         check_feature_names_out(trans, res)
 
         ref = x_in.copy()
-        ref["combined"] = [2, 4]
-        trans.set_params(drop_columns=False)
-        res = trans.fit_transform(x_in)
+        ref["combined"] = [1.8, 3.6]
+        trans.set_params(function="average", weights=[1, 4], drop_columns=False)
+        res = trans.fit_transform(x_in.copy())
         pd.testing.assert_frame_equal(res, ref)
         check_feature_names_out(trans, res)
 
-        ref["combined_2"] = [2, 4]
+        ref = x_in.copy()
+        ref["combined_2"] = [5, 10]
         trans = CombineColumns(
-            function=np.sum,
-            tide_format_columns="°C",
-            function_kwargs={"axis": 1},
+            function="dot",
+            weights=[1, 2],
             drop_columns=False,
             result_column_name="combined_2",
         )
 
-        res = trans.fit_transform(x_in)
+        res = trans.fit_transform(x_in.copy())
         pd.testing.assert_frame_equal(res, ref)
         check_feature_names_out(trans, res)
 
