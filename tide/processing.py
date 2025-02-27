@@ -20,6 +20,8 @@ from tide.regressors import SkSTLForecast, SkProphet
 from tide.classifiers import STLEDetector
 from tide.meteo import sun_position, beam_component, sky_diffuse, ground_diffuse
 
+FUNCTION_MAP = {"mean": np.mean, "average": np.average, "sum": np.sum, "dot": np.dot}
+
 MODEL_MAP = {"STL": SkSTLForecast, "Prophet": SkProphet}
 
 OIKOLAB_DEFAULT_MAP = {
@@ -916,83 +918,61 @@ class GaussianFilter1D(BaseProcessing):
 
 class CombineColumns(BaseProcessing):
     """
-    A class that combines multiple columns in a pandas DataFrame using a specified
-    function.
+    A class that combines multiple columns in a pandas DataFrame using mean, sum,
+    average, or dot. Original columns can be dropped.
 
     Parameters
     ----------
-        function (callable or None): A function or method to apply for combining
-            columns.
-        tide_format_columns str: Tide request format. Columns are determined using
-            tide columns format name__unit__bloc. It override the columns attribute
-        columns (list or None): A list of column names to combine.
-            If None, all columns will be combined.
-
-        function_kwargs (dict or None): Additional keyword arguments to pass to the
-            combining function.
-        drop_columns (bool): If True, the original columns to combine will be dropped
-            from the DataFrame. If False, the original columns will be retained.
-        label_name (str): The name of the new column that will store the combined
-            values.
-
-    Attributes
-    ----------
-        columns : list
-            The column names of the input DataFrame.
-        index : pandas.Index
-            The index of the input DataFrame.
-
-    Methods
-    -------
-        get_feature_names_out(input_features=None)
-            Get output feature names for the transformed data.
-        fit(X, y=None)
-            Fit the transformer to the input data.
-        transform(X, y=None)
-            Transform the input data by applying the function
+        function (str): The name of the function to apply for combining columns.
+            Valide names are "mean", "sum", "average", "dot".
+        weights (list[float | int] or np.ndarray, optional): Weights to apply when
+            using 'average' or 'dot'. Ignored for functions like 'mean' or 'sum'.
+        drop_columns (bool): If True, the original columns used for combining will
+            be dropped from the DataFrame. If False, they will be retained.
+        result_column_name (str): The name of the new column that will store the
+            combined values.
     """
 
     def __init__(
         self,
-        function: Callable,
-        tide_format_columns: str = None,
-        columns=None,
-        function_kwargs: dict = {},
+        function: str,
+        weights: list[float | int] | np.ndarray = None,
         drop_columns: bool = False,
         result_column_name: str = "combined",
     ):
         BaseProcessing.__init__(self)
         self.function = function
-        self.tide_format_columns = tide_format_columns
-        self.columns = columns
-        self.function_kwargs = function_kwargs
+        self.weights = weights
         self.drop_columns = drop_columns
         self.result_column_name = result_column_name
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        if self.columns is None and self.tide_format_columns is None:
-            raise ValueError("Provide at least one of columns or tide_format_columns")
-
-        self.required_columns = (
-            parse_request_to_col_names(X.columns, self.tide_format_columns)
-            if self.tide_format_columns
-            else self.columns
-        )
         self.fit_check_features(X)
-        if self.drop_columns:
-            self.feature_names_out_ = list(X.columns.drop(self.required_columns))
-        if self.result_column_name in self.feature_names_out_:
+        self.method_ = FUNCTION_MAP[self.function]
+        if self.function in ["mean", "sum"] and self.weights is not None:
             raise ValueError(
-                f"label_name {self.result_column_name} already in X columns. "
-                f"It cannot be overwritten"
+                f"Weights have been provided, but {self.function} "
+                f"cannot use it. Use one of 'average' or 'dot'"
             )
+
+        if self.drop_columns:
+            self.feature_names_out_ = []
+
         self.feature_names_out_.append(self.result_column_name)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
-        X[self.result_column_name] = self.function(
-            X[self.required_columns], **self.function_kwargs
+        check_is_fitted(
+            self, attributes=["feature_names_in_", "feature_names_out_", "method_"]
         )
+
+        if self.function == "average":
+            X[self.result_column_name] = self.method_(X, axis=1, weights=self.weights)
+        elif self.function == "dot":
+            X[self.result_column_name] = self.method_(X, self.weights)
+
+        else:
+            X[self.result_column_name] = self.method_(X, axis=1)
+
         return X[self.feature_names_out_]
 
 
