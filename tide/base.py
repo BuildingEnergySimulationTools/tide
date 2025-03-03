@@ -15,11 +15,11 @@ from tide.utils import (
     timedelta_to_int,
     validate_odd_param,
     process_stl_odd_args,
-    get_data_blocks,
+    get_blocks_lte_and_gte,
     get_idx_freq_delta_or_min_time_interval,
     get_tags_max_level,
     NAME_LEVEL_MAP,
-    get_gaps_mask_from_blocks,
+    get_blocks_mask_lte_and_gte,
 )
 
 from tide.meteo import get_oikolab_df
@@ -205,24 +205,19 @@ class BaseFiller:
         self.gaps_gte = gaps_gte
 
     def get_gaps_dict_to_fill(self, X: pd.Series | pd.DataFrame):
-        return get_data_blocks(
+        return get_blocks_lte_and_gte(
             X,
             is_null=True,
-            lower_td_threshold=self.gaps_lte,
-            upper_td_threshold=self.gaps_gte,
-            upper_threshold_inclusive=True,
-            lower_threshold_inclusive=True,
-            return_combination=False,
+            lte=self.gaps_lte,
+            gte=self.gaps_gte,
         )
 
     def get_gaps_mask(self, X: pd.Series | pd.DataFrame):
-        return get_gaps_mask_from_blocks(
+        return get_blocks_mask_lte_and_gte(
             X,
             is_null=True,
-            lower_td_threshold=self.gaps_lte,
-            upper_td_threshold=self.gaps_gte,
-            lower_threshold_inclusive=True,
-            upper_threshold_inclusive=True,
+            lte=self.gaps_lte,
+            gte=self.gaps_gte,
         )
 
 

@@ -13,7 +13,9 @@ from tide.utils import (
     parse_request_to_col_names,
     timedelta_to_int,
     NamedList,
-    get_series_bloc,
+    _get_series_bloc,
+    get_blocks_lte_and_gte,
+    get_blocks_mask_lte_and_gte,
     edit_tag_value_by_level,
 )
 
@@ -125,7 +127,7 @@ class TestUtils:
         toy_holes.loc["2009-01-01 05:00:00":"2009-01-01 08:00:00"] = np.nan
         toy_holes.loc["2009-01-01 12:00:00":"2009-01-01 16:00:00"] = np.nan
 
-        get_series_bloc(
+        _get_series_bloc(
             toy_holes,
             is_null=True,
             upper_td_threshold="3h",
@@ -133,15 +135,15 @@ class TestUtils:
         )
 
         # All data groups
-        assert len(get_series_bloc(toy_holes)) == 4
+        assert len(_get_series_bloc(toy_holes)) == 4
 
         # All gaps groups
-        assert len(get_series_bloc(toy_holes, is_null=True)) == 3
+        assert len(_get_series_bloc(toy_holes, is_null=True)) == 3
 
         # Gaps Inner bounds, one inclusive
         assert (
             len(
-                get_series_bloc(
+                _get_series_bloc(
                     toy_holes,
                     is_null=True,
                     select_inner=True,
@@ -157,7 +159,7 @@ class TestUtils:
         # Gaps outer selection, one inclusive
         assert (
             len(
-                get_series_bloc(
+                _get_series_bloc(
                     toy_holes,
                     is_null=True,
                     select_inner=False,
@@ -175,7 +177,7 @@ class TestUtils:
             [np.nan, 1, 2, np.nan, 3, 4, np.nan],
             index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
-        res = get_series_bloc(ser, is_null=True)
+        res = _get_series_bloc(ser, is_null=True)
         assert len(res) == 3
 
         # No gaps case
@@ -183,7 +185,7 @@ class TestUtils:
             [0.0, 1.0, 2.0, 2.5, 3, 4, 5.0],
             index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
-        res = get_series_bloc(ser, is_null=True)
+        res = _get_series_bloc(ser, is_null=True)
 
         assert res == []
 
@@ -192,7 +194,7 @@ class TestUtils:
             [0.0, 1.0, 2.0, np.nan, 3, 4, 5.0],
             index=pd.date_range("2009", freq="h", periods=7, tz="UTC"),
         )
-        res = get_series_bloc(ser, is_null=True)
+        res = _get_series_bloc(ser, is_null=True)
 
         assert len(res) == 1
 
@@ -258,6 +260,98 @@ class TestUtils:
             upper_threshold_inclusive=False,
         )
         assert res["data_1"] == []
+
+    def test_get_blocks_lte_and_gte(self):
+        toy_df = pd.DataFrame(
+            {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
+            index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
+        )
+
+        toy_df.loc["2009-01-01 01:00:00", "data_1"] = np.nan
+        toy_df.loc["2009-01-01 10:00:00":"2009-01-01 12:00:00", "data_1"] = np.nan
+        toy_df.loc["2009-01-01 15:00:00":"2009-01-01 23:00:00", "data_2"] = np.nan
+
+        res = get_blocks_lte_and_gte(toy_df, "1h30min", "8h", True)
+        assert len(res["data_1"]) == 1 and len(res["data_2"]) == 1
+
+        res = get_blocks_lte_and_gte(toy_df, lte="8h", gte="1h30min", is_null=True)
+        assert len(res["data_1"]) == 1 and len(res["data_2"]) == 0
+
+    def test_get_blocks_mask_lte_and_gte(self):
+        toy_df = pd.DataFrame(
+            {"data_1": np.random.randn(24), "data_2": np.random.randn(24)},
+            index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
+        )
+
+        toy_df.loc["2009-01-01 01:00:00", "data_1"] = np.nan
+        toy_df.loc["2009-01-01 10:00:00":"2009-01-01 12:00:00", "data_1"] = np.nan
+        toy_df.loc["2009-01-01 15:00:00":"2009-01-01 23:00:00", "data_2"] = np.nan
+
+        res = get_blocks_mask_lte_and_gte(toy_df, "1h30min", "8h", True)
+        np.testing.assert_array_equal(
+            res.values,
+            np.array(
+                [
+                    [False, False],
+                    [True, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                    [False, True],
+                ]
+            ),
+        )
+
+        res = get_blocks_mask_lte_and_gte(toy_df, lte="8h", gte="1h30min", is_null=True)
+        np.testing.assert_array_equal(
+            res.values,
+            np.array(
+                [
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [True, False],
+                    [True, False],
+                    [True, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                    [False, False],
+                ]
+            ),
+        )
 
     def test_outer_timestamps(self):
         ref_index = pd.date_range("2009-01-01", freq="d", periods=5, tz="UTC")

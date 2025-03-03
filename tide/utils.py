@@ -245,7 +245,7 @@ def _upper_bound(series, bound, bound_inclusive: bool, inner: bool):
     return op(series, bound)
 
 
-def get_series_bloc(
+def _get_series_bloc(
     date_series: pd.Series,
     is_null: bool = False,
     select_inner: bool = True,
@@ -314,12 +314,101 @@ def get_series_bloc(
     ]
 
 
+def get_blocks_lte_and_gte(
+    data: pd.Series | pd.DataFrame,
+    lte: str | dt.timedelta = None,
+    gte: str | dt.timedelta = None,
+    is_null: bool = False,
+):
+    """
+    Get blocks of data ore gaps (nan) based on duration thresholds.
+
+    Returns them in a dictionary as list of DateTimeIndex. The keys values are
+    data columns (or name if data is a Series).
+
+
+    Parameters:
+    -----------
+    data : pd.Series or pd.DataFrame
+        The input data to be processed.
+    lte : str or datetime.timedelta, optional
+        The upper time threshold. Can be a string (e.g., '1h') or a timedelta object.
+    gte : str or datetime.timedelta, optional
+        The lower time threshold. Can be a string (e.g., '30min') or a timedelta object.
+    is_null : bool, default False
+        Whether to select blocks where the data is null.
+
+    Notes:
+    ------
+    - If both `lte` and `gte` are provided, and `lte` is smaller than `gte`, they
+    will be swapped. The function determines whether to select data within or outside
+    the boundaries based on the order of thresholds.
+    """
+
+    lower_th, upper_th = lte, gte
+    select_inner = False
+    if lower_th is not None and upper_th is not None:
+        if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
+            lower_th, upper_th = upper_th, lower_th
+            select_inner = True
+
+    return get_data_blocks(
+        data=data,
+        is_null=is_null,
+        lower_td_threshold=lower_th,
+        upper_td_threshold=upper_th,
+        select_inner=select_inner,
+        return_combination=False,
+    )
+
+
+def get_blocks_mask_lte_and_gte(
+    data: pd.Series | pd.DataFrame,
+    lte: str | dt.timedelta = None,
+    gte: str | dt.timedelta = None,
+    is_null: bool = False,
+) -> pd.DataFrame:
+    """
+    Creates a boolean mask DataFrame indicating the location of data blocks or gaps.
+
+    Parameters
+    ----------
+    data : pd.Series or pd.DataFrame
+        The input time series data with a DateTime index
+    lte : str or timedelta, optional
+        The minimum duration threshold
+    gte : str or timedelta, optional
+        The maximum duration threshold
+    is_null : bool, default False
+        Whether to find NaN blocks (True) or valid data blocks (False)
+
+    Returns
+    -------
+    pd.DataFrame
+        Boolean mask DataFrame with same index as input data and columns
+        corresponding to the input data columns. True values indicate
+        the presence of a block matching the criteria.
+    """
+    gaps_dict = get_blocks_lte_and_gte(data, lte, gte, is_null)
+
+    mask_data = {}
+    for col, idx_list in gaps_dict.items():
+        if idx_list:
+            combined_idx = pd.concat([idx.to_series() for idx in idx_list]).index
+            mask_data[col] = data.index.isin(combined_idx)
+        else:
+            mask_data[col] = np.zeros(data.shape[0], dtype=bool)
+
+    return pd.DataFrame(mask_data, index=data.index)
+
+
 def get_data_blocks(
     data: pd.Series | pd.DataFrame,
     is_null: bool = False,
     cols: str | list[str] = None,
     lower_td_threshold: str | dt.timedelta = None,
     upper_td_threshold: str | dt.timedelta = None,
+    select_inner: bool = True,
     lower_threshold_inclusive: bool = True,
     upper_threshold_inclusive: bool = True,
     return_combination: bool = True,
@@ -382,22 +471,14 @@ def get_data_blocks(
     data = check_and_return_dt_index_df(data)
     cols = ensure_list(cols) or list(data.columns)
 
-    # Handle threshold order and adjust select_inner if needed
-    lower_th, upper_th = lower_td_threshold, upper_td_threshold
-    select_inner = False
-    if lower_th is not None and upper_th is not None:
-        if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
-            lower_th, upper_th = upper_th, lower_th
-            select_inner = True
-
     # Process each column
     idx_dict = {
-        col: get_series_bloc(
+        col: _get_series_bloc(
             data[col],
             is_null,
             select_inner,
-            lower_th,
-            upper_th,
+            lower_td_threshold,
+            upper_td_threshold,
             lower_threshold_inclusive,
             upper_threshold_inclusive,
         )
@@ -405,12 +486,12 @@ def get_data_blocks(
     }
 
     if return_combination:
-        idx_dict["combination"] = get_series_bloc(
+        idx_dict["combination"] = _get_series_bloc(
             ~data.isnull().any(axis=1),
             is_null,
             select_inner,
-            lower_th,
-            upper_th,
+            lower_td_threshold,
+            upper_td_threshold,
             lower_threshold_inclusive,
             upper_threshold_inclusive,
         )
@@ -490,57 +571,3 @@ def ensure_list(item):
     if item is None:
         return []
     return item if isinstance(item, list) else [item]
-
-
-def get_gaps_mask_from_blocks(
-    data: pd.Series | pd.DataFrame,
-    is_null: bool = False,
-    lower_td_threshold: str | dt.timedelta = None,
-    upper_td_threshold: str | dt.timedelta = None,
-    lower_threshold_inclusive: bool = True,
-    upper_threshold_inclusive: bool = True,
-) -> pd.DataFrame:
-    """
-    Creates a boolean mask DataFrame indicating the location of data blocks or gaps.
-
-    Parameters
-    ----------
-    data : pd.Series or pd.DataFrame
-        The input time series data with a DateTime index
-    is_null : bool, default False
-        Whether to find NaN blocks (True) or valid data blocks (False)
-    lower_td_threshold : str or timedelta, optional
-        The minimum duration threshold
-    upper_td_threshold : str or timedelta, optional
-        The maximum duration threshold
-    lower_threshold_inclusive : bool, default True
-        Include the blocks of exactly lower_td_threshold duration
-    upper_threshold_inclusive : bool, default True
-        Include the blocks of exactly upper_td_threshold duration
-
-    Returns
-    -------
-    pd.DataFrame
-        Boolean mask DataFrame with same index as input data and columns
-        corresponding to the input data columns. True values indicate
-        the presence of a block matching the criteria.
-    """
-    gaps_dict = get_data_blocks(
-        data,
-        is_null=is_null,
-        lower_td_threshold=lower_td_threshold,
-        upper_td_threshold=upper_td_threshold,
-        lower_threshold_inclusive=lower_threshold_inclusive,
-        upper_threshold_inclusive=upper_threshold_inclusive,
-        return_combination=False,
-    )
-
-    mask_data = {}
-    for col, idx_list in gaps_dict.items():
-        if idx_list:
-            combined_idx = pd.concat([idx.to_series() for idx in idx_list]).index
-            mask_data[col] = data.index.isin(combined_idx)
-        else:
-            mask_data[col] = np.zeros(data.shape[0], dtype=bool)
-
-    return pd.DataFrame(mask_data, index=data.index)
