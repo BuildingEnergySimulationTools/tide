@@ -14,6 +14,7 @@ from tide.utils import (
     get_data_level_values,
     get_tree_depth_from_level,
     NamedList,
+    get_data_blocks
 )
 from tide.plot import (
     plot_gaps_heatmap,
@@ -149,6 +150,56 @@ class Plumber:
         if depth_level is not None:
             depth_level = get_tree_depth_from_level(loc_tree.max_depth, depth_level)
         loc_tree.show(max_depth=depth_level)
+
+    def get_gaps_description(
+            self,
+            select: str | pd.Index | list[str] = None,
+            steps: None | str | list[str] | slice = slice(None),
+            verbose:bool = False,
+            gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+            gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+            return_combination:bool = True
+    ):
+        data = self.get_corrected_data(select, steps=steps, verbose=verbose)
+
+        lower_th, upper_th = gaps_lte, gaps_gte
+        select_inner = False
+        if lower_th is not None and upper_th is not None:
+            if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
+                lower_th, upper_th = upper_th, lower_th
+                select_inner = True
+
+        nan_blocks = get_data_blocks(
+                data=data,
+                is_null=True,
+                select_inner=select_inner,
+                lower_td_threshold=lower_th,
+                upper_td_threshold=upper_th,
+                return_combination=return_combination,
+        )
+
+
+        ser_list = []
+        for col, gaps_list in nan_blocks.items():
+            gaps_ser = []
+            if gaps_list:
+                for gap in gaps_list:
+                    if gap.shape[0] > 1:
+                        gaps_ser.append(gap[-1] - gap[0])
+                    elif gap.shape[0] == 1:
+                        gaps_ser.append(pd.to_timedelta(gap.freq))
+
+                ser_list.append(pd.Series(gaps_ser, name=col).describe())
+
+        try:
+            res = pd.concat(ser_list, axis=1)
+        except ValueError:
+            res = pd.DataFrame()
+
+        pass
+
+
+
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         self.data = check_and_return_dt_index_df(data)

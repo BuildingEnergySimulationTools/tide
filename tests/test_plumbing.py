@@ -184,7 +184,6 @@ class TestPlumbing:
         plumber.pipe_dict = pipe
         plumber.get_pipeline()
         plumber.get_pipeline(steps=["fill_3", "combine"])
-
         plumber.plot()
-
+        plumber.get_gaps_description()
         assert True

@@ -389,14 +389,21 @@ def get_data_blocks(
     elif cols is None:
         cols = list(data.columns)
 
+    lower_th, upper_th = lower_td_threshold, upper_td_threshold
+    select_inner = False
+    if lower_th is not None and upper_th is not None:
+        if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
+            lower_th, upper_th = upper_th, lower_th
+            select_inner = True
+
     idx_dict = {}
     for col in cols:
         idx_dict[col] = get_series_bloc(
             data[col],
             is_null,
             select_inner,
-            lower_td_threshold,
-            upper_td_threshold,
+            lower_th,
+            upper_th,
             lower_threshold_inclusive,
             upper_threshold_inclusive,
         )
@@ -406,8 +413,8 @@ def get_data_blocks(
             ~data.isnull().any(axis=1),
             is_null,
             select_inner,
-            lower_td_threshold,
-            upper_td_threshold,
+            lower_th,
+            upper_th,
             lower_threshold_inclusive,
             upper_threshold_inclusive,
         )
