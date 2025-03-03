@@ -196,7 +196,7 @@ class Plumber:
             Empty DataFrame if no gaps are found.
         """
         data = self.get_corrected_data(select, steps=steps, verbose=verbose)
-        
+
         # Get gaps and calculate durations
         gaps_dict = get_blocks_lte_and_gte(
             data=data,
@@ -210,14 +210,14 @@ class Plumber:
         for col, gaps_list in gaps_dict.items():
             if not gaps_list:
                 continue
-                
+
             durations = []
             for gap in gaps_list:
                 if len(gap) > 1:
                     durations.append(gap[-1] - gap[0])
                 else:
                     durations.append(pd.to_timedelta(gap.freq))
-            
+
             if durations:
                 gap_durations[col] = pd.Series(durations, name=col)
 
@@ -225,7 +225,7 @@ class Plumber:
             return pd.DataFrame()
 
         stats_df = pd.concat([ser.describe() for ser in gap_durations.values()], axis=1)
-        
+
         gaps_mask = get_blocks_mask_lte_and_gte(
             data=data,
             lte=gaps_lte,
@@ -233,11 +233,13 @@ class Plumber:
             is_null=True,
             return_combination=return_combination,
         )
-        
+
         presence_percentages = (1 - gaps_mask.mean()) * 100
-        
+
         stats_df.loc["data_presence_%"] = presence_percentages[stats_df.columns]
-        row_order = ["data_presence_%"] + [idx for idx in stats_df.index if idx != "data_presence_%"]
+        row_order = ["data_presence_%"] + [
+            idx for idx in stats_df.index if idx != "data_presence_%"
+        ]
         return stats_df.reindex(row_order)
 
     def set_data(self, data: pd.Series | pd.DataFrame):

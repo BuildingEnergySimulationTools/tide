@@ -319,7 +319,7 @@ def get_blocks_lte_and_gte(
     lte: str | dt.timedelta = None,
     gte: str | dt.timedelta = None,
     is_null: bool = False,
-    return_combination: bool = False
+    return_combination: bool = False,
 ):
     """
     Get blocks of data ore gaps (nan) based on duration thresholds.
@@ -372,7 +372,7 @@ def get_blocks_mask_lte_and_gte(
     lte: str | dt.timedelta = None,
     gte: str | dt.timedelta = None,
     is_null: bool = False,
-    return_combination: bool = False
+    return_combination: bool = False,
 ) -> pd.DataFrame:
     """
     Creates a boolean mask DataFrame indicating the location of data blocks or gaps.
