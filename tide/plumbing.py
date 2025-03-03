@@ -14,7 +14,7 @@ from tide.utils import (
     get_data_level_values,
     get_tree_depth_from_level,
     NamedList,
-    get_data_blocks
+    get_data_blocks,
 )
 from tide.plot import (
     plot_gaps_heatmap,
@@ -152,13 +152,13 @@ class Plumber:
         loc_tree.show(max_depth=depth_level)
 
     def get_gaps_description(
-            self,
-            select: str | pd.Index | list[str] = None,
-            steps: None | str | list[str] | slice = slice(None),
-            verbose:bool = False,
-            gaps_lte: str | pd.Timedelta | dt.timedelta = None,
-            gaps_gte: str | pd.Timedelta | dt.timedelta = None,
-            return_combination:bool = True
+        self,
+        select: str | pd.Index | list[str] = None,
+        steps: None | str | list[str] | slice = slice(None),
+        verbose: bool = False,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+        return_combination: bool = True,
     ):
         data = self.get_corrected_data(select, steps=steps, verbose=verbose)
 
@@ -170,14 +170,12 @@ class Plumber:
                 select_inner = True
 
         nan_blocks = get_data_blocks(
-                data=data,
-                is_null=True,
-                select_inner=select_inner,
-                lower_td_threshold=lower_th,
-                upper_td_threshold=upper_th,
-                return_combination=return_combination,
+            data=data,
+            is_null=True,
+            lower_td_threshold=lower_th,
+            upper_td_threshold=upper_th,
+            return_combination=return_combination,
         )
-
 
         ser_list = []
         for col, gaps_list in nan_blocks.items():
@@ -197,9 +195,6 @@ class Plumber:
             res = pd.DataFrame()
 
         pass
-
-
-
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         self.data = check_and_return_dt_index_df(data)
