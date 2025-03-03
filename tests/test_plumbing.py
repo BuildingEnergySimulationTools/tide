@@ -10,6 +10,7 @@ from tide.plumbing import (
 )
 
 import plotly.io as pio
+import pytest
 
 pio.renderers.default = "browser"
 
@@ -187,3 +188,127 @@ class TestPlumbing:
         plumber.plot()
         plumber.get_gaps_description()
         assert True
+
+
+class TestGapsDescription:
+    @pytest.fixture
+    def sample_data(self):
+        # Create sample data with known gaps
+        idx = pd.date_range("2023-01-01", periods=24, freq="1h", tz="UTC")
+        data = pd.DataFrame({
+            "temp__°C__Building": np.ones(24),
+            "humidity__%__Building": np.ones(24),
+            "power__W__Building": np.ones(24)
+        }, index=idx)
+        
+        # Create gaps of different durations
+        data.loc["2023-01-01 02:00":"2023-01-01 04:00", "temp__°C__Building"] = np.nan  # 3h gap
+        data.loc["2023-01-01 08:00", "temp__°C__Building"] = np.nan  # 1h gap
+        data.loc["2023-01-01 12:00":"2023-01-01 14:00", "humidity__%__Building"] = np.nan  # 3h gap
+        data.loc["2023-01-01 06:00":"2023-01-01 18:00", "power__W__Building"] = np.nan  # 13h gap
+        
+        return data
+
+    def test_basic_gaps_description(self, sample_data):
+        """Test basic functionality with default parameters"""
+        plumber = Plumber(sample_data)
+        result = plumber.get_gaps_description()
+        
+        # Check presence of all columns
+        assert all(col in result.columns for col in sample_data.columns)
+        
+        # Check presence of all statistics
+        expected_stats = ["data_presence_%", "count", "mean", "std", "min", "25%", "50%", "75%", "max"]
+        assert all(stat in result.index for stat in expected_stats)
+        
+        # Check specific values for temp column
+        temp_col = "temp__°C__Building"
+        assert result[temp_col]["count"] == 2  # Two gaps
+        assert result[temp_col]["data_presence_%"] == pytest.approx(83.33, rel=1e-2)  # 20/24 hours present
+
+    def test_with_duration_thresholds(self, sample_data):
+        """Test with gap duration thresholds"""
+        plumber = Plumber(sample_data)
+        
+        # Only gaps >= 3h
+        result = plumber.get_gaps_description(gaps_gte="3h")
+        assert result["temp__°C__Building"]["count"] == 1  # Only one 3h gap
+        assert result["power__W__Building"]["count"] == 1  # One 13h gap
+        
+        # Only gaps <= 2h
+        result = plumber.get_gaps_description(gaps_lte="2h")
+        assert result["temp__°C__Building"]["count"] == 1  # Only one 1h gap
+        assert "power__W__Building" not in result.columns  # No gaps <= 2h
+
+    def test_with_data_selection(self, sample_data):
+        """Test with data selection using tags"""
+        plumber = Plumber(sample_data)
+        
+        # Select by unit
+        result = plumber.get_gaps_description(select="°C")
+        assert list(result.columns) == ["temp__°C__Building"]
+        
+        # Select by bloc
+        result = plumber.get_gaps_description(select="Building")
+        assert len(result.columns) == 3
+
+    def test_empty_cases(self):
+        """Test cases that should return empty DataFrame"""
+        # Data with no gaps
+        idx = pd.date_range("2023-01-01", periods=24, freq="1h", tz="UTC")
+        clean_data = pd.DataFrame({
+            "temp__°C__Building": np.ones(24)
+        }, index=idx)
+        plumber = Plumber(clean_data)
+        
+        result = plumber.get_gaps_description()
+        assert result.empty
+        
+        # Data selection that returns no columns
+        plumber = Plumber(clean_data)
+        result = plumber.get_gaps_description(select="nonexistent")
+        assert result.empty
+
+    def test_combination_flag(self, sample_data):
+        """Test with and without return_combination flag"""
+        plumber = Plumber(sample_data)
+        
+        # With combination
+        result = plumber.get_gaps_description(return_combination=True)
+        assert "combination" in result.columns
+        
+        # Without combination
+        result = plumber.get_gaps_description(return_combination=False)
+        assert "combination" not in result.columns
+
+    def test_single_point_gaps(self):
+        """Test handling of single-point gaps"""
+        idx = pd.date_range("2023-01-01", periods=24, freq="1h", tz="UTC")
+        data = pd.DataFrame({
+            "temp__°C__Building": np.ones(24)
+        }, index=idx)
+        
+        # Create single point gap
+        data.loc["2023-01-01 12:00", "temp__°C__Building"] = np.nan
+        
+        plumber = Plumber(data)
+        result = plumber.get_gaps_description()
+        
+        assert result["temp__°C__Building"]["count"] == 1
+        assert pd.Timedelta(result["temp__°C__Building"]["mean"]) == pd.Timedelta("1h")
+
+    def test_pipeline_steps(self, sample_data):
+        """Test with pipeline steps"""
+        plumber = Plumber(sample_data)
+        plumber.pipe_dict = {
+            "step1": [["Identity"]],  # Simple identity transformation
+            "step2": [["Identity"]]
+        }
+        
+        # Test with specific steps
+        result = plumber.get_gaps_description(steps=["step1"])
+        assert not result.empty
+        
+        # Test with no steps
+        result = plumber.get_gaps_description(steps=None)
+        assert not result.empty
