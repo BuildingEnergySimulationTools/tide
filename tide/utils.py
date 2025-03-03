@@ -319,6 +319,7 @@ def get_blocks_lte_and_gte(
     lte: str | dt.timedelta = None,
     gte: str | dt.timedelta = None,
     is_null: bool = False,
+    return_combination: bool = False
 ):
     """
     Get blocks of data ore gaps (nan) based on duration thresholds.
@@ -343,6 +344,10 @@ def get_blocks_lte_and_gte(
     - If both `lte` and `gte` are provided, and `lte` is smaller than `gte`, they
     will be swapped. The function determines whether to select data within or outside
     the boundaries based on the order of thresholds.
+    return_combination : bool, optional
+        If True (default), a combination column is created that checks for NaNs
+        across all columns in the DataFrame. Gaps in this combination column represent
+        rows where NaNs are present in any of the columns.
     """
 
     lower_th, upper_th = lte, gte
@@ -358,7 +363,7 @@ def get_blocks_lte_and_gte(
         lower_td_threshold=lower_th,
         upper_td_threshold=upper_th,
         select_inner=select_inner,
-        return_combination=False,
+        return_combination=return_combination,
     )
 
 
@@ -367,6 +372,7 @@ def get_blocks_mask_lte_and_gte(
     lte: str | dt.timedelta = None,
     gte: str | dt.timedelta = None,
     is_null: bool = False,
+    return_combination: bool = False
 ) -> pd.DataFrame:
     """
     Creates a boolean mask DataFrame indicating the location of data blocks or gaps.
@@ -381,6 +387,10 @@ def get_blocks_mask_lte_and_gte(
         The maximum duration threshold
     is_null : bool, default False
         Whether to find NaN blocks (True) or valid data blocks (False)
+    return_combination : bool, optional
+        If True (default), a combination column is created that checks for NaNs
+        across all columns in the DataFrame. Gaps in this combination column represent
+        rows where NaNs are present in any of the columns.
 
     Returns
     -------
@@ -389,7 +399,7 @@ def get_blocks_mask_lte_and_gte(
         corresponding to the input data columns. True values indicate
         the presence of a block matching the criteria.
     """
-    gaps_dict = get_blocks_lte_and_gte(data, lte, gte, is_null)
+    gaps_dict = get_blocks_lte_and_gte(data, lte, gte, is_null, return_combination)
 
     mask_data = {}
     for col, idx_list in gaps_dict.items():
