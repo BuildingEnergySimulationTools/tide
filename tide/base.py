@@ -20,6 +20,7 @@ from tide.utils import (
     get_idx_freq_delta_or_min_time_interval,
     get_tags_max_level,
     NAME_LEVEL_MAP,
+    get_gaps_mask_from_blocks,
 )
 
 from tide.meteo import get_oikolab_df
@@ -205,39 +206,25 @@ class BaseFiller:
         self.gaps_gte = gaps_gte
 
     def get_gaps_dict_to_fill(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
-        lower_th, upper_th = self.gaps_lte, self.gaps_gte
-        select_inner = False
-
-        if lower_th is not None and upper_th is not None:
-            if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
-                lower_th, upper_th = upper_th, lower_th
-                select_inner = True
-
         return get_data_blocks(
             X,
             is_null=True,
-            select_inner=select_inner,
-            lower_td_threshold=lower_th,
-            upper_td_threshold=upper_th,
+            lower_td_threshold=self.gaps_lte,
+            upper_td_threshold=self.gaps_gte,
             upper_threshold_inclusive=True,
             lower_threshold_inclusive=True,
             return_combination=False,
         )
 
     def get_gaps_mask(self, X: pd.Series | pd.DataFrame):
-        gaps_dict = self.get_gaps_dict_to_fill(X)
-        mask_data = {}
-
-        for col, idx_list in gaps_dict.items():
-            if idx_list:
-                combined_idx = pd.concat([idx.to_series() for idx in idx_list]).index
-                mask_data[col] = X.index.isin(combined_idx)
-            else:
-                mask_data[col] = np.zeros(X.shape[0], dtype=bool)
-
-        df_mask = pd.DataFrame(mask_data, index=X.index)
-        return df_mask
+        return get_gaps_mask_from_blocks(
+            X,
+            is_null=True,
+            lower_td_threshold=self.gaps_lte,
+            upper_td_threshold=self.gaps_gte,
+            lower_threshold_inclusive=True,
+            upper_threshold_inclusive=True,
+        )
 
 
 class BaseOikoMeteo:
