@@ -14,7 +14,8 @@ from tide.utils import (
     get_data_level_values,
     get_tree_depth_from_level,
     NamedList,
-    get_data_blocks,
+    get_blocks_lte_and_gte,
+    get_blocks_mask_lte_and_gte,
 )
 from tide.plot import (
     plot_gaps_heatmap,
@@ -159,42 +160,85 @@ class Plumber:
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
         return_combination: bool = True,
-    ):
+    ) -> pd.DataFrame:
+        """
+        Get statistical description of gaps durations in the data.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply before analyzing gaps
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+        gaps_lte : str or pd.Timedelta or dt.timedelta, optional
+            Upper threshold for gap duration
+        gaps_gte : str or pd.Timedelta or dt.timedelta, optional
+            Lower threshold for gap duration
+        return_combination : bool, default True
+            Whether to include statistics for gaps present in any column
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing statistics about gap durations for each column.
+            Statistics include:
+            - data_presence_%: percentage of non-gap data points
+            - count: number of gaps
+            - mean: average gap duration
+            - std: standard deviation of gap durations
+            - min: shortest gap
+            - 25%: first quartile
+            - 50%: median
+            - 75%: third quartile
+            - max: longest gap
+            Empty DataFrame if no gaps are found.
+        """
         data = self.get_corrected_data(select, steps=steps, verbose=verbose)
-
-        lower_th, upper_th = gaps_lte, gaps_gte
-        select_inner = False
-        if lower_th is not None and upper_th is not None:
-            if pd.to_timedelta(lower_th) > pd.to_timedelta(upper_th):
-                lower_th, upper_th = upper_th, lower_th
-                select_inner = True
-
-        nan_blocks = get_data_blocks(
+        
+        # Get gaps and calculate durations
+        gaps_dict = get_blocks_lte_and_gte(
             data=data,
+            lte=gaps_lte,
+            gte=gaps_gte,
             is_null=True,
-            lower_td_threshold=lower_th,
-            upper_td_threshold=upper_th,
             return_combination=return_combination,
         )
 
-        ser_list = []
-        for col, gaps_list in nan_blocks.items():
-            gaps_ser = []
-            if gaps_list:
-                for gap in gaps_list:
-                    if gap.shape[0] > 1:
-                        gaps_ser.append(gap[-1] - gap[0])
-                    elif gap.shape[0] == 1:
-                        gaps_ser.append(pd.to_timedelta(gap.freq))
+        gap_durations = {}
+        for col, gaps_list in gaps_dict.items():
+            if not gaps_list:
+                continue
+                
+            durations = []
+            for gap in gaps_list:
+                if len(gap) > 1:
+                    durations.append(gap[-1] - gap[0])
+                else:
+                    durations.append(pd.to_timedelta(gap.freq))
+            
+            if durations:
+                gap_durations[col] = pd.Series(durations, name=col)
 
-                ser_list.append(pd.Series(gaps_ser, name=col).describe())
+        if not gap_durations:
+            return pd.DataFrame()
 
-        try:
-            res = pd.concat(ser_list, axis=1)
-        except ValueError:
-            res = pd.DataFrame()
-
-        pass
+        stats_df = pd.concat([ser.describe() for ser in gap_durations.values()], axis=1)
+        
+        gaps_mask = get_blocks_mask_lte_and_gte(
+            data=data,
+            lte=gaps_lte,
+            gte=gaps_gte,
+            is_null=True,
+            return_combination=return_combination,
+        )
+        
+        presence_percentages = (1 - gaps_mask.mean()) * 100
+        
+        stats_df.loc["data_presence_%"] = presence_percentages[stats_df.columns]
+        row_order = ["data_presence_%"] + [idx for idx in stats_df.index if idx != "data_presence_%"]
+        return stats_df.reindex(row_order)
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         self.data = check_and_return_dt_index_df(data)
