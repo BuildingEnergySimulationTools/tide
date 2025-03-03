@@ -142,13 +142,16 @@ class Plumber:
 
     Examples
     --------
-    >>> data = pd.DataFrame({
-    ...     "temp__°C__zone1": [20, 21, np.nan, 23],
-    ...     "humid__%HR__zone1": [50, 55, 60, np.nan]
-    ... }, index=pd.date_range("2023", freq="h", periods=4))
+    >>> data = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+    ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+    ...     },
+    ...     index=pd.date_range("2023", freq="h", periods=4),
+    ... )
     >>> pipe_dict = {
     ...     "pre_processing": {"°C": [["ReplaceThreshold", {"upper": 25}]]},
-    ...     "common": [["Interpolate", ["linear"]]]
+    ...     "common": [["Interpolate", ["linear"]]],
     ... }
     >>> plumber = Plumber(data, pipe_dict)
     >>> corrected = plumber.get_corrected_data()
@@ -189,7 +192,7 @@ class Plumber:
         steps: None | str | list[str] | slice = slice(None),
         depth_level: int | str = None,
     ):
-        """Display the tree structure of selected data columns at selected steps for 
+        """Display the tree structure of selected data columns at selected steps for
         a given depth level.
 
         Parameters
