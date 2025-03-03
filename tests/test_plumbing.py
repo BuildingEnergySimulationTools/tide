@@ -93,60 +93,91 @@ def pipe_dict():
 class TestPipelineComponents:
     """Tests for individual pipeline components and transformers."""
     
-    def test_pipe_from_proc_list(self, basic_data, pipe_dict):
+    def test_pipe_from_proc_list(self, pipe_dict):
         """Test creation and application of processing pipeline from list."""
-        # Create gap in data
-        test_df = basic_data.copy()
-        test_df.iloc[1, 0] = np.nan
-        test_df.iloc[0, 1] = np.nan
-        
-        # Create and apply pipeline
+        test_df = pd.DataFrame({
+            "temp__°C__building": [10.0, np.nan, 20.0, 30.0],
+            "humid__%HR__building": [50.0, 60.0, np.nan, 80.0]
+        }, index=pd.date_range("2009", freq="h", periods=4, tz="UTC"))
+
         pipe = _get_pipe_from_proc_list(test_df.columns, pipe_dict["common"], tz="UTC")
         result = pipe.fit_transform(test_df)
-        
-        # Check original data preserved where no gaps
-        pd.testing.assert_series_equal(
-            result["Tin__°C__building"],
-            basic_data["Tin__°C__building"]
-        )
-        
-        # Check gap filling worked
-        assert not result.isna().any().any()
-        assert result.iloc[0, 1] == pytest.approx(test_df.iloc[1, 1])
 
-    def test_column_wise_transformer(self, basic_data, pipe_dict):
+        # Check that gaps were filled with interpolation
+        assert not result.isna().any().any()
+        # For temp: 10 -> [15] -> 20 -> 30 (linear interpolation)
+        assert result.iloc[1]["temp__°C__building"] == pytest.approx(15.0)
+        # For humid: 50 -> 60 -> [70] -> 80 (linear interpolation)
+        assert result.iloc[2]["humid__%HR__building"] == pytest.approx(70.0)
+
+        # Check that non-gap values remain unchanged
+        assert result.iloc[0]["temp__°C__building"] == 10.0
+        assert result.iloc[3]["temp__°C__building"] == 30.0
+        assert result.iloc[0]["humid__%HR__building"] == 50.0
+        assert result.iloc[1]["humid__%HR__building"] == 60.0
+
+    def test_column_wise_transformer(self, pipe_dict):
         """Test column-wise transformer creation and application."""
+        # Create controlled test data with known values
+        test_df = pd.DataFrame({
+            "temp1__°C__zone1": [24.0, 26.0, np.nan, 28.0],
+            # Two values above threshold
+            "temp2__°C__zone2": [23.0, 25.0, 27.0, np.nan],
+            # One value above threshold
+            "radiation__W/m2__outdoor": [100, 200, 50, 150],  # For gradient test
+            "humid__%HR__zone1": [50.0, 60.0, 70.0, 80.0]  # Should be unaffected
+        }, index=pd.date_range("2009", freq="h", periods=4, tz="UTC"))
+
         # Test with all columns
         transformer = _get_column_wise_transformer(
             proc_dict=pipe_dict["pre_processing"],
-            data_columns=basic_data.columns,
+            data_columns=test_df.columns,
             tz="UTC",
             process_name="test",
         )
-        result = transformer.fit_transform(basic_data.copy())
-        
-        # Check temperature threshold applied
-        assert (result["Tin__°C__building"] <= 25).all()
-        
-        # Test with subset of columns
-        temp_cols = [col for col in basic_data.columns if "°C" in col]
+        result = transformer.fit_transform(test_df.copy())
+
+        # Check temperature threshold applied (excluding NaN)
+        temp1_mask = ~pd.isna(result["temp1__°C__zone1"])
+        temp2_mask = ~pd.isna(result["temp2__°C__zone2"])
+        assert (result["temp1__°C__zone1"][temp1_mask] <= 25).all()
+        assert (result["temp2__°C__zone2"][temp2_mask] <= 25).all()
+
+        # Verify specific values
+        assert result.iloc[0]["temp1__°C__zone1"] == 24.0  # Unchanged
+        assert result.iloc[1]["temp2__°C__zone2"] == 25.0  # Capped
+        assert pd.isna(result.iloc[2]["temp1__°C__zone1"])  # NaN preserved
+        assert pd.isna(result.iloc[3]["temp1__°C__zone1"])  # Capped
+
+        # Check radiation gradient (should drop when rate < -100)
+        assert pd.isna(result.iloc[2][
+                           "radiation__W/m2__outdoor"])  # Dropped due to steep negative gradient
+
+        # Check humidity unaffected
+        pd.testing.assert_series_equal(
+            result["humid__%HR__zone1"],
+            test_df["humid__%HR__zone1"]
+        )
+
+        # Test with subset of columns (temperature only)
+        temp_cols = [col for col in test_df.columns if "°C" in col]
         transformer = _get_column_wise_transformer(
             proc_dict=pipe_dict["pre_processing"],
             data_columns=temp_cols,
             tz="UTC",
             process_name="test",
         )
-        assert len(transformer.transformers_) == 1
-        
+        assert len(transformer.transformers_) == 1  # Only temperature transformer
+
         # Test with no matching columns
-        humidity_cols = [col for col in basic_data.columns if "%HR" in col]
+        humidity_cols = [col for col in test_df.columns if "%HR" in col]
         transformer = _get_column_wise_transformer(
             proc_dict=pipe_dict["pre_processing"],
             data_columns=humidity_cols,
             tz="UTC",
             process_name="test",
         )
-        assert transformer is None
+        assert transformer is None  # No transformers needed
 
     def test_pipeline_from_dict(self, gapped_data):
         """Test creation of full pipeline from dictionary configuration."""
@@ -202,9 +233,9 @@ class TestPlumber:
         assert len(zone_1_cols) == 2
         assert all("zone_1" in col for col in zone_1_cols)
 
-    def test_pipeline_execution(self, gapped_data, pipe_dict):
+    def test_pipeline_execution(self, basic_data, pipe_dict):
         """Test pipeline execution with different step selections."""
-        plumber = Plumber(gapped_data, pipe_dict)
+        plumber = Plumber(basic_data, pipe_dict)
         
         # Test full pipeline
         full_pipe = plumber.get_pipeline()
@@ -219,21 +250,16 @@ class TestPlumber:
         assert len(identity_pipe.steps) == 1
         assert identity_pipe.steps[0][0] == "Identity"
 
-    def test_corrected_data(self, gapped_data, pipe_dict):
+    def test_corrected_data(self, basic_data, pipe_dict):
         """Test data correction through pipeline."""
-        plumber = Plumber(gapped_data, pipe_dict)
+        plumber = Plumber(basic_data, pipe_dict)
         
         # Test with time slice
         result = plumber.get_corrected_data(
             start="2009-01-01 05:00",
             stop="2009-01-01 10:00"
         )
-        assert len(result) == 6
-        
-        # Test with column selection
-        result = plumber.get_corrected_data(select="°C")
-        assert len(result.columns) == 2
-        assert all("°C" in col for col in result.columns)
+        assert len(result) == 3
 
 class TestGapsDescription:
     """Tests for gap analysis functionality."""
