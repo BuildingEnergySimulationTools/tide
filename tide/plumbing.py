@@ -14,6 +14,8 @@ from tide.utils import (
     get_data_level_values,
     get_tree_depth_from_level,
     NamedList,
+    get_blocks_lte_and_gte,
+    get_blocks_mask_lte_and_gte,
 )
 from tide.plot import (
     plot_gaps_heatmap,
@@ -118,7 +120,53 @@ def get_pipeline_from_dict(
 
 
 class Plumber:
+    """A class for managing and transforming time series data through configurable processing pipelines.
+
+    The Plumber class provides a high-level interface for:
+    - Managing time series data with hierarchical column naming (name__unit__bloc__sub_bloc)
+    - Creating and executing data processing pipelines
+    - Analyzing and visualizing data gaps
+    - Plotting time series with customizable layouts
+
+    The class uses a tree structure to organize data columns based on their tags,
+    allowing for flexible data selection and manipulation.
+
+    Attributes
+    ----------
+    data : pd.DataFrame
+        The input time series data with datetime index
+    root : Node
+        Root node of the tree structure organizing column names
+    pipe_dict : dict
+        Configuration dictionary defining the processing pipeline steps
+
+    Examples
+    --------
+    >>> data = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+    ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+    ...     },
+    ...     index=pd.date_range("2023", freq="h", periods=4),
+    ... )
+    >>> pipe_dict = {
+    ...     "pre_processing": {"°C": [["ReplaceThreshold", {"upper": 25}]]},
+    ...     "common": [["Interpolate", ["linear"]]],
+    ... }
+    >>> plumber = Plumber(data, pipe_dict)
+    >>> corrected = plumber.get_corrected_data()
+    """
+
     def __init__(self, data: pd.Series | pd.DataFrame = None, pipe_dict: dict = None):
+        """
+        Parameters
+        ----------
+        data : pd.Series or pd.DataFrame, optional
+            Input time series data. Must have a datetime index.
+        pipe_dict : dict, optional
+            Pipeline configuration dictionary. Each key represents a processing step
+            and contains the corresponding transformation parameters.
+        """
         self.data = check_and_return_dt_index_df(data) if data is not None else None
         self.root = data_columns_to_tree(data.columns) if data is not None else None
         self.pipe_dict = pipe_dict
@@ -144,13 +192,122 @@ class Plumber:
         steps: None | str | list[str] | slice = slice(None),
         depth_level: int | str = None,
     ):
+        """Display the tree structure of selected data columns at selected steps for
+        a given depth level.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply before showing the tree
+        depth_level : int or str, optional
+            Maximum depth level to display in the tree
+        """
         pipe = self.get_pipeline(select=select, steps=steps)
         loc_tree = data_columns_to_tree(pipe.get_feature_names_out())
         if depth_level is not None:
             depth_level = get_tree_depth_from_level(loc_tree.max_depth, depth_level)
         loc_tree.show(max_depth=depth_level)
 
+    def get_gaps_description(
+        self,
+        select: str | pd.Index | list[str] = None,
+        steps: None | str | list[str] | slice = slice(None),
+        verbose: bool = False,
+        gaps_lte: str | pd.Timedelta | dt.timedelta = None,
+        gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+        return_combination: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Get statistical description of gaps durations in the data.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply before analyzing gaps
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+        gaps_lte : str or pd.Timedelta or dt.timedelta, optional
+            Upper threshold for gap duration
+        gaps_gte : str or pd.Timedelta or dt.timedelta, optional
+            Lower threshold for gap duration
+        return_combination : bool, default True
+            Whether to include statistics for gaps present in any column
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame containing statistics about gap durations for each column.
+            Statistics include:
+            - data_presence_%: percentage of non-gap data points
+            - count: number of gaps
+            - mean: average gap duration
+            - std: standard deviation of gap durations
+            - min: shortest gap
+            - 25%: first quartile
+            - 50%: median
+            - 75%: third quartile
+            - max: longest gap
+            Empty DataFrame if no gaps are found.
+        """
+        data = self.get_corrected_data(select, steps=steps, verbose=verbose)
+
+        # Get gaps and calculate durations
+        gaps_dict = get_blocks_lte_and_gte(
+            data=data,
+            lte=gaps_lte,
+            gte=gaps_gte,
+            is_null=True,
+            return_combination=return_combination,
+        )
+
+        gap_durations = {}
+        for col, gaps_list in gaps_dict.items():
+            if not gaps_list:
+                continue
+
+            durations = []
+            for gap in gaps_list:
+                if len(gap) > 1:
+                    durations.append(gap[-1] - gap[0])
+                else:
+                    durations.append(pd.to_timedelta(gap.freq))
+
+            if durations:
+                gap_durations[col] = pd.Series(durations, name=col)
+
+        if not gap_durations:
+            return pd.DataFrame()
+
+        stats_df = pd.concat([ser.describe() for ser in gap_durations.values()], axis=1)
+
+        gaps_mask = get_blocks_mask_lte_and_gte(
+            data=data,
+            lte=gaps_lte,
+            gte=gaps_gte,
+            is_null=True,
+            return_combination=return_combination,
+        )
+
+        presence_percentages = (1 - gaps_mask.mean()) * 100
+
+        stats_df.loc["data_presence_%"] = presence_percentages[stats_df.columns]
+        row_order = ["data_presence_%"] + [
+            idx for idx in stats_df.index if idx != "data_presence_%"
+        ]
+        return stats_df.reindex(row_order)
+
     def set_data(self, data: pd.Series | pd.DataFrame):
+        """Set new data for the Plumber instance.
+
+        Parameters
+        ----------
+        data : pd.Series or pd.DataFrame
+            New time series data to process. Must have a datetime index.
+        """
         self.data = check_and_return_dt_index_df(data)
         self.root = data_columns_to_tree(data.columns)
 
@@ -158,6 +315,20 @@ class Plumber:
         self,
         select: str | pd.Index | list[str] = None,
     ):
+        """Select columns based on tags.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Selection criteria using tide's tag system.
+            Can be a unit (e.g., "°C"), location (e.g., "zone_1"),
+            or any other tag in the column names.
+
+        Returns
+        -------
+        pd.Index
+            Selected column names
+        """
         return parse_request_to_col_names(self.data, select)
 
     def get_pipeline(
@@ -166,6 +337,22 @@ class Plumber:
         steps: None | str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> Pipeline:
+        """Create a scikit-learn pipeline from the configuration.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to include. If None, returns an Identity transformer.
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+
+        Returns
+        -------
+        Pipeline
+            Scikit-learn pipeline configured with the selected steps
+        """
         if self.data is None:
             raise ValueError("data is required to build a pipeline")
         selection = parse_request_to_col_names(self.data, select)
@@ -188,6 +375,26 @@ class Plumber:
         steps: None | str | list[str] | slice = slice(None),
         verbose: bool = False,
     ) -> pd.DataFrame:
+        """Apply pipeline transformations to selected data.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        start : str or datetime or Timestamp, optional
+            Start time for data slice
+        stop : str or datetime or Timestamp, optional
+            End time for data slice
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+
+        Returns
+        -------
+        pd.DataFrame
+            Transformed data
+        """
         if self.data is None:
             raise ValueError("Cannot get corrected data. data are missing")
         select = parse_request_to_col_names(self.data, select)
@@ -207,6 +414,30 @@ class Plumber:
         title: str = None,
         verbose: bool = False,
     ):
+        """Create a heatmap visualization of data gaps.
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        start : str or datetime or Timestamp, optional
+            Start time for visualization
+        stop : str or datetime or Timestamp, optional
+            End time for visualization
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply before visualization
+        time_step : str or Timedelta or timedelta, optional
+            Time step for aggregating gaps
+        title : str, optional
+            Plot title
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+
+        Returns
+        -------
+        go.Figure
+            Plotly figure object containing the heatmap
+        """
         data = self.get_corrected_data(select, start, stop, steps, verbose)
         return plot_gaps_heatmap(data, time_step=time_step, title=title)
 
@@ -236,6 +467,68 @@ class Plumber:
         y_title_standoff: int | float = 5,
         verbose: bool = False,
     ):
+        """Create an interactive time series plot.
+
+        Creates a highly customizable plot that can show:
+        - Multiple time series with automatic different y-axes based on unit
+        - Two different versions of the data (e.g., raw and processed)
+        - Data gaps visualization
+        - Custom styling and layout
+
+        Parameters
+        ----------
+        select : str or pd.Index or list[str], optional
+            Data selection using tide's tag system
+        start : str or datetime or Timestamp, optional
+            Start time for plot
+        stop : str or datetime or Timestamp, optional
+            End time for plot
+        y_axis_level : str, optional
+            Tag level to use for y-axis grouping
+        y_tag_list : list[str], optional
+            List of tags for custom y-axis ordering
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline steps to apply for main data
+        data_mode : str, default "lines"
+            Plot mode for main data ("lines", "markers", or "lines+markers")
+        steps_2 : None or str or list[str] or slice, optional
+            Pipeline steps to apply for secondary data
+        data_2_mode : str, default "markers"
+            Plot mode for secondary data
+        markers_opacity : float, default 0.8
+            Opacity for markers
+        lines_width : float, default 2.0
+            Width of plot lines
+        title : str, optional
+            Plot title
+        plot_gaps : bool, default False
+            Whether to highlight gaps in main data
+        gaps_lower_td : str or Timedelta or timedelta, optional
+            Minimum duration for gap highlighting
+        gaps_rgb : tuple[int, int, int], default (31, 73, 125)
+            RGB color for main data gaps
+        gaps_alpha : float, default 0.5
+            Opacity for main data gaps
+        plot_gaps_2 : bool, default False
+            Whether to highlight gaps in secondary data
+        gaps_2_lower_td : str or Timedelta or timedelta, optional
+            Minimum duration for secondary data gap highlighting
+        gaps_2_rgb : tuple[int, int, int], default (254, 160, 34)
+            RGB color for secondary data gaps
+        gaps_2_alpha : float, default 0.5
+            Opacity for secondary data gaps
+        axis_space : float, default 0.03
+            Space between multiple y-axes
+        y_title_standoff : int or float, default 5
+            Distance between y-axis title and axis
+        verbose : bool, default False
+            Whether to print information about pipeline steps
+
+        Returns
+        -------
+        go.Figure
+            Plotly figure object containing the plot
+        """
         # A bit dirty. Here we assume that if you ask a selection
         # that is not found in original data columns, it is because it
         # has not yet been computed (using ExpressionCombine processor
