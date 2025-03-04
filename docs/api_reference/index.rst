@@ -6,5 +6,9 @@ API Reference
 
    plumbing
    processing
-   utils
+   regressor
+   classifiers
+   influx
+   metrics
+   meteo
    plot 

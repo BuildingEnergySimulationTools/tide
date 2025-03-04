@@ -3,9 +3,6 @@ Plumbing Module
 
 The plumbing module provides the core functionality for data pipeline creation and management.
 
-Plumber Class
-------------
-
 .. autoclass:: tide.plumbing.Plumber
    :members:
    :undoc-members:
