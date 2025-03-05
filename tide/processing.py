@@ -400,22 +400,61 @@ class SkTransform(BaseProcessing):
 
 
 class ReplaceThreshold(BaseProcessing):
-    """Class replacing values in a pandas DataFrame by "value" based on
-    threshold values.
+    """A transformer that replaces values in a DataFrame based on threshold values.
 
-    This class implements the scikit-learn transformer API and can be used in
-    a scikit-learn pipeline.
+    This transformer replaces values in a DataFrame that fall outside specified
+    upper and lower thresholds with a given replacement value. It is useful for
+    handling outliers or extreme values in time series data.
 
     Parameters
     ----------
     upper : float, optional (default=None)
-        The upper threshold for values in the DataFrame. Values greater than
-        The upper threshold for values in the DataFrame. Values greater than
-        this threshold will be replaced.
+        The upper threshold value. Values greater than this threshold will be
+        replaced with the specified value.
     lower : float, optional (default=None)
-        The lower threshold for values in the DataFrame. Values less than
-        this threshold will be replaced.
-    value : (default=np.nan)The value to replace the targeted values in X DataFrame
+        The lower threshold value. Values less than this threshold will be
+        replaced with the specified value.
+    value : float, optional (default=np.nan)
+        The value to use for replacing values that fall outside the thresholds.
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 25, 30, 35, 40],
+    ...     'humid__%': [45, 50, 55, 60, 65]
+    ... }, index=dates)
+    >>> # Replace values outside thresholds with NaN
+    >>> replacer = ReplaceThreshold(upper=35, lower=20, value=np.nan)
+    >>> result = replacer.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0       NaN
+    2024-01-01 00:01:00+00:00      25.0       NaN
+    2024-01-01 00:02:00+00:00      30.0       NaN
+    2024-01-01 00:03:00+00:00       NaN       NaN
+    2024-01-01 00:04:00+00:00       NaN       NaN
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with values outside the specified thresholds replaced
+        with the given value. The output maintains the same DateTimeIndex
+        and column structure as the input.
     """
 
     def __init__(self, upper=None, lower=None, value=np.nan):
@@ -452,7 +491,7 @@ class DropTimeGradient(BaseProcessing):
     A transformer that removes values in a DataFrame based on the time gradient.
 
     The time gradient is calculated as the difference of consecutive values in
-    the time series divided by the time delta between each value.
+    the time series divided by the time delta between each value (in seconds).
     If the gradient is below the `lower_rate` or above the `upper_rate`,
     then the value is set to NaN.
 
@@ -461,27 +500,67 @@ class DropTimeGradient(BaseProcessing):
     dropna : bool, default=True
         Whether to remove NaN values from the DataFrame before processing.
     upper_rate : float, optional
-        The upper rate threshold. If the gradient is greater than or equal to
+        The upper rate threshold in units of value/second. If the gradient is greater than or equal to
         this value, the value will be set to NaN.
+        Example: For a temperature change of 5°C per minute, set upper_rate=5/60 ≈ 0.083
     lower_rate : float, optional
-        The lower rate threshold. If the gradient is less than or equal to
-         this value, the value will be set to NaN.
+        The lower rate threshold in units of value/second. If the gradient is less than or equal to
+        this value, the value will be set to NaN.
+        Example: For a pressure change of 100 Pa per minute, set lower_rate=100/60 ≈ 1.67
 
     Attributes
     ----------
-    None
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
-    -------
-    fit(X, y=None)
-        No learning is performed, the method simply returns self.
-    transform(X)
-        Removes values in the DataFrame based on the time gradient.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 25, 30, 35, 40],  # Steady increase of 5°C/min
+    ...     'humid__%': [45, 45, 45, 45, 45],  # Constant
+    ...     'press__Pa': [1000, 1000, 900, 1000, 1000]  # Sudden change
+    ... }, index=dates)
+    >>> # Remove values with gradients outside thresholds
+    >>> # For temperature: 5°C/min = 5/60 ≈ 0.083°C/s
+    >>> # For pressure: 100 Pa/min = 100/60 ≈ 1.67 Pa/s
+    >>> dropper = DropTimeGradient(upper_rate=0.083, lower_rate=0.001)
+    >>> result = dropper.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%  press__Pa
+    2024-01-01 00:00:00+00:00      20.0      45.0     1000.0
+    2024-01-01 00:01:00+00:00      25.0       NaN     1000.0
+    2024-01-01 00:02:00+00:00      30.0       NaN       NaN
+    2024-01-01 00:03:00+00:00      35.0       NaN     1000.0
+    2024-01-01 00:04:00+00:00      40.0      45.0     1000.0
+
+    Notes
+    -----
+    - The gradient is calculated as (value2 - value1) / (time2 - time1 in seconds)
+    - For the upper_rate threshold, both the current and next gradient must exceed
+      the threshold for a value to be removed
+    - For the lower_rate threshold, only the current gradient needs to be below
+      the threshold for a value to be removed
+    - NaN values are handled according to the dropna parameter:
+      - If True (default): NaN values are removed before processing
+      - If False: NaN values are kept and may affect gradient calculations
+    - The rate parameters (upper_rate and lower_rate) must be specified in units of
+      value/second. To convert from per-minute rates, divide by 60.
 
     Returns
     -------
-    DataFrame
-        The transformed DataFrame.
+    pd.DataFrame
+        The DataFrame with values removed based on their time gradients.
+        The output maintains the same DateTimeIndex and column structure as the input.
     """
 
     def __init__(self, dropna=True, upper_rate=None, lower_rate=None):
@@ -535,27 +614,68 @@ class DropTimeGradient(BaseProcessing):
 
 
 class ApplyExpression(BaseProcessing):
-    """A transformer class to apply a mathematical expression on a Pandas
-    DataFrame.
+    """A transformer that applies a mathematical expression to a pandas DataFrame.
 
-    This class implements a transformer that can be used to apply a
-     mathematical expression to a Pandas DataFrame.
-    The expression can be any valid Python expression that
-    can be evaluated using the `eval` function.
+    This transformer allows you to apply any valid Python mathematical expression
+    to a pandas DataFrame. The expression is evaluated using pandas' `eval` function,
+    which provides efficient evaluation of mathematical expressions.
 
     Parameters
     ----------
     expression : str
-        A string representing a valid Python expression.
-        The expression can use any variables defined in the local scope,
-        including the `X` variable that is passed to the `transform` method
-         as the input data.
+        A string representing a valid Python mathematical expression.
+        The expression can use the input DataFrame `X` as a variable.
+        Common operations include:
+        - Basic arithmetic: +, -, *, /, **, %
+        - Comparison: >, <, >=, <=, ==, !=
+        - Boolean operations: &, |, ~
+        - Mathematical functions: abs(), sqrt(), pow(), etc.
+        Example: "X * 2" or "X / 1000" or "X ** 2"
 
-    Attributes
-    ----------
-    expression : str
-        The mathematical expression that will be applied to the input data.
+    new_unit : str, optional (default=None)
+        The new unit to apply to the column names after transformation.
+        If provided, the transformer will update the unit part of the column names
+        (the part after the second "__" in the Tide naming convention).
+        Example: If input columns are "power__W__building" and new_unit="kW",
+        output columns will be "power__kW__building".
 
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:02:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'power__W__building': [1000, 2000, 3000],
+    ... }, index=dates)
+    >>> # Convert power from W to kW
+    >>> transformer = ApplyExpression("X / 1000", "kW")
+    >>> result = transformer.fit_transform(df)
+    >>> print(result)
+                           power__kW__building  
+    2024-01-01 00:00:00+00:00             1.0 
+    2024-01-01 00:01:00+00:00             2.0  
+    2024-01-01 00:02:00+00:00             3.0 
+
+
+    Notes
+    -----
+    - The expression is evaluated using pandas' `eval` function, which is optimized
+      for numerical operations on DataFrames.
+    - The input DataFrame `X` is available in the expression context.
+    - When using `new_unit`, the transformer follows the Tide naming convention
+      of "name__unit__block" for column names.
+    - The transformer preserves the DataFrame's index and column structure.
+    - All mathematical operations are applied element-wise to the DataFrame.
+
+    Returns
+    -------
+    pd.DataFrame
+        The transformed DataFrame with the mathematical expression applied to all values.
+        If new_unit is specified, the column names are updated accordingly.
     """
 
     def __init__(self, expression: str, new_unit: str = None):
@@ -577,29 +697,66 @@ class ApplyExpression(BaseProcessing):
 
 
 class TimeGradient(BaseProcessing):
-    """
-    A class to calculate the time gradient of a pandas DataFrame,
-     which is the derivative of the data with respect to time.
+    """A transformer that calculates the time gradient (derivative) of a pandas DataFrame.
+
+    This transformer computes the rate of change of values with respect to time.
+    The gradient is calculated using the time difference between consecutive data points.
 
     Parameters
     ----------
-    dropna : bool, optional (default=True)
-        Whether to drop NaN values before calculating the time gradient.
+    new_unit : str, optional (default=None)
+        The new unit to apply to the column names after transformation.
+        If provided, the transformer will update the unit part of the column names
+        (the part after the second "__" in the Tide naming convention).
+        Example: If input columns are "energy__J__building" and new_unit="W",
+        output columns will be "energy__W__building".
 
-    Attributes
-    ----------
-    dropna : bool
-        The dropna attribute of the class.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> # Create energy data (in Joules) with varying consumption
+    >>> df = pd.DataFrame({
+    ...     'energy__J__building': [
+    ...         0,          # Start at 0 J
+    ...         360000,     # 1 kWh = 3600000 J
+    ...         720000,     # 2 kWh
+    ...         1080000,    # 3 kWh
+    ...         1440000     # 4 kWh
+    ...     ]
+    ... }, index=dates)
+    >>> # Calculate power (W) from energy (J) using time gradient
+    >>> # Power = Energy / time (in seconds)
+    >>> transformer = TimeGradient(new_unit="W")
+    >>> result = transformer.fit_transform(df)
+    >>> print(result)
+                           energy__W__building
+    2024-01-01 00:00:00+00:00            NaN
+    2024-01-01 00:01:00+00:00         6000.0  
+    2024-01-01 00:02:00+00:00         6000.0  
+    2024-01-01 00:03:00+00:00         6000.0  
+    2024-01-01 00:04:00+00:00         6000.0  
 
-    Methods
+    Notes
+    -----
+    - The time gradient is calculated as (value2 - value1) / (time2 - time1 in seconds)
+    - The first and last values in each column will be NaN since they don't have
+      enough neighbors to calculate the gradient
+    - When using new_unit, the transformer follows the Tide naming convention
+      of "name__unit__block" for column names
+
+    Returns
     -------
-    fit(X, y=None)
-        Fits the transformer to the data. Does not modify the input data.
-
-    transform(X)
-        Transforms the input data by calculating the time gradient of
-         the data.
-
+    pd.DataFrame
+        The DataFrame with time gradients calculated for each column.
+        The output maintains the same DateTimeIndex as the input.
+        If new_unit is specified, the column names are updated accordingly.
     """
 
     def __init__(self, new_unit: str = None):
@@ -669,24 +826,80 @@ class Ffill(BaseFiller, BaseProcessing):
 
 
 class Bfill(BaseFiller, BaseProcessing):
-    """
-    A class to back-fill missing values in a Pandas DataFrame.
-    the limit argument allows the function to stop backfilling at a certain
-    number of missing value
+    """A transformer that back-fills missing values in a pandas DataFrame.
 
-    Parameters:
-        limit: int, default None If limit is specified, this is the maximum number
-        of consecutive NaN values to forward/backward fill.
-        In other words, if there is a gap with more than this number of consecutive
-        NaNs, it will only be partially filled.
-        If limit is not specified, this is the maximum number of entries along
-        the entire axis where NaNs will be filled. Must be greater than 0 if not None.
+    This transformer fills missing values (NaN) in a DataFrame by propagating
+    the next valid observation backward. It is particularly useful when future
+    values are more relevant for filling gaps than past values.
 
-    Methods:
-        fit(self, X, y=None):
-            Does nothing. Returns the object itself.
-        transform(self, X):
-            Fill missing values in the input DataFrame.
+    Parameters
+    ----------
+    limit : int, optional (default=None)
+        The maximum number of consecutive NaN values to back-fill.
+        If specified, only gaps with this many or fewer consecutive NaN values
+        will be filled. Must be greater than 0 if not None.
+        Example: If limit=2, a gap of 3 or more NaN values will only be
+        partially filled.
+
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C__room': [20, np.nan, np.nan, 23, 24],
+    ...     'press__Pa__room': [1000, np.nan, 900, np.nan, 1000]
+    ... }, index=dates)
+    >>> # Back-fill all missing values
+    >>> filler = Bfill()
+    >>> result = filler.fit_transform(df)
+    >>> print(result)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          23.0           900.0
+    2024-01-01 00:02:00+00:00          23.0           900.0
+    2024-01-01 00:03:00+00:00          23.0          1000.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Back-fill with limit of 1
+    >>> filler_limited = Bfill(limit=1)
+    >>> result_limited = filler_limited.fit_transform(df)
+    >>> print(result_limited)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          23.0           900.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0          1000.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+
+    Notes
+    -----
+    - The transformer fills NaN values by propagating the next valid observation
+      backward in time
+    - When limit is specified, only gaps with that many or fewer consecutive NaN
+      values will be filled
+    - The gaps_lte and gaps_gte parameters allow filtering gaps based on their
+      duration before filling
+    - The transformer preserves the DataFrame's index and column structure
+    - NaN values at the end of the time series will remain unfilled since there
+      are no future values to propagate
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with missing values back-filled according to the specified
+        parameters. The output maintains the same DateTimeIndex and column
+        structure as the input.
     """
 
     def __init__(
@@ -713,13 +926,6 @@ class Bfill(BaseFiller, BaseProcessing):
         gaps_mask = self.get_gaps_mask(X)
         X[gaps_mask] = filled_x[gaps_mask]
         return X
-
-        # https://stackoverflow.com/questions/34321025/replace-values-in-numpy-2d-array-based-on-pandas-dataframe
-        # x_arr = np.array(X)
-        # gaps_mask = self.get_gaps_mask(X)
-        # gaps_idx_raveled = np.where(gaps_mask.to_numpy().ravel())[0]
-        # x_arr.flat[gaps_idx_raveled] = filled_x.to_numpy().ravel()[gaps_idx_raveled]
-        # return pd.DataFrame(data=x_arr, columns=X.columns, index=X.index)
 
 
 class FillNa(BaseFiller, BaseProcessing):
