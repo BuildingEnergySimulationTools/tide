@@ -768,24 +768,83 @@ class TimeGradient(BaseProcessing):
 
 
 class Ffill(BaseFiller, BaseProcessing):
-    """
-    A class to front-fill missing values in a Pandas DataFrame.
-    the limit argument allows the function to stop frontfilling at a certain
-    number of missing value
+    """A transformer that forward-fills missing values in a pandas DataFrame.
 
-    Parameters:
-        limit: int, default None If limit is specified, this is the maximum number
-        of consecutive NaN values to forward/backward fill.
-        In other words, if there is a gap with more than this number of consecutive
-        NaNs, it will only be partially filled.
-        If limit is not specified, this is the maximum number of entries along
-        the entire axis where NaNs will be filled. Must be greater than 0 if not None.
+    This transformer fills missing values (NaN) in a DataFrame by propagating
+    the last valid observation forward. It is particularly useful when past
+    values are more relevant for filling gaps than future values.
 
-    Methods:
-        fit(self, X, y=None):
-            Does nothing. Returns the object itself.
-        transform(self, X):
-            Fill missing values in the input DataFrame.
+    Parameters
+    ----------
+    limit : int, optional (default=None)
+        The maximum number of consecutive NaN values to forward-fill.
+        If specified, only gaps with this many or fewer consecutive NaN values
+        will be filled. Must be greater than 0 if not None.
+        Example: If limit=2, a gap of 3 or more NaN values will only be
+        partially filled.
+
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C__room': [20, np.nan, np.nan, 23, 24],
+    ...     'press__Pa__room': [1000, np.nan, 900, np.nan, 1000]
+    ... }, index=dates)
+    >>> # Forward-fill all missing values
+    >>> filler = Ffill()
+    >>> result = filler.fit_transform(df)
+    >>> print(result)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          20.0          1000.0
+    2024-01-01 00:02:00+00:00          20.0           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Forward-fill with limit of 1
+    >>> filler_limited = Ffill(limit=1)
+    >>> result_limited = filler_limited.fit_transform(df)
+    >>> print(result_limited)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          20.0          1000.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Forward-fill only gaps of 1 hour or less
+    >>> filler_timed = Ffill(gaps_lte='1h')
+    >>> result_timed = filler_timed.fit_transform(df)
+    >>> print(result_timed)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00           NaN          1000.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+
+    Notes
+    -----
+    - NaN values at the beginning of the time series will remain unfilled since
+      there are no past values to propagate
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with missing values forward-filled according to the specified
+        parameters. The output maintains the same DateTimeIndex and column
+        structure as the input.
     """
 
     def __init__(
@@ -1109,29 +1168,87 @@ class Interpolate(BaseFiller, BaseProcessing):
 
 
 class Resample(BaseProcessing):
-    """
-    Resample time series data in a pandas DataFrame according to rule.
-    Allow column wise resampling methods.
+    """A transformer that resamples time series data to a different frequency.
+
+    This transformer allows you to resample time series data to a different frequency
+    while applying specified aggregation methods. It supports both simple resampling
+    with a single method for all columns and custom methods for specific columns
+    using Tide's naming convention.
 
     Parameters
     ----------
-    rule : str
-        The pandas timedelta or object representing the target resampling
-        frequency.
-    method : str | Callable
-        The default method for resampling.
-        It Will be overridden if a specific method
-        is specified in columns_method
-    tide_format_methods:
-        Allow the use of tide column format name__unit__bloc to specify
-        column aggregation method.
-        Warning using this argument will override columns_methods argument.
-        Requires fitting operation before transformation
-    columns_methods : list of Tuples Optional
-        List of tuples containing a list of column names and associated
-        resampling method.
-        The method should be a string or callable that can be passed
-        to the `agg()` method of a pandas DataFrame.
+    rule : str | pd.Timedelta | dt.timedelta
+        The frequency to resample to. Can be specified as:
+        - String: '1min', '5min', '1h', '1D', etc.
+        - Timedelta object: pd.Timedelta('1 hour')
+        - datetime.timedelta object: dt.timedelta(hours=1)
+
+    method : str | Callable, default='mean'
+        The default aggregation method to use for resampling.
+        Can be:
+        - String: 'mean', 'sum', 'min', 'max', 'std', etc.
+        - Callable: Any function that can be used with pandas' resample
+
+    tide_format_methods : dict[str, str | Callable], optional (default=None)
+        A dictionary mapping Tide tag components to specific aggregation methods.
+        Keys are the components to match (name, unit, block, sub_block).
+        Values are the aggregation methods to use for matching columns.
+        Example: {'name': 'power', 'method': 'sum'} will use sum aggregation
+        for all columns with 'power' in their name.
+
+    columns_methods : list[tuple[list[str], str | Callable]], optional (default=None)
+        A list of tuples specifying custom methods for specific columns.
+        Each tuple contains:
+        - list[str]: List of column names to apply the method to
+        - str | Callable: The aggregation method to use
+        Example: [(['power__W__building'], 'sum')]
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'power__W__building': [1000, 1200, 1100, 1300, 1400],
+    ...     'temp__°C__room': [20, 21, 22, 23, 24],
+    ...     'humid__%__room': [45, 46, 47, 48, 49]
+    ... }, index=dates)
+    >>> # Resample to 5-minute intervals using mean
+    >>> resampler = Resample(rule='5min')
+    >>> result = resampler.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room  humid__%__room
+    2024-01-01 00:00:00+00:00           1100.0           21.0           46.0
+    2024-01-01 00:05:00+00:00           1350.0           23.5           48.5
+    >>> # Resample with custom methods
+    >>> resampler_custom = Resample(
+    ...     rule='5min',
+    ...     tide_format_methods={'name': 'power', 'method': 'min'},
+    ...     columns_methods=[(['temp__°C__room'], 'max')]
+    ... )
+
+
+    Notes
+    -----
+    - When using tide_format_methods, the matching is done on the Tide tag components
+      (name__unit__block__sub_block)
+    - If tide_format_methods is provided, it takes precedence over columns_methods
+      and completely replaces it during fitting
+    - If no custom method is specified for a column, the default method is used
+    - The output frequency is determined by the rule parameter
+    - Missing values in the input are handled according to the specified methods
+
+    Returns
+    -------
+    pd.DataFrame
+        The resampled DataFrame with the specified frequency and aggregation methods.
+        The output maintains the same column structure as the input, with values
+        aggregated according to the specified methods.
     """
 
     def __init__(
@@ -1171,33 +1288,91 @@ class Resample(BaseProcessing):
 
 
 class AddTimeLag(BaseProcessing):
-    """
-     PdAddTimeLag - A transformer that adds lagged features to a pandas
-     DataFrame.
+    """A transformer that adds time-lagged features to a pandas DataFrame.
 
-    This transformer creates new features based on the provided features
-    lagged by the given time lag.
+    This transformer creates new features by shifting existing features in time,
+    allowing the creation of past or future values as new features. This is
+    particularly useful for time series analysis where historical or future
+    values might be relevant predictors.
 
-    Parameters:
-    -----------
-    time_lag : datetime.timedelta
-        The time lag used to shift the provided features. A positive time lag
-        indicates that the new features will contain information from the past,
-         while a negative time lag indicates that the new features will
-        contain information from the future.
+    Parameters
+    ----------
+    time_lag : str | pd.Timedelta | dt.timedelta, default="1h"
+        The time lag to apply when creating new features. Can be specified as:
+        - A string (e.g., "1h", "30min", "1d")
+        - A pandas Timedelta object
+        - A datetime timedelta object
+        A positive time lag creates features with past values, while a negative
+        time lag creates features with future values.
 
-    features_to_lag : list of str or str or None, optional (default=None)
-        The list of feature names to lag. If None, all features in the input
-         DataFrame will be lagged.
+    features_to_lag : str | list[str] | None, default=None
+        The features to create lagged versions of. If None, all features in the
+        input DataFrame will be lagged. Can be specified as:
+        - A single feature name (string)
+        - A list of feature names
+        - None (to lag all features)
 
-    feature_marker : str or None, optional (default=None)
-        The string used to prefix the names of the new lagged features.
-        If None, the feature names will be prefixed with the string
-        representation of the `time_lag` parameter followed by an underscore.
+    feature_marker : str | None, default=None
+        The prefix to use for the new lagged feature names. If None, the
+        string representation of time_lag followed by an underscore is used.
+        For example, with time_lag="1h", features will be prefixed with "1h_".
 
-    drop_resulting_nan : bool, optional (default=False)
-        Whether to drop rows with NaN values resulting from the lag operation.
+    drop_resulting_nan : bool, default=False
+        Whether to drop rows containing NaN values that result from the lag
+        operation. This is useful when you want to ensure complete data for
+        the lagged features.
 
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import AddTimeLag
+    >>> # Create sample data
+    >>> dates = pd.date_range(start='2024-01-01', periods=5, freq='1h', tz="UTC")
+    >>> df = pd.DataFrame({
+    ...     'power__W__building': [100, 200, 300, 400, 500],
+    ...     'temp__°C__room': [20, 21, 22, 23, 24]
+    ... }, index=dates)
+    >>> # Add 1-hour lagged features
+    >>> lagger = AddTimeLag(time_lag='1h')
+    >>> result = lagger.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room  1h_power__W__building  1h_temp__°C__room
+    2024-01-01 00:00:00               100.0           20.0                   NaN               NaN
+    2024-01-01 01:00:00               200.0           21.0                 100.0              20.0
+    2024-01-01 02:00:00               300.0           22.0                 200.0              21.0
+    2024-01-01 03:00:00               400.0           23.0                 300.0              22.0
+    2024-01-01 04:00:00               500.0           24.0                 400.0              23.0
+    >>> # Add custom lagged features with specific marker
+    >>> lagger_custom = AddTimeLag(
+    ...     time_lag='1h',
+    ...     features_to_lag=['power__W__building'],
+    ...     feature_marker='prev_',
+    ...     drop_resulting_nan=True
+    ... )
+    >>> result_custom = lagger_custom.fit_transform(df)
+    >>> print(result_custom)
+                           power__W__building  temp__°C__room  prev_power__W__building
+    2024-01-01 00:00:00               200.0           21.0                    100.0
+    2024-01-01 01:00:00               300.0           22.0                    200.0
+    2024-01-01 02:00:00               400.0           23.0                    300.0
+    2024-01-01 03:00:00               500.0           24.0                    400.0
+
+    Notes
+    -----
+    - The transformer preserves the original features and adds new lagged versions
+    - Lagged features are created by shifting the index and concatenating with
+      the original data
+    - When drop_resulting_nan=True, rows with NaN values in lagged features
+      are removed from the output
+    - The feature_marker parameter allows for custom naming of lagged features
+    - The transformer supports both positive (past) and negative (future) lags
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with additional lagged features. The original
+        features are preserved, and new lagged features are added with the
+        specified prefix.
     """
 
     def __init__(
@@ -1245,53 +1420,70 @@ class AddTimeLag(BaseProcessing):
 
 
 class GaussianFilter1D(BaseProcessing):
-    """
-    A transformer that applies a 1D Gaussian filter to a Pandas DataFrame.
-    The Gaussian filter is a widely used smoothing filter that effectively
-    reduces the high-frequency noise in an input signal.
+    """A transformer that applies a 1D Gaussian filter to smooth time series data.
+
+    This transformer applies a one-dimensional Gaussian filter to each column of
+    the input DataFrame, effectively reducing high-frequency noise while preserving
+    the overall trend and important features of the time series.
 
     Parameters
     ----------
     sigma : float, default=5
-        Standard deviation of the Gaussian kernel.
-        In practice, the value of sigma determines the level of smoothing
-        applied to the input signal. A larger value of sigma results in a
-         smoother output signal, while a smaller value results in less
-          smoothing. However, too large of a sigma value can result in the
-           loss of important features or details in the input signal.
+        Standard deviation of the Gaussian kernel. Controls the level of smoothing:
+        - Larger values result in smoother output but may lose fine details
+        - Smaller values preserve more details but may not reduce noise effectively
+        - Must be positive
 
     mode : str, default='nearest'
-        Points outside the boundaries of the input are filled according to
-        the given mode. The default, 'nearest' mode is used to set the values
-        beyond the edge of the array equal to the nearest edge value.
-        This avoids introducing new values into the smoothed signal that
-        could bias the result. Using 'nearest' mode can be particularly useful
-        when smoothing a signal with a known range or limits, such as a time
-        series with a fixed start and end time.
+        How to handle values outside the input boundaries. Options are:
+        - 'nearest': Use the nearest edge value (default)
+        - 'reflect': Reflect values around the edge
+        - 'mirror': Mirror values around the edge
+        - 'constant': Use a constant value (0)
+        - 'wrap': Wrap values around the edge
 
-    truncate : float, default=4.
-        The filter will ignore values outside the range
-        (mean - truncate * sigma) to (mean + truncate * sigma).
-        The truncate parameter is used to define the length of the filter
-        kernel, which determines the degree of smoothing applied to the input
-        signal.
+    truncate : float, default=4.0
+        The filter window size in terms of standard deviations. Values outside
+        the range (mean ± truncate * sigma) are ignored. This parameter:
+        - Controls the effective size of the filter window
+        - Affects the computational efficiency
+        - Must be positive
 
-    Attributes
-    ----------
-    columns : list
-        The column names of the input DataFrame.
-    index : pandas.Index
-        The index of the input DataFrame.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import GaussianFilter1D
+    >>> # Create sample data with timezone-aware index
+    >>> dates = pd.date_range(start='2024-01-01', periods=5, freq='1h', tz='UTC')
+    >>> df = pd.DataFrame({
+    ...     'power__W__building': [100, 150, 200, 180, 220],
+    ...     'temp__°C__room': [20, 21, 22, 21, 23]
+    ... }, index=dates)
+    >>> # Apply Gaussian filter with default settings
+    >>> smoother = GaussianFilter1D(sigma=2)
+    >>> result = smoother.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room
+    2024-01-01 00:00:00+00:00           130.0           20.0
+    2024-01-01 01:00:00+00:00           149.0           20.0
+    2024-01-01 02:00:00+00:00           169.0           21.0
+    2024-01-01 03:00:00+00:00           187.0           21.0
+    2024-01-01 04:00:00+00:00           201.0           22.0
 
-    Methods
+    Notes
+    -----
+    - The input DataFrame must have a timezone-aware DatetimeIndex
+    - The filter is applied independently to each column
+    - The output maintains the same index and column structure as the input
+    - The smoothing effect is more pronounced at the edges of the time series
+    - The choice of sigma and truncate parameters significantly affects the
+      smoothing behavior and computational efficiency
+
+    Returns
     -------
-    get_feature_names_out(input_features=None)
-        Get output feature names for the transformed data.
-    fit(X, y=None)
-        Fit the transformer to the input data.
-    transform(X, y=None)
-        Transform the input data by applying the 1D Gaussian filter.
-
+    pd.DataFrame
+        The smoothed DataFrame with the same structure as the input. Each column
+        has been smoothed using the 1D Gaussian filter with the specified parameters.
     """
 
     def __init__(self, sigma=5, mode="nearest", truncate=4.0):
