@@ -1928,45 +1928,69 @@ class FillGapsAR(BaseFiller, BaseProcessing):
 
 
 class ExpressionCombine(BaseProcessing):
-    """
-    Performs specified operations on selected columns, creating a new column
-    based on the provided expression.
-    Useful for aggregation in a single column, or physical expression.
-    The transformer can also optionally drop the columns used in the expression
-    after computation.
+    """A transformer that combines DataFrame columns using a mathematical expression.
+
+    This transformer evaluates a mathematical expression using specified columns from a DataFrame,
+    creating a new column with the result. It supports both simple aggregations and complex
+    physical expressions, with the option to drop the source columns after computation.
 
     Parameters
     ----------
     columns_dict : dict[str, str]
-        A dictionary mapping variable names (as used in the expression) to the
-        column names in the X DataFrame. Keys are variable names in the expression,
-        and values are the corresponding column names in the DataFrame.
+        Dictionary mapping expression variables to DataFrame column names.
+        Keys are the variable names used in the expression, and values are the
+        corresponding column names in the DataFrame.
 
     expression : str
-        A mathematical expression in string format, which will be evaluated using the
-        specified columns from the DataFrame. Variables in the expression should
-        match the keys in `variables_dict`.
+        Mathematical expression to evaluate, using variables defined in columns_dict.
+        The expression should be a valid Python mathematical expression that can be
+        evaluated using pandas.eval().
 
     result_column_name : str
-        Name of the new column in which the result of the evaluated expression
-        will be stored.
+        Name of the new column that will contain the evaluated expression result.
+        Must not already exist in the DataFrame.
 
     drop_columns : bool, default=False
-        If True, the columns used in the calculation will be dropped
-        from the resulting DataFrame after the transformation.
+        Whether to drop the source columns used in the expression after computation.
+        If True, only the result column and other non-source columns are kept.
+
+    Attributes
+    ----------
+    feature_names_out_ : list[str]
+        List of column names in the transformed DataFrame. If drop_columns is True,
+        excludes the source columns used in the expression.
+
+    Raises
+    ------
+    ValueError
+        If result_column_name already exists in the DataFrame.
 
     Examples
     --------
-    combiner = Combiner(
-        columns_dict={
-            "T1": "Tin__°C__building",
-            "T2": "Text__°C__outdoor",
-            "m": "mass_flwr__m3/h__hvac",
-        },
-        expression="(T1 - T2) * m * 1004 * 1.204",
-        result_column_name="loss_ventilation__J__hvac",
-        drop_columns = True
-    )
+    >>> from tide import ExpressionCombine
+    >>> import pandas as pd
+    >>> 
+    >>> # Create sample data
+    >>> df = pd.DataFrame({
+    ...     'Tin__°C__building': [20, 21, 22],
+    ...     'Text__°C__outdoor': [10, 11, 12],
+    ...     'mass_flwr__m3/h__hvac': [1, 2, 3]
+    ... })
+    >>> 
+    >>> # Calculate ventilation losses
+    >>> combiner = ExpressionCombine(
+    ...     columns_dict={
+    ...         "T1": "Tin__°C__building",
+    ...         "T2": "Text__°C__outdoor",
+    ...         "m": "mass_flwr__m3/h__hvac",
+    ...     },
+    ...     expression="(T1 - T2) * m * 1004 * 1.204",
+    ...     result_column_name="loss_ventilation__J__hvac",
+    ...     drop_columns=True
+    ... )
+    >>> 
+    >>> # Transform the data
+    >>> result = combiner.fit_transform(df)
     """
 
     def __init__(
@@ -2003,47 +2027,83 @@ class ExpressionCombine(BaseProcessing):
 
 
 class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
-    """
-    A processor that fills gaps using meteorological data from the Oikolab API.
+    """A transformer that fills data gaps using meteorological data from the Oikolab API.
 
-    This class extends BaseFiller to provide functionality for
-    filtering gaps based onthere size. It fills them with corresponding
-    meteorological data retrieved from the Oikolab API.
+    This transformer identifies gaps in time series data and fills them with corresponding
+    meteorological data retrieved from the Oikolab API. It supports filtering gaps based on
+    their size and can handle different data frequencies through automatic interpolation
+    or resampling.
 
-    Attributes:
-    -----------
-    lat : float
+    Parameters
+    ----------
+    gaps_lte : str | pd.Timedelta | dt.timedelta, default=None
+        Maximum gap size to fill. Gaps larger than this will be ignored.
+        Can be specified as a string (e.g., "24h") or timedelta object.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, default=None
+        Minimum gap size to fill. Gaps smaller than this will be ignored.
+        Can be specified as a string (e.g., "1h") or timedelta object.
+
+    lat : float, default=43.47
         Latitude of the location for which to retrieve meteorological data.
-    lon : float
+
+    lon : float, default=-1.51
         Longitude of the location for which to retrieve meteorological data.
-    param_map : dict[str, str]
-        Mapping of input columns to Oikolab API parameters. Oikolab parameters are :
-        'temperature', 'dewpoint_temperature', 'mean_sea_level_pressure',
-        'wind_speed', '100m_wind_speed', 'relative_humidity',
-        'surface_solar_radiation', 'direct_normal_solar_radiation',
-        'surface_diffuse_solar_radiation', 'surface_thermal_radiation',
-        'total_cloud_cover', 'total_precipitation'
-    model : str
-        The meteorological model to use for data retrieval (default is "era5").
-    env_oiko_api_key : str
-        The name of the environement variable that holds the Oikolab API key
-        (set during fitting).
 
-    Example:
+    columns_param_map : dict[str, str], default=None
+        Mapping of input columns to Oikolab API parameters. If None, all columns
+        will be filled with temperature data. Available Oikolab parameters are:
+        - temperature
+        - dewpoint_temperature
+        - mean_sea_level_pressure
+        - wind_speed
+        - 100m_wind_speed
+        - relative_humidity
+        - surface_solar_radiation
+        - direct_normal_solar_radiation
+        - surface_diffuse_solar_radiation
+        - surface_thermal_radiation
+        - total_cloud_cover
+        - total_precipitation
+
+    model : str, default="era5"
+        The meteorological model to use for data retrieval.
+
+    env_oiko_api_key : str, default="OIKO_API_KEY"
+        Name of the environment variable containing the Oikolab API key.
+
+    Examples
     --------
-    >>> filler = FillOikoMeteo(gaps_gte="1h", gaps_lte="24h", lat=43.47, lon=-1.51)
-    >>> filler.fit(X)
-    >>> X_filled = filler.transform(X)
+    >>> from tide import FillOikoMeteo
+    >>> import pandas as pd
+    >>> 
+    >>> # Create sample data with gaps
+    >>> df = pd.DataFrame({
+    ...     'temperature': [20, None, 22, None, 24],
+    ...     'humidity': [50, None, 55, None, 60]
+    ... }, index=pd.date_range('2024-01-01', periods=5, freq='H'))
+    >>> 
+    >>> # Initialize and fit the transformer
+    >>> filler = FillOikoMeteo(
+    ...     gaps_gte="1h",
+    ...     gaps_lte="24h",
+    ...     lat=43.47,
+    ...     lon=-1.51,
+    ...     columns_param_map={
+    ...         'temperature': 'temperature',
+    ...         'humidity': 'relative_humidity'
+    ...     }
+    ... )
+    >>> 
+    >>> # Transform the data
+    >>> result = filler.fit_transform(df)
 
-    Notes:
-    ------
-    - The class requires an Oikolab API key to be set as an environment
-    variable env_oiko_api_key.
-    - If param_map is not provided, all columns will be filled with temperature data.
-    This dumb behavior ensures the processing object is working with default values
-    to comply with scikit learn API recomandation.
-    - The class handles different frequencies of input data, interpolating or
-    resampling as needed.
+    Notes
+    -----
+    - Requires an Oikolab API key to be set as an environment variable.
+    - If columns_param_map is not provided, all columns will be filled with temperature data
+      to comply with scikit-learn API recommendations.
+    - Automatically handles different data frequencies through interpolation or resampling.
     """
 
     def __init__(
@@ -2155,16 +2215,54 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
 
 
 class AddSolarAngles(BaseProcessing):
-    """
-    Transformer that adds solar elevation and azimuth angle to passed DataFrame.
+    """A transformer that adds solar angles (azimuth and elevation) to a DataFrame.
 
-    Attributes:
-        lat (float): The latitude of the location in degrees.
-        lon (float): The longitude of the location in degrees.
-        data_bloc (str): Identifier for the tide data block.
-        Default to "OTHER".
-        data_sub_bloc (str): Identifier for the data sub-block;
-        Default to "OTHER_SUB_BLOC".
+    This transformer calculates and adds solar azimuth and elevation angles for a given
+    location and time series. The angles are calculated using the Astronomical Almanac's
+    algorithm (1950-2050) as described in Michalsky (1988) and subsequent papers.
+
+    Parameters
+    ----------
+    lat : float, default=43.47
+        Latitude of the location in decimal degrees.
+
+    lon : float, default=-1.51
+        Longitude of the location in decimal degrees.
+
+    data_bloc : str, default="OTHER"
+        Name of the data block to store the solar angles.
+
+    data_sub_bloc : str, default="OTHER_SUB_BLOC"
+        Name of the sub-block to store the solar angles.
+
+    Examples
+    --------
+    >>> from tide import AddSolarAngles
+    >>> import pandas as pd
+    >>> 
+    >>> # Create sample data with datetime index
+    >>> df = pd.DataFrame(
+    ...     {'temperature': [20, 21, 22]},
+    ...     index=pd.date_range('2024-01-01', periods=3, freq='H')
+    ... )
+    >>> 
+    >>> # Add solar angles
+    >>> transformer = AddSolarAngles(
+    ...     lat=43.47,
+    ...     lon=-1.51,
+    ...     data_bloc="SOLAR",
+    ...     data_sub_bloc="ANGLES"
+    ... )
+    >>> 
+    >>> # Transform the data
+    >>> result = transformer.fit_transform(df)
+
+    Notes
+    -----
+    - Requires a DataFrame with a DateTimeIndex.
+    - Adds two new columns: solar_azimuth and solar_elevation.
+    - Uses the Astronomical Almanac's algorithm for solar position calculations.
+    - Valid for years 1950-2050.
     """
 
     def __init__(
