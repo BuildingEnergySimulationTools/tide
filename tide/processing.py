@@ -2262,7 +2262,8 @@ class AddSolarAngles(BaseProcessing):
     - Requires a DataFrame with a DateTimeIndex.
     - Adds two new columns: solar_azimuth and solar_elevation.
     - Uses the Astronomical Almanac's algorithm for solar position calculations.
-    - Valid for years 1950-2050.
+    - Valid for years 1950-2050. Given the course of the world right now, I don't think
+      anyone will need to use this transformer for dates after 2050.
     """
 
     def __init__(
