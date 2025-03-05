@@ -41,46 +41,42 @@ OIKOLAB_DEFAULT_MAP = {
 
 
 class Identity(BaseProcessing):
-    """
-    A custom transformer that returns the input data without any modifications.
+    """A transformer that returns input data unchanged.
 
-    This transformer is useful when you want to include an identity transformation step
-    in a scikit-learn pipeline, where the input data should be returned unchanged.
-
-    Parameters:
-    -----------
+    Parameters
+    ----------
     None
 
-    Methods:
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Methods
+    -------
+    fit(X, y=None)
+        No-op, returns self.
+    transform(X)
+        Returns input unchanged.
+
+    Examples
     --------
-    fit(X, y=None):
-        This method does nothing and simply returns the transformer instance.
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 21, 22],
+    ...     'humid__%': [45, 50, 55]
+    ... })
+    >>> identity = Identity()
+    >>> result = identity.fit_transform(df)
+    >>> assert (result == df).all().all()  # Data unchanged
+    >>> assert list(result.columns) == list(df.columns)  # Column order preserved
 
-        Parameters:
-        -----------
-        X : array-like, shape (n_samples, n_features)
-            The input data.
-
-        y : array-like, shape (n_samples,), optional (default=None)
-            The target values.
-
-        Returns:
-        --------
-        self : object
-            The transformer instance itself.
-
-    transform(X):
-        This method returns the input data without any modifications.
-
-        Parameters:
-        -----------
-        X : array-like, shape (n_samples, n_features)
-            The input data.
-
-        Returns:
-        --------
-        transformed_X : array-like, shape (n_samples, n_features)
-            The input data without any modifications.
+    Returns
+    -------
+    pd.DataFrame
+        The input data without any modifications.
     """
 
     def __init__(self):
@@ -94,28 +90,62 @@ class Identity(BaseProcessing):
 
 
 class ReplaceDuplicated(BaseProcessing):
-    """This transformer replaces duplicated values in each column by
-    specified new value.
+    """A transformer that replaces duplicated values in each column with a specified value.
+
+    This transformer identifies and replaces duplicated values in each column
+    of a pandas DataFrame, keeping either the first, last, or no occurrence
+    of duplicated values.
 
     Parameters
     ----------
     keep : str, default 'first'
         Specify which of the duplicated (if any) value to keep.
-        Allowed arguments : ‘first’, ‘last’, False.
+        Allowed arguments : 'first', 'last', False.
+        - 'first': Keep first occurrence of duplicated values
+        - 'last': Keep last occurrence of duplicated values
+        - False: Keep no occurrence (replace all duplicates)
+
+    value : float, default np.nan
+        Value used to replace the non-kept duplicated values.
 
     Attributes
     ----------
-    value : str, default np.nan
-        value used to replace not kept duplicated.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import datetime, timezone
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 20, 22, 22, 23],
+    ...     'humid__%': [45, 45, 50, 50, 55]
+    ... }, index=dates)
+    >>> # Keep first occurrence of duplicates
+    >>> replacer = ReplaceDuplicated(keep='first', value=np.nan)
+    >>> result = replacer.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+    2024-01-01 00:01:00+00:00       NaN       NaN
+    2024-01-01 00:02:00+00:00      22.0      50.0
+    2024-01-01 00:03:00+00:00       NaN       NaN
+    2024-01-01 00:04:00+00:00      23.0      55.0
+
+    Returns
     -------
-    fit(X, y=None)
-        Returns self.
-
-    transform(X)
-        Drops the duplicated values in the Pandas DataFrame `X`
-        Returns the DataFrame with the duplicated filled with 'value'
+    pd.DataFrame
+        The DataFrame with duplicated values replaced according to the specified strategy.
+        The output maintains the same DateTimeIndex as the input.
     """
 
     def __init__(self, keep="first", value=np.nan):
@@ -133,30 +163,61 @@ class ReplaceDuplicated(BaseProcessing):
 
 
 class Dropna(BaseProcessing):
-    """A class to drop NaN values in a Pandas DataFrame.
+    """A transformer that removes rows containing missing values from a DataFrame.
+
+    This transformer removes rows from a DataFrame based on the presence of
+    missing values (NaN) according to the specified strategy.
 
     Parameters
     ----------
     how : str, default 'all'
-        How to drop missing values in the data. 'all' drops the row/column if
-        all the values are missing, 'any' drops the row/column if any value is
-        missing, and a number 'n' drops the row/column if there are at least
-        'n' missing values.
+        How to drop missing values in the data:
+        - 'all': Drop row if all values are missing
+        - 'any': Drop row if any value is missing
+        - int: Drop row if at least this many values are missing
 
     Attributes
     ----------
-    how : str
-        How to drop missing values in the data.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:04:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, np.nan, 22, np.nan, np.nan],
+    ...     'humid__%': [45, 50, np.nan, np.nan, np.nan]
+    ... }, index=dates)
+    >>> # Drop rows where all values are missing
+    >>> dropper = Dropna(how='all')
+    >>> result = dropper.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+    2024-01-01 00:01:00+00:00       NaN      50.0
+    2024-01-01 00:02:00+00:00      22.0       NaN
+    >>> # Drop rows with any missing value
+    >>> dropper_strict = Dropna(how='any')
+    >>> result_strict = dropper_strict.fit_transform(df)
+    >>> print(result_strict)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+
+    Returns
     -------
-    fit(X, y=None)
-        Returns self.
-
-    transform(X)
-        Drops the NaN values in the Pandas DataFrame `X` based on the `how`
-        attribute.
-        Returns the DataFrame with the NaN values dropped.
+    pd.DataFrame
+        The DataFrame with rows containing missing values removed according to
+        the specified strategy. The output maintains the same DateTimeIndex
+        structure as the input, with rows removed.
     """
 
     def __init__(self, how="all"):
@@ -171,32 +232,64 @@ class Dropna(BaseProcessing):
 
 
 class RenameColumns(BaseProcessing):
-    """
-    Scikit-learn transformer that renames columns of a Pandas DataFrame.
+    """A transformer that renames columns in a DataFrame.
+
+    This transformer allows renaming DataFrame columns either by providing a list
+    of new names in the same order as the current columns, or by providing a
+    dictionary mapping old names to new names.
 
     Parameters
     ----------
-    new_names: list or dict
-        A list or a dictionary of new names for columns of a DataFrame.
-        If it is a list, it must have the same length as the number of columns
-        in the DataFrame. If it is a dictionary, keys must be the old names of
-        columns and values must be the new names.
+    new_names : list[str] | dict[str, str]
+        New names for the columns. Can be specified in two ways:
+        - list[str]: List of new names in the same order as current columns.
+          Must have the same length as the number of columns.
+        - dict[str, str]: Dictionary mapping old column names to new names.
+          Keys must be existing column names, values are the new names.
 
     Attributes
     ----------
-    new_names: list or dict
-        A list or a dictionary of new names for columns of a DataFrame.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns after renaming.
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:02:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 21, 22],
+    ...     'humid__%': [45, 50, 55]
+    ... }, index=dates)
+    >>> # Rename using a list (maintains order)
+    >>> renamer_list = RenameColumns(['temperature__°C', 'humidity__%'])
+    >>> result_list = renamer_list.fit_transform(df)
+    >>> print(result_list)
+                           temperature__°C  humidity__%
+    2024-01-01 00:00:00+00:00           20.0        45.0
+    2024-01-01 00:01:00+00:00           21.0        50.0
+    2024-01-01 00:02:00+00:00           22.0        55.0
+    >>> # Rename using a dictionary (selective renaming)
+    >>> renamer_dict = RenameColumns({
+    ...     'temp__°C': 'temperature__°C'
+    ... })
+    >>> result_dict = renamer_dict.fit_transform(df)
+    >>> print(result_dict)
+                           temperature__°C  humid__%
+    2024-01-01 00:00:00+00:00           20.0      45.0
+    2024-01-01 00:01:00+00:00           21.0      50.0
+    2024-01-01 00:02:00+00:00           22.0      55.0
+
+    Returns
     -------
-    fit(self, x, y=None)
-       No learning is performed, the method simply returns self.
-
-    transform(self, x)
-        Renames columns of a DataFrame.
-
-    inverse_transform(self, x)
-        Renames columns of a DataFrame.
+    pd.DataFrame
+        The DataFrame with renamed columns.
     """
 
     def __init__(self, new_names: list[str] | dict[str, str]):
@@ -224,35 +317,64 @@ class RenameColumns(BaseProcessing):
 
 
 class SkTransform(BaseProcessing):
-    """A transformer class to apply scikit transformers on a pandas DataFrame
+    """A transformer that applies scikit-learn transformers to a pandas DataFrame.
 
-    This class takes in a scikit-learn transformers as input and applies the
-    transformer to a pandas DataFrame. The resulting data will be a pandas
-    DataFrame with the same index and columns as the input DataFrame.
+    This transformer wraps any scikit-learn transformer and applies it to a pandas
+    DataFrame while preserving the DataFrame's index and column structure. It is
+    particularly useful when you want to use scikit-learn's preprocessing tools
+    (like StandardScaler, MinMaxScaler, etc.) while maintaining the time series
+    nature of your data.
 
     Parameters
     ----------
     transformer : object
-        A scikit-learn transformer to apply on the data.
+        A scikit-learn transformer to apply on the data. Must implement fit(),
+        transform(), and optionally inverse_transform() methods.
 
     Attributes
     ----------
-    transformer : object
-        A scikit-learn transformer that is fitted on the data.
+    transformer_ : object
+        The fitted scikit-learn transformer.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from sklearn.preprocessing import StandardScaler
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start='2024-01-01 00:00:00',
+    ...     end='2024-01-01 00:02:00',
+    ...     freq='1min'
+    ... ).tz_localize('UTC')
+    >>> df = pd.DataFrame({
+    ...     'temp__°C': [20, 21, 22],
+    ...     'humid__%': [45, 50, 55]
+    ... }, index=dates)
+    >>> # Apply StandardScaler while preserving DataFrame structure
+    >>> sk_transform = SkTransform(StandardScaler())
+    >>> result = sk_transform.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00     -1.0     -1.0
+    2024-01-01 00:01:00+00:00      0.0      0.0
+    2024-01-01 00:02:00+00:00      1.0      1.0
+    >>> # Inverse transform to get back original values
+    >>> original = sk_transform.inverse_transform(result)
+    >>> print(original)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00     20.0     45.0
+    2024-01-01 00:01:00+00:00     21.0     50.0
+    2024-01-01 00:02:00+00:00     22.0     55.0
+
+    Returns
     -------
-    fit(x, y=None)
-        Fit the scaler to the input data `x`
-
-    transform(x)
-        Apply the transformer to the input data `x` and return the result
-        as a pandas DataFrame.
-
-    inverse_transform(x)
-        Apply the inverse transformer to the input data `x` and return the
-        result as a pandas DataFrame.
-
+    pd.DataFrame
+        The transformed DataFrame with the same index and column structure as the input.
+        The values are transformed according to the specified scikit-learn transformer.
     """
 
     def __init__(self, transformer):
@@ -782,7 +904,7 @@ class AddTimeLag(BaseProcessing):
     This transformer creates new features based on the provided features
     lagged by the given time lag.
 
-    Parameters:
+    Parameters
     -----------
     time_lag : datetime.timedelta
         The time lag used to shift the provided features. A positive time lag
