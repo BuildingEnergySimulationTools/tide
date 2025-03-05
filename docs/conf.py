@@ -51,6 +51,11 @@ html_theme_options = {
 # Add any paths that contain custom static files (such as style sheets)
 html_static_path = ["_static"]
 
+# Custom CSS
+html_css_files = [
+    'custom.css',
+]
+
 # Logo
 html_logo = "../tide_logo.svg"
 html_favicon = "../tide_logo.svg"
