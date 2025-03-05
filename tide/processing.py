@@ -1476,8 +1476,7 @@ class GaussianFilter1D(BaseProcessing):
     - The filter is applied independently to each column
     - The output maintains the same index and column structure as the input
     - The smoothing effect is more pronounced at the edges of the time series
-    - The choice of sigma and truncate parameters significantly affects the
-      smoothing behavior and computational efficiency
+
 
     Returns
     -------
@@ -1505,20 +1504,84 @@ class GaussianFilter1D(BaseProcessing):
 
 
 class CombineColumns(BaseProcessing):
-    """
-    A class that combines multiple columns in a pandas DataFrame using mean, sum,
-    average, or dot. Original columns can be dropped.
+    """A transformer that combines multiple columns in a DataFrame using various aggregation methods.
+
+    This transformer creates a new column by combining values from multiple input columns
+    using specified aggregation methods. It supports weighted and unweighted combinations,
+    and can optionally drop the original columns.
 
     Parameters
     ----------
-        function (str): The name of the function to apply for combining columns.
-            Valide names are "mean", "sum", "average", "dot".
-        weights (list[float | int] or np.ndarray, optional): Weights to apply when
-            using 'average' or 'dot'. Ignored for functions like 'mean' or 'sum'.
-        drop_columns (bool): If True, the original columns used for combining will
-            be dropped from the DataFrame. If False, they will be retained.
-        result_column_name (str): The name of the new column that will store the
-            combined values.
+    function : str
+        The aggregation function to use for combining columns. Valid options are:
+        - "mean": Arithmetic mean of the columns
+        - "sum": Sum of the columns
+        - "average": Weighted average of the columns (requires weights)
+        - "dot": Dot product of the columns with weights (weighted sum)
+
+    weights : list[float | int] | np.ndarray, default=None
+        Weights to apply when using 'average' or 'dot' functions. Must be provided
+        for these functions and must match the number of columns. Ignored for
+        'mean' and 'sum' functions.
+
+    drop_columns : bool, default=False
+        Whether to drop the original columns after combining them. If True, only
+        the combined result column is returned.
+
+    result_column_name : str, default="combined"
+        The name for the new column containing the combined values.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import CombineColumns
+    >>> # Create sample data with timezone-aware index
+    >>> dates = pd.date_range(start='2024-01-01', periods=3, freq='1h', tz='UTC')
+    >>> df = pd.DataFrame({
+    ...     'power__W__building1': [100, 200, 300],
+    ...     'power__W__building2': [150, 250, 350],
+    ...     'power__W__building3': [200, 300, 400]
+    ... }, index=dates)
+    >>> # Combine columns using mean
+    >>> combiner = CombineColumns(
+    ...     function='mean',
+    ...     result_column_name='power__W__avg'
+    ... )
+    >>> result = combiner.fit_transform(df)
+    >>> print(result)
+                           power__W__building1  power__W__building2  power__W__building3  power__W__avg
+    2024-01-01 00:00:00+00:00           100.0              150.0              200.0         150.0
+    2024-01-01 01:00:00+00:00           200.0              250.0              300.0         250.0
+    2024-01-01 02:00:00+00:00           300.0              350.0              400.0         350.0
+    >>> # Combine columns using weighted average
+    >>> combiner_weighted = CombineColumns(
+    ...     function='average',
+    ...     weights=[0.5, 0.3, 0.2],
+    ...     result_column_name='power__W__weighted',
+    ...     drop_columns=True
+    ... )
+    >>> result_weighted = combiner_weighted.fit_transform(df)
+    >>> print(result_weighted)
+                           power__W__weighted
+    2024-01-01 00:00:00+00:00          135.0
+    2024-01-01 01:00:00+00:00          235.0
+    2024-01-01 02:00:00+00:00          335.0
+
+    Notes
+    -----
+    - The input DataFrame must have a timezone-aware DatetimeIndex
+    - Weights must be provided when using 'average' or 'dot' functions
+    - Weights are ignored for 'mean' and 'sum' functions
+    - The number of weights must match the number of columns being combined
+    - When drop_columns=True, only the combined result column is returned
+    - The transformer preserves the index of the input DataFrame
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with the combined column added. If drop_columns=True,
+        only the combined column is returned. The output maintains the same
+        index as the input.
     """
 
     def __init__(
@@ -1565,56 +1628,57 @@ class CombineColumns(BaseProcessing):
 
 
 class STLFilter(BaseProcessing):
-    """
-    A transformer that applies Seasonal-Trend decomposition using LOESS (STL)
-    to a pandas DataFrame, and filters outliers based on an absolute threshold
-    from the residual (error) component of the decomposition.
-    Detected outliers are replaced with NaN values.
+    """A transformer that applies Seasonal-Trend decomposition using LOESS (STL)
+    to detect and filter outliers in time series data.
+
+    This transformer decomposes each column of the input DataFrame into seasonal,
+    trend, and residual components using STL decomposition. It then identifies
+    outliers in the residual component based on an absolute threshold and replaces
+    them with NaN values.
 
     Parameters
     ----------
-    period : int | str | timedelta
+    period : int | str | dt.timedelta
         The periodicity of the seasonal component. Can be specified as:
-        - an integer for the number of observations in one seasonal cycle,
-        - a string representing the time frequency (e.g., '15T' for 15 minutes),
-        - a timedelta object representing the duration of the seasonal cycle.
+        - An integer for the number of observations in one seasonal cycle
+        - A string representing the time frequency (e.g., '15T' for 15 minutes)
+        - A timedelta object representing the duration of the seasonal cycle
 
-    trend : int | str | dt.timedelta, optional
-        The length of the trend smoother. Must be odd and larger than season
-        Statsplot indicate it is usually around 150% of season.
-        Strongly depends on your time series.
+    trend : int | str | dt.timedelta
+        The length of the trend smoother. Must be odd and larger than season.
+        Typically set to around 150% of the seasonal period. The choice depends
+        on the characteristics of your time series.
 
     absolute_threshold : int | float
         The threshold for detecting anomalies in the residual component.
-        Any value in the residual that exceeds this threshold (absolute value)
-         is considered an anomaly and replaced by NaN.
+        Any value in the residual that exceeds this threshold (in absolute value)
+        is considered an anomaly and replaced by NaN.
 
-    seasonal : int | str | timedelta, optional
+    seasonal : int | str | dt.timedelta, default=None
         The length of the smoothing window for the seasonal component.
         If not provided, it is inferred based on the period.
         Must be an odd integer if specified as an int.
         Can also be specified as a string representing a time frequency or a
         timedelta object.
 
-    stl_additional_kwargs : dict[str, float], optional
+    stl_additional_kwargs : dict[str, float], default=None
         Additional keyword arguments to pass to the STL decomposition.
 
-    Methods
-    -------
-    fit(X, y=None)
-        Stores the columns and index of the input DataFrame but does not change
-        the data. The method is provided for compatibility with the
-        scikit-learn pipeline.
 
-    transform(X)
-        Applies the STL decomposition to each column of the input DataFrame `X`
-        and replaces outliers detected in the residual component with NaN values.
-        The outliers are determined based on the provided `absolute_threshold`.
+    Notes
+    -----
+    - The STL decomposition is applied independently to each column
+    - Outliers are detected based on the residual component of the decomposition
+    - Detected outliers are replaced with NaN values
+    - The trend parameter should be larger than the period parameter
+    - The seasonal parameter is optional and defaults to an inferred value
+    - The transformer preserves the index and column structure of the input
 
     Returns
     -------
     pd.DataFrame
-        The transformed DataFrame with outliers replaced by NaN.
+        The input DataFrame with outliers replaced by NaN values. The output
+        maintains the same index and column structure as the input.
     """
 
     def __init__(
