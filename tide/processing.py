@@ -1575,7 +1575,6 @@ class CombineColumns(BaseProcessing):
     - The number of weights must match the number of columns being combined
     - When drop_columns=True, only the combined result column is returned
     - The transformer preserves the index of the input DataFrame
-
     Returns
     -------
     pd.DataFrame
@@ -1719,44 +1718,95 @@ class STLFilter(BaseProcessing):
 
 class FillGapsAR(BaseFiller, BaseProcessing):
     """
-    A class designed to identify gaps in time series data and fill them using
-    a specified model.
+    A transformer that fills gaps in time series data using autoregressive models.
 
-    1- The class identified the gaps to fill and filter them using upper and lower gap
-    thresholds.
-    2- The biggest group of valid data is identified and is used to fit the model.
-    3- The neighboring gaps are filled using backcasting or forecasting.
-    4- OPTIONAL When the data's timestep is too short compared to the periodic behavior
-    (e.g., 5-min data for a 24h pattern):
-        - Resample data to a larger timestep
-        - Perform predictions at the resampled timestep
-        - Use linear interpolation to restore original data resolution
+    This transformer identifies and fills gaps in time series data using a specified
+    model (e.g., Prophet). The filling process depends on the `recursive_fill` parameter:
 
+    When recursive_fill=True:
+    1. Identifies gaps in the data and filters them based on size thresholds
+    2. Uses the largest continuous block of valid data to fit the model
+    3. Fills neighboring gaps using backcasting or forecasting
+    4. Optionally handles high-frequency data by:
+       - Resampling to a larger timestep for better pattern recognition
+       - Performing predictions at the resampled timestep
+       - Using linear interpolation to restore original resolution
+    5. Repeats steps 2-4 until no more gaps remain
 
-    The process is repeated at step 2 until there are no more gaps to fill
+    When recursive_fill=False:
+    1. Identifies gaps in the data and filters them based on size thresholds
+    2. Uses the entire dataset to fit the model
+    3. Fills all gaps in a single pass using the fitted model
+    4. Optionally handles high-frequency data as described above
 
     Parameters
     ----------
-    model_name : str, optional
-        The name of the model to be used for filling gaps, by default "STL".
-        It must be a key of MODEL_MAP
-    model_kwargs : dict, optional
-        A dictionary containing the arguments of the model.
-    lower_gap_threshold : str or datetime.datetime, optional
-        The lower threshold for the size of gaps to be considered, by default None.
-    upper_gap_threshold : str or datetime.datetime, optional
-        The upper threshold for the size of gaps to be considered, by default None.
-    resample_at_td: str or time delta, optinal
-        The time delta to resample fitting data before prediction
+    model_name : str, default="Prophet"
+        The name of the model to use for gap filling. Currently supports "Prophet" and "STL".
+        Note: STL model requires recursive_fill=True as it cannot handle NaN values.
 
-    Attributes
-    ----------
-    model_ : callable
-        The predictive model class used to fill gaps, determined by `model_name`.
-    features_ : list
-        The list of feature columns present in the data.
-    index_ : pd.Index
-        The index of the data passed during the `fit` method.
+    model_kwargs : dict, default={}
+        Additional keyword arguments to pass to the model during initialization.
+
+    gaps_lte : str | datetime | pd.Timestamp, default=None
+        Upper threshold for gap size. Gaps larger than this will not be filled.
+        Can be a string (e.g., "1D"), datetime object, or pd.Timestamp.
+
+    gaps_gte : str | datetime | pd.Timestamp, default=None
+        Lower threshold for gap size. Gaps smaller than this will not be filled.
+        Can be a string (e.g., "1h"), datetime object, or pd.Timestamp.
+
+    resample_at_td : str | timedelta | pd.Timedelta, default=None
+        Optional resampling period for high-frequency data. If provided, data will be
+        resampled to this frequency before model fitting and prediction.
+
+    recursive_fill : bool, default=False
+        Whether to recursively fill gaps until no more gaps remain. If False, only
+        performs one pass of gap filling. Must be True when using STL model.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import FillGapsAR
+    >>> # Create sample data with gaps
+    >>> dates = pd.date_range(start='2024-01-01', periods=24, freq='1h', tz='UTC')
+    >>> df = pd.DataFrame({
+    ...     'power__W__building': [100, np.nan, np.nan, 180, 220, 190, np.nan, 230,
+    ...                            180, 160, 140, 120, 110, 130, 150, 170,
+    ...                            190, 210, 230, 220, 200, 180, 160, 140]
+    ... }, index=dates)
+    >>> # Fill gaps using Prophet model (non-recursive)
+    >>> filler = FillGapsAR(
+    ...     model_name="Prophet",
+    ...     gaps_lte="1D",
+    ...     gaps_gte="1h",
+    ...     resample_at_td="1h"
+    ... )
+    >>> result = filler.fit_transform(df)
+    >>> # Fill gaps using STL model (recursive required)
+    >>> filler = FillGapsAR(
+    ...     model_name="STL",
+    ...     gaps_lte="1D",
+    ...     gaps_gte="1h",
+    ...     recursive_fill=True  # Required for STL
+    ... )
+    >>> result = filler.fit_transform(df)
+
+    Notes
+    -----
+    - Gaps are filled independently for each column
+    - For high-frequency data, resampling can improve pattern recognition
+    - When recursive_fill=True, the model is fitted on the largest continuous block
+      of valid data for each gap
+    - When recursive_fill=False, the model is fitted on the entire dataset
+    - STL model requires recursive_fill=True as it cannot handle NaN values
+    - Prophet model requires additional dependencies (prophet package)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with gaps filled using the specified model. The output maintains
+        the same structure and timezone information as the input.
     """
 
     def __init__(
@@ -2627,3 +2677,4 @@ class ReplaceTag(BaseProcessing):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         X.columns = self.feature_names_out_
         return X
+
