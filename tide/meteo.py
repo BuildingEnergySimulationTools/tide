@@ -192,7 +192,6 @@ def sun_position(date: dt.datetime, lat: float = 46.5, long: float = 6.5):
 
 def aoi_projection(surface_tilt, surface_azimuth, solar_zenith, solar_azimuth):
     """
-    === Function extracted from pvlib module ===
     https://pvlib-python.readthedocs.io/en/stable/
 
     Calculates the dot product of the sun position unit vector and the surface
@@ -264,7 +263,6 @@ def beam_component(surface_tilt, surface_azimuth, solar_zenith, solar_azimuth, d
 
 def sky_diffuse(surface_tilt, dhi):
     """
-    === Function extracted from pvlib module ===
     https://pvlib-python.readthedocs.io/en/stable/
 
     Determine diffuse irradiance from the sky on a tilted surface using
@@ -272,7 +270,7 @@ def sky_diffuse(surface_tilt, dhi):
 
     .. math::
 
-       I_{d} = DHI \frac{1 + \\cos\beta}{2}
+       I_{d} = DHI \frac{1 + \cos\beta}{2}
 
     Hottel and Woertz's model treats the sky as a uniform source of
     diffuse irradiance. Thus, the diffuse irradiance from the sky (ground
@@ -313,7 +311,6 @@ def sky_diffuse(surface_tilt, dhi):
 
 def ground_diffuse(surface_tilt, ghi, albedo=0.25):
     """
-    === Function extracted from pvlib module ===
     https://pvlib-python.readthedocs.io/en/stable/
 
     Estimate diffuse irradiance on a tilted surface from ground reflections.
@@ -322,7 +319,7 @@ def ground_diffuse(surface_tilt, ghi, albedo=0.25):
 
     .. math::
 
-       G_{ground} = GHI \times \rho \times \frac{1 - \\cos\beta}{2}
+       G_{ground} = GHI \times \rho \times \frac{1 - \cos\beta}{2}
 
     where :math:`\rho` is ``albedo`` and :math:`\beta` is ``surface_tilt``.
 

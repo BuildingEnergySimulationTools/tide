@@ -120,16 +120,28 @@ def get_pipeline_from_dict(
 
 
 class Plumber:
-    """A class for managing and transforming time series data through configurable processing pipelines.
+    """A powerful class for managing and transforming time series data through configurable processing pipelines.
 
-    The Plumber class provides a high-level interface for:
+    The Plumber class is the core component of the Tide library, providing a comprehensive interface for:
     - Managing time series data with hierarchical column naming (name__unit__bloc__sub_bloc)
-    - Creating and executing data processing pipelines
-    - Analyzing and visualizing data gaps
-    - Plotting time series with customizable layouts
+    - Creating and executing data processing pipelines with column-wise transformations
+    - Analyzing and visualizing data gaps and quality
+    - Plotting time series with customizable multi-axis layouts
 
-    The class uses a tree structure to organize data columns based on their tags,
-    allowing for flexible data selection and manipulation.
+    The class uses a tree structure to organize data columns based on their tags, allowing for:
+    - Flexible data selection using tag-based queries
+    - Hierarchical organization of data by unit, bloc, and sub-bloc
+    - Automatic handling of data transformations at different steps
+
+    Parameters
+    ----------
+    data : pd.Series or pd.DataFrame, optional
+        Input time series data. Must have a datetime index with timezone information.
+    pipe_dict : dict, optional
+        Pipeline configuration dictionary. Each key represents a processing step
+        and contains either:
+        - A list of transformations to apply to all columns
+        - A dictionary mapping column tags to specific transformations
 
     Attributes
     ----------
@@ -142,31 +154,48 @@ class Plumber:
 
     Examples
     --------
+    >>> from tide import Plumber
+    >>> import pandas as pd
+    >>> # Create sample data with hierarchical column names
     >>> data = pd.DataFrame(
     ...     {
     ...         "temp__°C__zone1": [20, 21, np.nan, 23],
     ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+    ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
     ...     },
-    ...     index=pd.date_range("2023", freq="h", periods=4),
+    ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
     ... )
+    >>> # Define pipeline configuration
     >>> pipe_dict = {
-    ...     "pre_processing": {"°C": [["ReplaceThreshold", {"upper": 25}]]},
+    ...     "pre_processing": {
+    ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
+    ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
+    ...     },
     ...     "common": [["Interpolate", ["linear"]]],
     ... }
+    >>> # Initialize and process data
     >>> plumber = Plumber(data, pipe_dict)
     >>> corrected = plumber.get_corrected_data()
+    >>> # Analyze gaps
+    >>> gaps = plumber.get_gaps_description()
+    >>> # Visualize data
+    >>> plumber.plot(y_axis_level="unit")
+
+    Notes
+    -----
+    - Column names can use any combination of tags (name, unit, bloc, sub_bloc)
+      separated by double underscores. Examples:
+      - Simple: "temperature"
+      - With unit: "temperature__°C"
+      - Full: "temperature__°C__zone1__room1"
+    - Input data must have a datetime index with timezone information
+    - Pipeline steps can be applied globally or to specific column groups
+    - Supports all transformations from the processing module
+    - Provides comprehensive gap analysis and visualization tools
+    - Uses plotly for interactive data visualization
     """
 
     def __init__(self, data: pd.Series | pd.DataFrame = None, pipe_dict: dict = None):
-        """
-        Parameters
-        ----------
-        data : pd.Series or pd.DataFrame, optional
-            Input time series data. Must have a datetime index.
-        pipe_dict : dict, optional
-            Pipeline configuration dictionary. Each key represents a processing step
-            and contains the corresponding transformation parameters.
-        """
         self.data = check_and_return_dt_index_df(data) if data is not None else None
         self.root = data_columns_to_tree(data.columns) if data is not None else None
         self.pipe_dict = pipe_dict
@@ -306,7 +335,7 @@ class Plumber:
         Parameters
         ----------
         data : pd.Series or pd.DataFrame
-            New time series data to process. Must have a datetime index.
+            New time series data to process. Must have a datetime index with timezone information.
         """
         self.data = check_and_return_dt_index_df(data)
         self.root = data_columns_to_tree(data.columns)
@@ -339,19 +368,73 @@ class Plumber:
     ) -> Pipeline:
         """Create a scikit-learn pipeline from the configuration.
 
+        This method builds a scikit-learn Pipeline object based on the current configuration
+        and selected data columns. The pipeline can be used to transform data according to
+        the defined processing steps.
+
         Parameters
         ----------
         select : str or pd.Index or list[str], optional
-            Data selection using tide's tag system
+            Data selection using tide's tag system. Can be:
+            - A single tag (e.g., "°C" to select all temperature columns)
+            - A full column name pattern (e.g., "temp__°C__zone1")
+            If None, selects all columns.
+
         steps : None or str or list[str] or slice, default slice(None)
-            Pipeline steps to include. If None, returns an Identity transformer.
+            Pipeline steps to include. Can be:
+            - A single step name (e.g., "pre_processing")
+            - A list of step names (e.g., ["pre_processing", "common"])
+            - A slice object (e.g., slice("pre_processing", "common"))
+            - None to return an Identity transformer
+            - slice(None) to include all steps
+
         verbose : bool, default False
-            Whether to print information about pipeline steps
+            Whether to print information about pipeline steps during creation
 
         Returns
         -------
         Pipeline
-            Scikit-learn pipeline configured with the selected steps
+            A scikit-learn Pipeline object configured with the selected steps and columns.
+            The pipeline will transform the data according to the processing steps defined
+            in pipe_dict.
+
+        Raises
+        ------
+        ValueError
+            If data is not set (self.data is None)
+
+        Examples
+        --------
+        >>> from tide import Plumber
+        >>> import pandas as pd
+        >>> # Create sample data
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
+        >>> # Define pipeline configuration
+        >>> pipe_dict = {
+        ...     "pre_processing": {
+        ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
+        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
+        ...     },
+        ...     "common": [["Interpolate", ["linear"]]],
+        ... }
+        >>> # Initialize Plumber
+        >>> plumber = Plumber(data, pipe_dict)
+        >>> # Get pipeline for temperature columns only
+        >>> temp_pipe = plumber.get_pipeline(select="°C")
+        >>> # Get pipeline for all columns with only pre-processing step
+        >>> pre_pipe = plumber.get_pipeline(steps="pre_processing")
+        >>> # Get pipeline for specific columns and steps
+        >>> custom_pipe = plumber.get_pipeline(
+        ...     select=["temp__°C__zone1", "power__kW__hvac"],
+        ...     steps=["pre_processing", "common"],
+        ... )
         """
         if self.data is None:
             raise ValueError("data is required to build a pipeline")
@@ -377,23 +460,84 @@ class Plumber:
     ) -> pd.DataFrame:
         """Apply pipeline transformations to selected data.
 
+        This method applies the configured processing pipeline to the selected data columns
+        within the specified time range. It returns a new DataFrame with the transformed data.
+
         Parameters
         ----------
         select : str or pd.Index or list[str], optional
-            Data selection using tide's tag system
+            Data selection using tide's tag system. Can be:
+            - A single tag (e.g., "°C" to select all temperature columns)
+            - A full column name pattern (e.g., "temp__°C__zone1")
+            If None, selects all columns.
+
         start : str or datetime or Timestamp, optional
-            Start time for data slice
+            Start time for data slice. Can be:
+            - A string in ISO format (e.g., "2023-01-01")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the first timestamp in the data.
+
         stop : str or datetime or Timestamp, optional
-            End time for data slice
+            End time for data slice. Can be:
+            - A string in ISO format (e.g., "2023-12-31")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the last timestamp in the data.
+
         steps : None or str or list[str] or slice, default slice(None)
-            Pipeline steps to apply
+            Pipeline steps to apply. Can be:
+            - A single step name (e.g., "pre_processing")
+            - A list of step names (e.g., ["pre_processing", "common"])
+            - A slice object (e.g., slice("pre_processing", "common"))
+            - None to return an Identity transformer
+            - slice(None) to include all steps
+
         verbose : bool, default False
-            Whether to print information about pipeline steps
+            Whether to print information about pipeline steps during processing
 
         Returns
         -------
         pd.DataFrame
-            Transformed data
+
+        Raises
+        ------
+        ValueError
+            If data is not set (self.data is None)
+
+        Examples
+        --------
+        >>> from tide import Plumber
+        >>> import pandas as pd
+        >>> # Create sample data
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
+        >>> # Define pipeline configuration
+        >>> pipe_dict = {
+        ...     "pre_processing": {
+        ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
+        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
+        ...     },
+        ...     "common": [["Interpolate", ["linear"]]],
+        ... }
+        >>> # Initialize Plumber
+        >>> plumber = Plumber(data, pipe_dict)
+        >>> # Get corrected data for temperature columns only
+        >>> temp_data = plumber.get_corrected_data(select="°C")
+        >>> # Get corrected data for a specific time range
+        >>> time_slice = plumber.get_corrected_data(
+        ...     start="2023-01-01T00:00:00", stop="2023-01-01T12:00:00"
+        ... )
+        >>> # Get corrected data with specific steps
+        >>> pre_processed = plumber.get_corrected_data(
+        ...     select=["temp__°C__zone1", "power__kW__hvac"], steps="pre_processing"
+        ... )
         """
         if self.data is None:
             raise ValueError("Cannot get corrected data. data are missing")
@@ -416,27 +560,90 @@ class Plumber:
     ):
         """Create a heatmap visualization of data gaps.
 
+        This method generates an interactive heatmap using plotly that shows the presence
+        and distribution of data gaps across different columns and time periods. The heatmap
+        helps identify patterns in missing data and potential data quality issues.
+
         Parameters
         ----------
         select : str or pd.Index or list[str], optional
-            Data selection using tide's tag system
+            Data selection using tide's tag system. Can be:
+            - A single tag (e.g., "°C" to select all temperature columns)
+            - A full column name pattern (e.g., "temp__°C__zone1")
+            If None, selects all columns.
+
         start : str or datetime or Timestamp, optional
-            Start time for visualization
+            Start time for visualization. Can be:
+            - A string in ISO format (e.g., "2023-01-01")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the first timestamp in the data.
+
         stop : str or datetime or Timestamp, optional
-            End time for visualization
+            End time for visualization. Can be:
+            - A string in ISO format (e.g., "2023-12-31")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the last timestamp in the data.
+
         steps : None or str or list[str] or slice, default slice(None)
-            Pipeline steps to apply before visualization
+            Pipeline steps to apply before visualization. Can be:
+            - A single step name (e.g., "pre_processing")
+            - A list of step names (e.g., ["pre_processing", "common"])
+            - A slice object (e.g., slice("pre_processing", "common"))
+            - None to return an Identity transformer
+            - slice(None) to include all steps
+
         time_step : str or Timedelta or timedelta, optional
-            Time step for aggregating gaps
+            Time step for aggregating gaps. Can be:
+            - A string (e.g., "1h", "1d", "1w")
+            - A timedelta object
+            - A pandas Timedelta
+            If None, uses the original data frequency.
+
         title : str, optional
-            Plot title
+            Plot title. If None, uses a default title based on the data selection.
+
         verbose : bool, default False
-            Whether to print information about pipeline steps
+            Whether to print information about pipeline steps during processing
 
         Returns
         -------
         go.Figure
-            Plotly figure object containing the heatmap
+            A plotly Figure object containing the heatmap with:
+            - Rows representing different columns
+            - Columns representing time periods
+            - Colors indicating presence (white) or absence (colored) of data
+            - Interactive features (zoom, pan, hover information)
+
+        Examples
+        --------
+        >>> from tide import Plumber
+        >>> import pandas as pd
+        >>> # Create sample data with gaps
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, np.nan, 23, np.nan, 25],
+        ...         "humid__%HR__zone1": [50, 55, np.nan, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, np.nan, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=5, tz="UTC"),
+        ... )
+        >>> # Initialize Plumber
+        >>> plumber = Plumber(data)
+        >>> # Create heatmap for all columns
+        >>> fig = plumber.plot_gaps_heatmap()
+        >>> fig.show()
+        >>> # Create heatmap for temperature data with daily aggregation
+        >>> fig = plumber.plot_gaps_heatmap(
+        ...     select="°C", time_step="1d", title="Temperature Data Gaps"
+        ... )
+        >>> fig.show()
+        >>> # Create heatmap for specific time range
+        >>> fig = plumber.plot_gaps_heatmap(
+        ...     start="2023-01-01T00:00:00", stop="2023-01-01T12:00:00"
+        ... )
+        >>> fig.show()
         """
         data = self.get_corrected_data(select, start, stop, steps, verbose)
         return plot_gaps_heatmap(data, time_step=time_step, title=title)
@@ -469,65 +676,157 @@ class Plumber:
     ):
         """Create an interactive time series plot.
 
-        Creates a highly customizable plot that can show:
+        This method generates a highly customizable interactive plot using plotly that can show:
         - Multiple time series with automatic different y-axes based on unit
         - Two different versions of the data (e.g., raw and processed)
-        - Data gaps visualization
-        - Custom styling and layout
+        - Data gaps visualization with customizable colors and opacity
+        - Custom styling and layout options
 
         Parameters
         ----------
         select : str or pd.Index or list[str], optional
-            Data selection using tide's tag system
+            Data selection using tide's tag system. Can be:
+            - A single tag (e.g., "°C" to select all temperature columns)
+            - A full column name pattern (e.g., "temp__°C__zone1")
+            If None, selects all columns.
+
         start : str or datetime or Timestamp, optional
-            Start time for plot
+            Start time for plot. Can be:
+            - A string in ISO format (e.g., "2023-01-01")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the first timestamp in the data.
+
         stop : str or datetime or Timestamp, optional
-            End time for plot
+            End time for plot. Can be:
+            - A string in ISO format (e.g., "2023-12-31")
+            - A datetime object
+            - A pandas Timestamp
+            If None, uses the last timestamp in the data.
+
         y_axis_level : str, optional
-            Tag level to use for y-axis grouping
+            Tag level to use for y-axis grouping. Can be:
+            - "unit" to group by measurement unit
+            - "bloc" to group by data bloc
+            - "sub_bloc" to group by sub-bloc
+            If None, uses a single y-axis for all data.
+
         y_tag_list : list[str], optional
-            List of tags for custom y-axis ordering
+            List of tags for custom y-axis ordering. The order of tags in this list
+            determines the order of y-axes from left to right.
+
         steps : None or str or list[str] or slice, default slice(None)
-            Pipeline steps to apply for main data
+            Pipeline steps to apply for main data. Can be:
+            - A single step name (e.g., "pre_processing")
+            - A list of step names (e.g., ["pre_processing", "common"])
+            - A slice object (e.g., slice("pre_processing", "common"))
+            - None to return an Identity transformer
+            - slice(None) to include all steps
+
         data_mode : str, default "lines"
-            Plot mode for main data ("lines", "markers", or "lines+markers")
+            Plot mode for main data. Can be:
+            - "lines" for line plots
+            - "markers" for scatter plots
+            - "lines+markers" for combined line and marker plots
+
         steps_2 : None or str or list[str] or slice, optional
-            Pipeline steps to apply for secondary data
+            Pipeline steps to apply for secondary data. Used to compare different
+            processing steps or versions of the data.
+
         data_2_mode : str, default "markers"
-            Plot mode for secondary data
+            Plot mode for secondary data. Same options as data_mode.
+
         markers_opacity : float, default 0.8
-            Opacity for markers
+            Opacity for markers (0.0 to 1.0)
+
         lines_width : float, default 2.0
-            Width of plot lines
+            Width of plot lines in pixels
+
         title : str, optional
-            Plot title
+            Plot title. If None, uses a default title based on the data selection.
+
         plot_gaps : bool, default False
             Whether to highlight gaps in main data
+
         gaps_lower_td : str or Timedelta or timedelta, optional
-            Minimum duration for gap highlighting
+            Minimum duration for gap highlighting. Can be:
+            - A string (e.g., "1h", "1d")
+            - A timedelta object
+            - A pandas Timedelta
+
         gaps_rgb : tuple[int, int, int], default (31, 73, 125)
-            RGB color for main data gaps
+            RGB color for main data gaps (0-255 range)
+
         gaps_alpha : float, default 0.5
-            Opacity for main data gaps
+            Opacity for main data gaps (0.0 to 1.0)
+
         plot_gaps_2 : bool, default False
             Whether to highlight gaps in secondary data
+
         gaps_2_lower_td : str or Timedelta or timedelta, optional
             Minimum duration for secondary data gap highlighting
+
         gaps_2_rgb : tuple[int, int, int], default (254, 160, 34)
-            RGB color for secondary data gaps
+            RGB color for secondary data gaps (0-255 range)
+
         gaps_2_alpha : float, default 0.5
-            Opacity for secondary data gaps
+            Opacity for secondary data gaps (0.0 to 1.0)
+
         axis_space : float, default 0.03
-            Space between multiple y-axes
+            Space between multiple y-axes (0.0 to 1.0)
+
         y_title_standoff : int or float, default 5
-            Distance between y-axis title and axis
+            Distance between y-axis title and axis in pixels
+
         verbose : bool, default False
-            Whether to print information about pipeline steps
+            Whether to print information about pipeline steps during processing
 
         Returns
         -------
         go.Figure
-            Plotly figure object containing the plot
+            A plotly Figure object containing the plot with:
+            - Multiple y-axes if y_axis_level is specified
+            - Interactive features (zoom, pan, hover information)
+            - Legend with all series
+            - Optional gap highlighting
+            - Customizable styling
+
+        Examples
+        --------
+        >>> from tide import Plumber
+        >>> import pandas as pd
+        >>> # Create sample data
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
+        >>> # Initialize Plumber
+        >>> plumber = Plumber(data)
+        >>> # Create basic plot with automatic y-axes
+        >>> fig = plumber.plot(y_axis_level="unit")
+        >>> fig.show()
+        >>> # Create plot with custom styling and gap highlighting
+        >>> fig = plumber.plot(
+        ...     select=["temp__°C__zone1", "power__kW__hvac"],
+        ...     data_mode="lines+markers",
+        ...     plot_gaps=True,
+        ...     gaps_lower_td="1h",
+        ...     title="Temperature and Power Data",
+        ... )
+        >>> fig.show()
+        >>> # Create plot comparing raw and processed data
+        >>> fig = plumber.plot(
+        ...     steps="pre_processing",
+        ...     steps_2=None,
+        ...     data_mode="lines",
+        ...     data_2_mode="markers",
+        ...     title="Raw vs Processed Data",
+        ... )
+        >>> fig.show()
         """
         # A bit dirty. Here we assume that if you ask a selection
         # that is not found in original data columns, it is because it

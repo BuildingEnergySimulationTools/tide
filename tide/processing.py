@@ -41,46 +41,39 @@ OIKOLAB_DEFAULT_MAP = {
 
 
 class Identity(BaseProcessing):
-    """
-    A custom transformer that returns the input data without any modifications.
+    """A transformer that returns input data unchanged.
 
-    This transformer is useful when you want to include an identity transformation step
-    in a scikit-learn pipeline, where the input data should be returned unchanged.
-
-    Parameters:
-    -----------
+    Parameters
+    ----------
     None
 
-    Methods:
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Methods
+    -------
+    fit(X, y=None)
+        No-op, returns self.
+    transform(X)
+        Returns input unchanged.
+
+    Examples
     --------
-    fit(X, y=None):
-        This method does nothing and simply returns the transformer instance.
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({"temp__°C": [20, 21, 22], "humid__%": [45, 50, 55]})
+    >>> identity = Identity()
+    >>> result = identity.fit_transform(df)
+    >>> assert (result == df).all().all()  # Data unchanged
+    >>> assert list(result.columns) == list(df.columns)  # Column order preserved
 
-        Parameters:
-        -----------
-        X : array-like, shape (n_samples, n_features)
-            The input data.
-
-        y : array-like, shape (n_samples,), optional (default=None)
-            The target values.
-
-        Returns:
-        --------
-        self : object
-            The transformer instance itself.
-
-    transform(X):
-        This method returns the input data without any modifications.
-
-        Parameters:
-        -----------
-        X : array-like, shape (n_samples, n_features)
-            The input data.
-
-        Returns:
-        --------
-        transformed_X : array-like, shape (n_samples, n_features)
-            The input data without any modifications.
+    Returns
+    -------
+    pd.DataFrame
+        The input data without any modifications.
     """
 
     def __init__(self):
@@ -94,28 +87,60 @@ class Identity(BaseProcessing):
 
 
 class ReplaceDuplicated(BaseProcessing):
-    """This transformer replaces duplicated values in each column by
-    specified new value.
+    """A transformer that replaces duplicated values in each column with a specified value.
+
+    This transformer identifies and replaces duplicated values in each column
+    of a pandas DataFrame, keeping either the first, last, or no occurrence
+    of duplicated values.
 
     Parameters
     ----------
     keep : str, default 'first'
         Specify which of the duplicated (if any) value to keep.
-        Allowed arguments : ‘first’, ‘last’, False.
+        Allowed arguments : 'first', 'last', False.
+            - 'first': Keep first occurrence of duplicated values
+            - 'last': Keep last occurrence of duplicated values
+            - False: Keep no occurrence (replace all duplicates)
+
+    value : float, default np.nan
+        Value used to replace the non-kept duplicated values.
 
     Attributes
     ----------
-    value : str, default np.nan
-        value used to replace not kept duplicated.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import datetime, timezone
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {"temp__°C": [20, 20, 22, 22, 23], "humid__%": [45, 45, 50, 50, 55]},
+    ...     index=dates,
+    ... )
+    >>> # Keep first occurrence of duplicates
+    >>> replacer = ReplaceDuplicated(keep="first", value=np.nan)
+    >>> result = replacer.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+    2024-01-01 00:01:00+00:00       NaN       NaN
+    2024-01-01 00:02:00+00:00      22.0      50.0
+    2024-01-01 00:03:00+00:00       NaN       NaN
+    2024-01-01 00:04:00+00:00      23.0      55.0
+
+    Returns
     -------
-    fit(X, y=None)
-        Returns self.
-
-    transform(X)
-        Drops the duplicated values in the Pandas DataFrame `X`
-        Returns the DataFrame with the duplicated filled with 'value'
+    pd.DataFrame
+        The DataFrame with duplicated values replaced according to the specified strategy.
+        The output maintains the same DateTimeIndex as the input.
     """
 
     def __init__(self, keep="first", value=np.nan):
@@ -133,30 +158,62 @@ class ReplaceDuplicated(BaseProcessing):
 
 
 class Dropna(BaseProcessing):
-    """A class to drop NaN values in a Pandas DataFrame.
+    """A transformer that removes rows containing missing values from a DataFrame.
+
+    This transformer removes rows from a DataFrame based on the presence of
+    missing values (NaN) according to the specified strategy.
 
     Parameters
     ----------
     how : str, default 'all'
-        How to drop missing values in the data. 'all' drops the row/column if
-        all the values are missing, 'any' drops the row/column if any value is
-        missing, and a number 'n' drops the row/column if there are at least
-        'n' missing values.
+        How to drop missing values in the data:
+            - 'all': Drop row if all values are missing
+            - 'any': Drop row if any value is missing
+            - int: Drop row if at least this many values are missing
 
     Attributes
     ----------
-    how : str
-        How to drop missing values in the data.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C": [20, np.nan, 22, np.nan, np.nan],
+    ...         "humid__%": [45, 50, np.nan, np.nan, np.nan],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Drop rows where all values are missing
+    >>> dropper = Dropna(how="all")
+    >>> result = dropper.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+    2024-01-01 00:01:00+00:00       NaN      50.0
+    2024-01-01 00:02:00+00:00      22.0       NaN
+    >>> # Drop rows with any missing value
+    >>> dropper_strict = Dropna(how="any")
+    >>> result_strict = dropper_strict.fit_transform(df)
+    >>> print(result_strict)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0      45.0
+
+    Returns
     -------
-    fit(X, y=None)
-        Returns self.
-
-    transform(X)
-        Drops the NaN values in the Pandas DataFrame `X` based on the `how`
-        attribute.
-        Returns the DataFrame with the NaN values dropped.
+    pd.DataFrame
+        The DataFrame with rows containing missing values removed according to
+        the specified strategy. The output maintains the same DateTimeIndex
+        structure as the input, with rows removed.
     """
 
     def __init__(self, how="all"):
@@ -171,32 +228,59 @@ class Dropna(BaseProcessing):
 
 
 class RenameColumns(BaseProcessing):
-    """
-    Scikit-learn transformer that renames columns of a Pandas DataFrame.
+    """A transformer that renames columns in a DataFrame.
+
+    This transformer allows renaming DataFrame columns either by providing a list
+    of new names in the same order as the current columns, or by providing a
+    dictionary mapping old names to new names.
 
     Parameters
     ----------
-    new_names: list or dict
-        A list or a dictionary of new names for columns of a DataFrame.
-        If it is a list, it must have the same length as the number of columns
-        in the DataFrame. If it is a dictionary, keys must be the old names of
-        columns and values must be the new names.
+    new_names : list[str] | dict[str, str]
+        New names for the columns. Can be specified in two ways:
+            - list[str]: List of new names in the same order as current columns.
+            Must have the same length as the number of columns.
+            - dict[str, str]: Dictionary mapping old column names to new names.
+            Keys must be existing column names, values are the new names.
 
     Attributes
     ----------
-    new_names: list or dict
-        A list or a dictionary of new names for columns of a DataFrame.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns after renaming.
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {"temp__°C": [20, 21, 22], "humid__%": [45, 50, 55]}, index=dates
+    ... )
+    >>> # Rename using a list (maintains order)
+    >>> renamer_list = RenameColumns(["temperature__°C", "humidity__%"])
+    >>> result_list = renamer_list.fit_transform(df)
+    >>> print(result_list)
+                           temperature__°C  humidity__%
+    2024-01-01 00:00:00+00:00           20.0        45.0
+    2024-01-01 00:01:00+00:00           21.0        50.0
+    2024-01-01 00:02:00+00:00           22.0        55.0
+    >>> # Rename using a dictionary (selective renaming)
+    >>> renamer_dict = RenameColumns({"temp__°C": "temperature__°C"})
+    >>> result_dict = renamer_dict.fit_transform(df)
+    >>> print(result_dict)
+                           temperature__°C  humid__%
+    2024-01-01 00:00:00+00:00           20.0      45.0
+    2024-01-01 00:01:00+00:00           21.0      50.0
+    2024-01-01 00:02:00+00:00           22.0      55.0
+
+    Returns
     -------
-    fit(self, x, y=None)
-       No learning is performed, the method simply returns self.
-
-    transform(self, x)
-        Renames columns of a DataFrame.
-
-    inverse_transform(self, x)
-        Renames columns of a DataFrame.
+    pd.DataFrame
+        The DataFrame with renamed columns.
     """
 
     def __init__(self, new_names: list[str] | dict[str, str]):
@@ -224,35 +308,61 @@ class RenameColumns(BaseProcessing):
 
 
 class SkTransform(BaseProcessing):
-    """A transformer class to apply scikit transformers on a pandas DataFrame
+    """A transformer that applies scikit-learn transformers to a pandas DataFrame.
 
-    This class takes in a scikit-learn transformers as input and applies the
-    transformer to a pandas DataFrame. The resulting data will be a pandas
-    DataFrame with the same index and columns as the input DataFrame.
+    This transformer wraps any scikit-learn transformer and applies it to a pandas
+    DataFrame while preserving the DataFrame's index and column structure. It is
+    particularly useful when you want to use scikit-learn's preprocessing tools
+    (like StandardScaler, MinMaxScaler, etc.) while maintaining the time series
+    nature of your data.
 
     Parameters
     ----------
     transformer : object
-        A scikit-learn transformer to apply on the data.
+        A scikit-learn transformer to apply on the data. Must implement fit(),
+        transform(), and optionally inverse_transform() methods.
 
     Attributes
     ----------
-    transformer : object
-        A scikit-learn transformer that is fitted on the data.
+    transformer_ : object
+        The fitted scikit-learn transformer.
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from sklearn.preprocessing import StandardScaler
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {"temp__°C": [20, 21, 22], "humid__%": [45, 50, 55]}, index=dates
+    ... )
+    >>> # Apply StandardScaler while preserving DataFrame structure
+    >>> sk_transform = SkTransform(StandardScaler())
+    >>> result = sk_transform.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00     -1.0     -1.0
+    2024-01-01 00:01:00+00:00      0.0      0.0
+    2024-01-01 00:02:00+00:00      1.0      1.0
+    >>> # Inverse transform to get back original values
+    >>> original = sk_transform.inverse_transform(result)
+    >>> print(original)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00     20.0     45.0
+    2024-01-01 00:01:00+00:00     21.0     50.0
+    2024-01-01 00:02:00+00:00     22.0     55.0
+
+    Returns
     -------
-    fit(x, y=None)
-        Fit the scaler to the input data `x`
-
-    transform(x)
-        Apply the transformer to the input data `x` and return the result
-        as a pandas DataFrame.
-
-    inverse_transform(x)
-        Apply the inverse transformer to the input data `x` and return the
-        result as a pandas DataFrame.
-
+    pd.DataFrame
+        The transformed DataFrame with the same index and column structure as the input.
+        The values are transformed according to the specified scikit-learn transformer.
     """
 
     def __init__(self, transformer):
@@ -278,22 +388,59 @@ class SkTransform(BaseProcessing):
 
 
 class ReplaceThreshold(BaseProcessing):
-    """Class replacing values in a pandas DataFrame by "value" based on
-    threshold values.
+    """A transformer that replaces values in a DataFrame based on threshold values.
 
-    This class implements the scikit-learn transformer API and can be used in
-    a scikit-learn pipeline.
+    This transformer replaces values in a DataFrame that fall outside specified
+    upper and lower thresholds with a given replacement value. It is useful for
+    handling outliers or extreme values in time series data.
 
     Parameters
     ----------
     upper : float, optional (default=None)
-        The upper threshold for values in the DataFrame. Values greater than
-        The upper threshold for values in the DataFrame. Values greater than
-        this threshold will be replaced.
+        The upper threshold value. Values greater than this threshold will be
+        replaced with the specified value.
     lower : float, optional (default=None)
-        The lower threshold for values in the DataFrame. Values less than
-        this threshold will be replaced.
-    value : (default=np.nan)The value to replace the targeted values in X DataFrame
+        The lower threshold value. Values less than this threshold will be
+        replaced with the specified value.
+    value : float, optional (default=np.nan)
+        The value to use for replacing values that fall outside the thresholds.
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {"temp__°C": [20, 25, 30, 35, 40], "humid__%": [45, 50, 55, 60, 65]},
+    ...     index=dates,
+    ... )
+    >>> # Replace values outside thresholds with NaN
+    >>> replacer = ReplaceThreshold(upper=35, lower=20, value=np.nan)
+    >>> result = replacer.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%
+    2024-01-01 00:00:00+00:00      20.0       NaN
+    2024-01-01 00:01:00+00:00      25.0       NaN
+    2024-01-01 00:02:00+00:00      30.0       NaN
+    2024-01-01 00:03:00+00:00       NaN       NaN
+    2024-01-01 00:04:00+00:00       NaN       NaN
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with values outside the specified thresholds replaced
+        with the given value. The output maintains the same DateTimeIndex
+        and column structure as the input.
     """
 
     def __init__(self, upper=None, lower=None, value=np.nan):
@@ -330,7 +477,7 @@ class DropTimeGradient(BaseProcessing):
     A transformer that removes values in a DataFrame based on the time gradient.
 
     The time gradient is calculated as the difference of consecutive values in
-    the time series divided by the time delta between each value.
+    the time series divided by the time delta between each value (in seconds).
     If the gradient is below the `lower_rate` or above the `upper_rate`,
     then the value is set to NaN.
 
@@ -339,27 +486,68 @@ class DropTimeGradient(BaseProcessing):
     dropna : bool, default=True
         Whether to remove NaN values from the DataFrame before processing.
     upper_rate : float, optional
-        The upper rate threshold. If the gradient is greater than or equal to
+        The upper rate threshold in units of value/second. If the gradient is greater than or equal to
         this value, the value will be set to NaN.
+        Example: For a temperature change of 5°C per minute, set upper_rate=5/60 ≈ 0.083
     lower_rate : float, optional
-        The lower rate threshold. If the gradient is less than or equal to
-         this value, the value will be set to NaN.
+        The lower rate threshold in units of value/second. If the gradient is less than or equal to
+        this value, the value will be set to NaN.
+        Example: For a pressure change of 100 Pa per minute, set lower_rate=100/60 ≈ 1.67
 
     Attributes
     ----------
-    None
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
 
-    Methods
-    -------
-    fit(X, y=None)
-        No learning is performed, the method simply returns self.
-    transform(X)
-        Removes values in the DataFrame based on the time gradient.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C": [20, 25, 30, 35, 40],  # Steady increase of 5°C/min
+    ...         "humid__%": [45, 45, 45, 45, 45],  # Constant
+    ...         "press__Pa": [1000, 1000, 900, 1000, 1000],  # Sudden change
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Remove values with gradients outside thresholds
+    >>> # For temperature: 5°C/min = 5/60 ≈ 0.083°C/s
+    >>> # For pressure: 100 Pa/min = 100/60 ≈ 1.67 Pa/s
+    >>> dropper = DropTimeGradient(upper_rate=0.083, lower_rate=0.001)
+    >>> result = dropper.fit_transform(df)
+    >>> print(result)
+                           temp__°C  humid__%  press__Pa
+    2024-01-01 00:00:00+00:00      20.0      45.0     1000.0
+    2024-01-01 00:01:00+00:00      25.0       NaN     1000.0
+    2024-01-01 00:02:00+00:00      30.0       NaN       NaN
+    2024-01-01 00:03:00+00:00      35.0       NaN     1000.0
+    2024-01-01 00:04:00+00:00      40.0      45.0     1000.0
+
+    Notes
+    -----
+    - The gradient is calculated as (value2 - value1) / (time2 - time1 in seconds)
+    - For the upper_rate threshold, both the current and next gradient must exceed
+      the threshold for a value to be removed
+    - For the lower_rate threshold, only the current gradient needs to be below
+      the threshold for a value to be removed
+    - NaN values are handled according to the dropna parameter:
+        - If True (default): NaN values are removed before processing
+        - If False: NaN values are kept and may affect gradient calculations
+    - The rate parameters (upper_rate and lower_rate) must be specified in units of
+      value/second. To convert from per-minute rates, divide by 60.
 
     Returns
     -------
-    DataFrame
-        The transformed DataFrame.
+    pd.DataFrame
+        The DataFrame with values removed based on their time gradients.
+        The output maintains the same DateTimeIndex and column structure as the input.
     """
 
     def __init__(self, dropna=True, upper_rate=None, lower_rate=None):
@@ -413,27 +601,69 @@ class DropTimeGradient(BaseProcessing):
 
 
 class ApplyExpression(BaseProcessing):
-    """A transformer class to apply a mathematical expression on a Pandas
-    DataFrame.
+    """A transformer that applies a mathematical expression to a pandas DataFrame.
 
-    This class implements a transformer that can be used to apply a
-     mathematical expression to a Pandas DataFrame.
-    The expression can be any valid Python expression that
-    can be evaluated using the `eval` function.
+    This transformer allows you to apply any valid Python mathematical expression
+    to a pandas DataFrame. The expression is evaluated using pandas' `eval` function,
+    which provides efficient evaluation of mathematical expressions.
 
     Parameters
     ----------
     expression : str
-        A string representing a valid Python expression.
-        The expression can use any variables defined in the local scope,
-        including the `X` variable that is passed to the `transform` method
-         as the input data.
+        A string representing a valid Python mathematical expression.
+        The expression can use the input DataFrame `X` as a variable.
+        Common operations include:
+            - Basic arithmetic: +, -, *, /, **, %
+            - Comparison: >, <, >=, <=, ==, !=
+            - Boolean operations: &, |, ~
+            - Mathematical functions: abs(), sqrt(), pow(), etc.
+            Example: "X * 2" or "X / 1000" or "X ** 2"
 
-    Attributes
-    ----------
-    expression : str
-        The mathematical expression that will be applied to the input data.
+    new_unit : str, optional (default=None)
+        The new unit to apply to the column names after transformation.
+        If provided, the transformer will update the unit part of the column names
+        (the part after the second "__" in the Tide naming convention).
+        Example: If input columns are "power__W__building" and new_unit="kW",
+        output columns will be "power__kW__building".
 
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [1000, 2000, 3000],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Convert power from W to kW
+    >>> transformer = ApplyExpression("X / 1000", "kW")
+    >>> result = transformer.fit_transform(df)
+    >>> print(result)
+                           power__kW__building
+    2024-01-01 00:00:00+00:00             1.0
+    2024-01-01 00:01:00+00:00             2.0
+    2024-01-01 00:02:00+00:00             3.0
+
+
+    Notes
+    -----
+    - The expression is evaluated using pandas' `eval` function, which is optimized
+      for numerical operations on DataFrames.
+    - The input DataFrame `X` is available in the expression context.
+    - When using `new_unit`, the transformer follows the Tide naming convention
+      of "name__unit__block" for column names.
+    - The transformer preserves the DataFrame's index and column structure.
+    - All mathematical operations are applied element-wise to the DataFrame.
+
+    Returns
+    -------
+    pd.DataFrame
+        The transformed DataFrame with the mathematical expression applied to all values.
+        If new_unit is specified, the column names are updated accordingly.
     """
 
     def __init__(self, expression: str, new_unit: str = None):
@@ -455,29 +685,67 @@ class ApplyExpression(BaseProcessing):
 
 
 class TimeGradient(BaseProcessing):
-    """
-    A class to calculate the time gradient of a pandas DataFrame,
-     which is the derivative of the data with respect to time.
+    """A transformer that calculates the time gradient (derivative) of a pandas DataFrame.
+
+    This transformer computes the rate of change of values with respect to time.
+    The gradient is calculated using the time difference between consecutive data points.
 
     Parameters
     ----------
-    dropna : bool, optional (default=True)
-        Whether to drop NaN values before calculating the time gradient.
+    new_unit : str, optional (default=None)
+        The new unit to apply to the column names after transformation.
+        If provided, the transformer will update the unit part of the column names
+        (the part after the second "__" in the Tide naming convention).
+        Example: If input columns are "energy__J__building" and new_unit="W",
+        output columns will be "energy__W__building".
 
-    Attributes
-    ----------
-    dropna : bool
-        The dropna attribute of the class.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> # Create energy data (in Joules) with varying consumption
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "energy__J__building": [
+    ...             0,  # Start at 0 J
+    ...             360000,  # 1 kWh = 3600000 J
+    ...             720000,  # 2 kWh
+    ...             1080000,  # 3 kWh
+    ...             1440000,  # 4 kWh
+    ...         ]
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Calculate power (W) from energy (J) using time gradient
+    >>> # Power = Energy / time (in seconds)
+    >>> transformer = TimeGradient(new_unit="W")
+    >>> result = transformer.fit_transform(df)
+    >>> print(result)
+                           energy__W__building
+    2024-01-01 00:00:00+00:00            NaN
+    2024-01-01 00:01:00+00:00         6000.0
+    2024-01-01 00:02:00+00:00         6000.0
+    2024-01-01 00:03:00+00:00         6000.0
+    2024-01-01 00:04:00+00:00         6000.0
 
-    Methods
+    Notes
+    -----
+    - The time gradient is calculated as (value2 - value1) / (time2 - time1 in seconds)
+    - The first and last values in each column will be NaN since they don't have
+      enough neighbors to calculate the gradient
+    - When using new_unit, the transformer follows the Tide naming convention
+      of "name__unit__block" for column names
+
+    Returns
     -------
-    fit(X, y=None)
-        Fits the transformer to the data. Does not modify the input data.
-
-    transform(X)
-        Transforms the input data by calculating the time gradient of
-         the data.
-
+    pd.DataFrame
+        The DataFrame with time gradients calculated for each column.
+        The output maintains the same DateTimeIndex as the input.
+        If new_unit is specified, the column names are updated accordingly.
     """
 
     def __init__(self, new_unit: str = None):
@@ -500,24 +768,84 @@ class TimeGradient(BaseProcessing):
 
 
 class Ffill(BaseFiller, BaseProcessing):
-    """
-    A class to front-fill missing values in a Pandas DataFrame.
-    the limit argument allows the function to stop frontfilling at a certain
-    number of missing value
+    """A transformer that forward-fills missing values in a pandas DataFrame.
 
-    Parameters:
-        limit: int, default None If limit is specified, this is the maximum number
-        of consecutive NaN values to forward/backward fill.
-        In other words, if there is a gap with more than this number of consecutive
-        NaNs, it will only be partially filled.
-        If limit is not specified, this is the maximum number of entries along
-        the entire axis where NaNs will be filled. Must be greater than 0 if not None.
+    This transformer fills missing values (NaN) in a DataFrame by propagating
+    the last valid observation forward. It is particularly useful when past
+    values are more relevant for filling gaps than future values.
 
-    Methods:
-        fit(self, X, y=None):
-            Does nothing. Returns the object itself.
-        transform(self, X):
-            Fill missing values in the input DataFrame.
+    Parameters
+    ----------
+    limit : int, optional (default=None)
+        The maximum number of consecutive NaN values to forward-fill.
+        If specified, only gaps with this many or fewer consecutive NaN values
+        will be filled. Must be greater than 0 if not None.
+        Example: If limit=2, a gap of 3 or more NaN values will only be
+        partially filled.
+
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__room": [20, np.nan, np.nan, 23, 24],
+    ...         "press__Pa__room": [1000, np.nan, 900, np.nan, 1000],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Forward-fill all missing values
+    >>> filler = Ffill()
+    >>> result = filler.fit_transform(df)
+    >>> print(result)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          20.0          1000.0
+    2024-01-01 00:02:00+00:00          20.0           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Forward-fill with limit of 1
+    >>> filler_limited = Ffill(limit=1)
+    >>> result_limited = filler_limited.fit_transform(df)
+    >>> print(result_limited)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          20.0          1000.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Forward-fill only gaps of 1 hour or less
+    >>> filler_timed = Ffill(gaps_lte="1h")
+    >>> result_timed = filler_timed.fit_transform(df)
+    >>> print(result_timed)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00           NaN          1000.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0           900.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+
+    Notes
+    -----
+    - NaN values at the beginning of the time series will remain unfilled since
+      there are no past values to propagate
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with missing values forward-filled according to the specified
+        parameters. The output maintains the same DateTimeIndex and column
+        structure as the input.
     """
 
     def __init__(
@@ -547,24 +875,81 @@ class Ffill(BaseFiller, BaseProcessing):
 
 
 class Bfill(BaseFiller, BaseProcessing):
-    """
-    A class to back-fill missing values in a Pandas DataFrame.
-    the limit argument allows the function to stop backfilling at a certain
-    number of missing value
+    """A transformer that back-fills missing values in a pandas DataFrame.
 
-    Parameters:
-        limit: int, default None If limit is specified, this is the maximum number
-        of consecutive NaN values to forward/backward fill.
-        In other words, if there is a gap with more than this number of consecutive
-        NaNs, it will only be partially filled.
-        If limit is not specified, this is the maximum number of entries along
-        the entire axis where NaNs will be filled. Must be greater than 0 if not None.
+    This transformer fills missing values (NaN) in a DataFrame by propagating
+    the next valid observation backward. It is particularly useful when future
+    values are more relevant for filling gaps than past values.
 
-    Methods:
-        fit(self, X, y=None):
-            Does nothing. Returns the object itself.
-        transform(self, X):
-            Fill missing values in the input DataFrame.
+    Parameters
+    ----------
+    limit : int, optional (default=None)
+        The maximum number of consecutive NaN values to back-fill.
+        If specified, only gaps with this many or fewer consecutive NaN values
+        will be filled. Must be greater than 0 if not None.
+        Example: If limit=2, a gap of 3 or more NaN values will only be
+        partially filled.
+
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__room": [20, np.nan, np.nan, 23, 24],
+    ...         "press__Pa__room": [1000, np.nan, 900, np.nan, 1000],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Back-fill all missing values
+    >>> filler = Bfill()
+    >>> result = filler.fit_transform(df)
+    >>> print(result)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          23.0           900.0
+    2024-01-01 00:02:00+00:00          23.0           900.0
+    2024-01-01 00:03:00+00:00          23.0          1000.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+    >>> # Back-fill with limit of 1
+    >>> filler_limited = Bfill(limit=1)
+    >>> result_limited = filler_limited.fit_transform(df)
+    >>> print(result_limited)
+                           temp__°C__room  press__Pa__room
+    2024-01-01 00:00:00+00:00          20.0          1000.0
+    2024-01-01 00:01:00+00:00          23.0           900.0
+    2024-01-01 00:02:00+00:00           NaN           900.0
+    2024-01-01 00:03:00+00:00          23.0          1000.0
+    2024-01-01 00:04:00+00:00          24.0          1000.0
+
+    Notes
+    -----
+    - The transformer fills NaN values by propagating the next valid observation
+      backward in time
+    - When limit is specified, only gaps with that many or fewer consecutive NaN
+      values will be filled
+    - The gaps_lte and gaps_gte parameters allow filtering gaps based on their
+      duration before filling
+    - The transformer preserves the DataFrame's index and column structure
+    - NaN values at the end of the time series will remain unfilled since there
+      are no future values to propagate
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with missing values back-filled according to the specified
+        parameters. The output maintains the same DateTimeIndex and column
+        structure as the input.
     """
 
     def __init__(
@@ -592,28 +977,74 @@ class Bfill(BaseFiller, BaseProcessing):
         X[gaps_mask] = filled_x[gaps_mask]
         return X
 
-        # https://stackoverflow.com/questions/34321025/replace-values-in-numpy-2d-array-based-on-pandas-dataframe
-        # x_arr = np.array(X)
-        # gaps_mask = self.get_gaps_mask(X)
-        # gaps_idx_raveled = np.where(gaps_mask.to_numpy().ravel())[0]
-        # x_arr.flat[gaps_idx_raveled] = filled_x.to_numpy().ravel()[gaps_idx_raveled]
-        # return pd.DataFrame(data=x_arr, columns=X.columns, index=X.index)
-
 
 class FillNa(BaseFiller, BaseProcessing):
     """
-    A class that extends scikit-learn's TransformerMixin and BaseEstimator
-    to fill missing values in a Pandas DataFrame.
+    A transformer that fills missing values in a pandas DataFrame with a specified value.
 
-    Parameters:
-        value: scalar, dict, Series, or DataFrame
-            Value(s) used to replace missing values.
+    Parameters
+    ----------
+    value : float
+        The value to use for filling missing values.
 
-    Methods:
-        fit(self, X, y=None):
-            Does nothing. Returns the object itself.
-        transform(self, X):
-            Fill missing values in the input DataFrame.
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import datetime, timedelta
+    >>> from tide.processing import FillNa
+
+    >>> # Create a DataFrame with missing values and timezone-aware index
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temperature__°C": [20.0, np.nan, np.nan, 22.0, 23.0],
+    ...         "pressure__Pa": [1013.0, np.nan, 1015.0, np.nan, 1014.0],
+    ...     },
+    ...     index=dates,
+    ... )
+
+    >>> # Fill all missing values with 0
+    >>> filler = FillNa(value=0)
+    >>> df_filled = filler.fit_transform(df)
+    >>> print(df_filled)
+                             temperature__°C  pressure__Pa
+    2024-01-01 00:00:00+00:00        20.0       1013.0
+    2024-01-01 01:00:00+00:00         0.0          0.0
+    2024-01-01 02:00:00+00:00         0.0       1015.0
+    2024-01-01 03:00:00+00:00        22.0          0.0
+    2024-01-01 04:00:00+00:00        23.0       1014.0
+
+    >>> # Fill only gaps of 1 hour or less with -999
+    >>> filler = FillNa(value=-999, gaps_lte="1h")
+    >>> df_filled = filler.fit_transform(df)
+    >>> print(df_filled)
+                             temperature__°C  pressure__Pa
+    2024-01-01 00:00:00+00:00        20.0       1013.0
+    2024-01-01 01:00:00+00:00      np.nan       -999.0
+    2024-01-01 02:00:00+00:00      np.nan       1015.0
+    2024-01-01 03:00:00+00:00        22.0       -999.0
+    2024-01-01 04:00:00+00:00        23.0       1014.0
+
+    Notes
+    -----
+    - When using gap duration parameters (gaps_lte or gaps_gte), only gaps within
+      the specified time ranges will be filled
+    - This transformer is particularly useful for:
+        - Replacing missing values with a known default value
+        - Handling sensor errors or invalid measurements
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with missing values filled according to the specified parameters.
+        The output maintains the same structure and index as the input DataFrame.
     """
 
     def __init__(
@@ -643,51 +1074,74 @@ class FillNa(BaseFiller, BaseProcessing):
 
 
 class Interpolate(BaseFiller, BaseProcessing):
-    """A class that implements interpolation of missing values in
-     a Pandas DataFrame.
+    """
+    A transformer that interpolates missing values in a pandas DataFrame using various methods.
 
-    This class is a transformer that performs interpolation of missing
-    values in a Pandas DataFrame, using the specified `method`.
-    It will interpolate the gaps of size greater or equal to gaps_gte OR less than
-    or equal to gaps_lte.
+    Parameters
+    ----------
+    method : str, default="linear"
+        The interpolation method to use. Sample of useful available methods:
+            - "linear": Linear interpolation (default)
+            - "slinear": Spline interpolation of order 1
+            - "quadratic": Spline interpolation of order 2
+            - "cubic": Spline interpolation of order 3
+            - "barycentric": Barycentric interpolation
+            - "polynomial": Polynomial interpolation
+            - "krogh": Krogh interpolation
+            - "piecewise_polynomial": Piecewise polynomial interpolation
+            - "spline": Spline interpolation
+            - "pchip": Piecewise cubic Hermite interpolation
+            - "akima": Akima interpolation
+            - "cubicspline": Cubic spline interpolation
+            - "from_derivatives": Interpolation from derivatives
 
-    Parameters:
-    -----------
-    method : str or None, default None
-        The interpolation method to use. If None, the default interpolation
-         method of the Pandas DataFrame `interpolate()` method will be used.
-         ["linear", "time", "index", "values", "nearest", "zero", "slinear",
-         "quadratic", "cubic", "barycentric", "polynomial", "krogh",
-         "piecewise_polynomial", "spline", "pchip", "akima", "cubicspline",
-         "from_derivatives"]
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only interpolate gaps with duration less than or equal to this value.
 
-    gaps_lte: str | pd.Timedelta | dt.timedelta: Interpolate gaps of size less or
-        equal to gaps lte
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only interpolate gaps with duration greater than or equal to this value.
 
-    gaps_gte: str | pd.Timedelta | dt.timedelta: Interpolate gaps of size greater or
-        equal to gaps lte
-
-    Attributes:
-    -----------
-    columns : Index or None
-        The columns of the input DataFrame. Will be set during fitting.
-    index : Index or None
-        The index of the input DataFrame. Will be set during fitting.
-
-    Methods:
+    Examples
     --------
-    fit(X, y=None):
-        Fit the transformer to the input DataFrame X. This method will set
-         the `columns` and `index` attributes of the transformer,
-          and return the transformer instance.
-    transform(X):
-        Transform the input DataFrame X by performing interpolation of
-         missing values using the
-        specified `method`. Returns the transformed DataFrame.
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import datetime, timedelta
+    >>> from tide.processing import Interpolate
 
-    Returns:
+    >>> # Create a DataFrame with missing values and timezone-aware index
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temperature__°C": [20.0, np.nan, np.nan, 22.0, 23.0],
+    ...         "pressure__Pa": [1013.0, np.nan, 1015.0, np.nan, 1014.0],
+    ...     },
+    ...     index=dates,
+    ... )
+
+    >>> # Linear interpolation of all missing values
+    >>> interpolator = Interpolate(method="linear")
+    >>> df_interpolated = interpolator.fit_transform(df)
+    >>> print(df_interpolated)
+                             temperature__°C  pressure__Pa
+    2024-01-01 00:00:00+00:00        20.0       1013.0
+    2024-01-01 01:00:00+00:00        20.7       1014.0
+    2024-01-01 02:00:00+00:00        21.3       1015.0
+    2024-01-01 03:00:00+00:00        22.0       1014.5
+    2024-01-01 04:00:00+00:00        23.0       1014.0
+
+    Notes
+    -----
+    - When using gap duration parameters (gaps_lte or gaps_gte), only gaps within
+      the specified time ranges will be interpolated
+    - Different interpolation methods may produce different results:
+        - Linear interpolation is simple but may not capture complex patterns
+        - Cubic interpolation provides smoother curves but may overshoot
+
+    Returns
     -------
-    A transformed Pandas DataFrame with interpolated missing values.
+    pd.DataFrame
+        A DataFrame with missing values interpolated according to the specified parameters.
+        The output maintains the same structure and index as the input DataFrame.
     """
 
     def __init__(
@@ -713,29 +1167,88 @@ class Interpolate(BaseFiller, BaseProcessing):
 
 
 class Resample(BaseProcessing):
-    """
-    Resample time series data in a pandas DataFrame according to rule.
-    Allow column wise resampling methods.
+    """A transformer that resamples time series data to a different frequency.
+
+    This transformer allows you to resample time series data to a different frequency
+    while applying specified aggregation methods. It supports both simple resampling
+    with a single method for all columns and custom methods for specific columns
+    using Tide's naming convention.
 
     Parameters
     ----------
-    rule : str
-        The pandas timedelta or object representing the target resampling
-        frequency.
-    method : str | Callable
-        The default method for resampling.
-        It Will be overridden if a specific method
-        is specified in columns_method
-    tide_format_methods:
-        Allow the use of tide column format name__unit__bloc to specify
-        column aggregation method.
-        Warning using this argument will override columns_methods argument.
-        Requires fitting operation before transformation
-    columns_methods : list of Tuples Optional
-        List of tuples containing a list of column names and associated
-        resampling method.
-        The method should be a string or callable that can be passed
-        to the `agg()` method of a pandas DataFrame.
+    rule : str | pd.Timedelta | dt.timedelta
+        The frequency to resample to. Can be specified as:
+            - String: '1min', '5min', '1h', '1D', etc.
+            - Timedelta object: pd.Timedelta('1 hour')
+            - datetime.timedelta object: dt.timedelta(hours=1)
+
+    method : str | Callable, default='mean'
+        The default aggregation method to use for resampling.
+        Can be:
+            - String: 'mean', 'sum', 'min', 'max', 'std', etc.
+            - Callable: Any function that can be used with pandas' resample
+
+    tide_format_methods : dict[str, str | Callable], optional (default=None)
+        A dictionary mapping Tide tag components to specific aggregation methods.
+        Keys are the components to match (name, unit, block, sub_block).
+        Values are the aggregation methods to use for matching columns.
+        Example: {'name': 'power', 'method': 'sum'} will use sum aggregation
+        for all columns with 'power' in their name.
+
+    columns_methods : list[tuple[list[str], str | Callable]], optional (default=None)
+        A list of tuples specifying custom methods for specific columns.
+        Each tuple contains:
+            - list[str]: List of column names to apply the method to
+            - str | Callable: The aggregation method to use
+        Example: [(['power__W__building'], 'sum')]
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [1000, 1200, 1100, 1300, 1400],
+    ...         "temp__°C__room": [20, 21, 22, 23, 24],
+    ...         "humid__%__room": [45, 46, 47, 48, 49],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Resample to 5-minute intervals using mean
+    >>> resampler = Resample(rule="5min")
+    >>> result = resampler.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room  humid__%__room
+    2024-01-01 00:00:00+00:00           1100.0           21.0           46.0
+    2024-01-01 00:05:00+00:00           1350.0           23.5           48.5
+    >>> # Resample with custom methods
+    >>> resampler_custom = Resample(
+    ...     rule="5min",
+    ...     tide_format_methods={"name": "power", "method": "min"},
+    ...     columns_methods=[(["temp__°C__room"], "max")],
+    ... )
+
+
+    Notes
+    -----
+    - When using tide_format_methods, the matching is done on the Tide tag components
+      (name__unit__block__sub_block)
+    - If tide_format_methods is provided, it takes precedence over columns_methods
+      and completely replaces it during fitting
+    - If no custom method is specified for a column, the default method is used
+    - The output frequency is determined by the rule parameter
+    - Missing values in the input are handled according to the specified methods
+
+    Returns
+    -------
+    pd.DataFrame
+        The resampled DataFrame with the specified frequency and aggregation methods.
+        The output maintains the same column structure as the input, with values
+        aggregated according to the specified methods.
     """
 
     def __init__(
@@ -775,33 +1288,94 @@ class Resample(BaseProcessing):
 
 
 class AddTimeLag(BaseProcessing):
-    """
-     PdAddTimeLag - A transformer that adds lagged features to a pandas
-     DataFrame.
+    """A transformer that adds time-lagged features to a pandas DataFrame.
 
-    This transformer creates new features based on the provided features
-    lagged by the given time lag.
+    This transformer creates new features by shifting existing features in time,
+    allowing the creation of past or future values as new features. This is
+    particularly useful for time series analysis where historical or future
+    values might be relevant predictors.
 
-    Parameters:
-    -----------
-    time_lag : datetime.timedelta
-        The time lag used to shift the provided features. A positive time lag
-        indicates that the new features will contain information from the past,
-         while a negative time lag indicates that the new features will
-        contain information from the future.
+    Parameters
+    ----------
+    time_lag : str | pd.Timedelta | dt.timedelta, default="1h"
+        The time lag to apply when creating new features. Can be specified as:
+            - A string (e.g., "1h", "30min", "1d")
+            - A pandas Timedelta object
+            - A datetime timedelta object
+        A positive time lag creates features with past values, while a negative
+        time lag creates features with future values.
 
-    features_to_lag : list of str or str or None, optional (default=None)
-        The list of feature names to lag. If None, all features in the input
-         DataFrame will be lagged.
+    features_to_lag : str | list[str] | None, default=None
+        The features to create lagged versions of. If None, all features in the
+        input DataFrame will be lagged. Can be specified as:
+            - A single feature name (string)
+            - A list of feature names
+            - None (to lag all features)
 
-    feature_marker : str or None, optional (default=None)
-        The string used to prefix the names of the new lagged features.
-        If None, the feature names will be prefixed with the string
-        representation of the `time_lag` parameter followed by an underscore.
+    feature_marker : str | None, default=None
+        The prefix to use for the new lagged feature names. If None, the
+        string representation of time_lag followed by an underscore is used.
+        For example, with time_lag="1h", features will be prefixed with "1h_".
 
-    drop_resulting_nan : bool, optional (default=False)
-        Whether to drop rows with NaN values resulting from the lag operation.
+    drop_resulting_nan : bool, default=False
+        Whether to drop rows containing NaN values that result from the lag
+        operation. This is useful when you want to ensure complete data for
+        the lagged features.
 
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import AddTimeLag
+    >>> # Create sample data
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [100, 200, 300, 400, 500],
+    ...         "temp__°C__room": [20, 21, 22, 23, 24],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Add 1-hour lagged features
+    >>> lagger = AddTimeLag(time_lag="1h")
+    >>> result = lagger.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room  1h_power__W__building  1h_temp__°C__room
+    2024-01-01 00:00:00               100.0           20.0                   NaN               NaN
+    2024-01-01 01:00:00               200.0           21.0                 100.0              20.0
+    2024-01-01 02:00:00               300.0           22.0                 200.0              21.0
+    2024-01-01 03:00:00               400.0           23.0                 300.0              22.0
+    2024-01-01 04:00:00               500.0           24.0                 400.0              23.0
+    >>> # Add custom lagged features with specific marker
+    >>> lagger_custom = AddTimeLag(
+    ...     time_lag="1h",
+    ...     features_to_lag=["power__W__building"],
+    ...     feature_marker="prev_",
+    ...     drop_resulting_nan=True,
+    ... )
+    >>> result_custom = lagger_custom.fit_transform(df)
+    >>> print(result_custom)
+                           power__W__building  temp__°C__room  prev_power__W__building
+    2024-01-01 00:00:00               200.0           21.0                    100.0
+    2024-01-01 01:00:00               300.0           22.0                    200.0
+    2024-01-01 02:00:00               400.0           23.0                    300.0
+    2024-01-01 03:00:00               500.0           24.0                    400.0
+
+    Notes
+    -----
+    - The transformer preserves the original features and adds new lagged versions
+    - Lagged features are created by shifting the index and concatenating with
+      the original data
+    - When drop_resulting_nan=True, rows with NaN values in lagged features
+      are removed from the output
+    - The feature_marker parameter allows for custom naming of lagged features
+    - The transformer supports both positive (past) and negative (future) lags
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with additional lagged features. The original
+        features are preserved, and new lagged features are added with the
+        specified prefix.
     """
 
     def __init__(
@@ -849,53 +1423,72 @@ class AddTimeLag(BaseProcessing):
 
 
 class GaussianFilter1D(BaseProcessing):
-    """
-    A transformer that applies a 1D Gaussian filter to a Pandas DataFrame.
-    The Gaussian filter is a widely used smoothing filter that effectively
-    reduces the high-frequency noise in an input signal.
+    """A transformer that applies a 1D Gaussian filter to smooth time series data.
+
+    This transformer applies a one-dimensional Gaussian filter to each column of
+    the input DataFrame, effectively reducing high-frequency noise while preserving
+    the overall trend and important features of the time series.
 
     Parameters
     ----------
     sigma : float, default=5
-        Standard deviation of the Gaussian kernel.
-        In practice, the value of sigma determines the level of smoothing
-        applied to the input signal. A larger value of sigma results in a
-         smoother output signal, while a smaller value results in less
-          smoothing. However, too large of a sigma value can result in the
-           loss of important features or details in the input signal.
+        Standard deviation of the Gaussian kernel. Controls the level of smoothing:
+            - Larger values result in smoother output but may lose fine details
+            - Smaller values preserve more details but may not reduce noise effectively
+            - Must be positive
 
     mode : str, default='nearest'
-        Points outside the boundaries of the input are filled according to
-        the given mode. The default, 'nearest' mode is used to set the values
-        beyond the edge of the array equal to the nearest edge value.
-        This avoids introducing new values into the smoothed signal that
-        could bias the result. Using 'nearest' mode can be particularly useful
-        when smoothing a signal with a known range or limits, such as a time
-        series with a fixed start and end time.
+        How to handle values outside the input boundaries. Options are:
+            - 'nearest': Use the nearest edge value (default)
+            - 'reflect': Reflect values around the edge
+            - 'mirror': Mirror values around the edge
+            - 'constant': Use a constant value (0)
+            - 'wrap': Wrap values around the edge
 
-    truncate : float, default=4.
-        The filter will ignore values outside the range
-        (mean - truncate * sigma) to (mean + truncate * sigma).
-        The truncate parameter is used to define the length of the filter
-        kernel, which determines the degree of smoothing applied to the input
-        signal.
+    truncate : float, default=4.0
+        The filter window size in terms of standard deviations. Values outside
+        the range (mean ± truncate * sigma) are ignored. This parameter:
+            - Controls the effective size of the filter window
+            - Affects the computational efficiency
+            - Must be positive
 
-    Attributes
-    ----------
-    columns : list
-        The column names of the input DataFrame.
-    index : pandas.Index
-        The index of the input DataFrame.
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import GaussianFilter1D
+    >>> # Create sample data with timezone-aware index
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [100, 150, 200, 180, 220],
+    ...         "temp__°C__room": [20, 21, 22, 21, 23],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Apply Gaussian filter with default settings
+    >>> smoother = GaussianFilter1D(sigma=2)
+    >>> result = smoother.fit_transform(df)
+    >>> print(result)
+                           power__W__building  temp__°C__room
+    2024-01-01 00:00:00+00:00           130.0           20.0
+    2024-01-01 01:00:00+00:00           149.0           20.0
+    2024-01-01 02:00:00+00:00           169.0           21.0
+    2024-01-01 03:00:00+00:00           187.0           21.0
+    2024-01-01 04:00:00+00:00           201.0           22.0
 
-    Methods
+    Notes
+    -----
+    - The input DataFrame must have a timezone-aware DatetimeIndex
+    - The filter is applied independently to each column
+    - The output maintains the same index and column structure as the input
+    - The smoothing effect is more pronounced at the edges of the time series
+
+
+    Returns
     -------
-    get_feature_names_out(input_features=None)
-        Get output feature names for the transformed data.
-    fit(X, y=None)
-        Fit the transformer to the input data.
-    transform(X, y=None)
-        Transform the input data by applying the 1D Gaussian filter.
-
+    pd.DataFrame
+        The smoothed DataFrame with the same structure as the input. Each column
+        has been smoothed using the 1D Gaussian filter with the specified parameters.
     """
 
     def __init__(self, sigma=5, mode="nearest", truncate=4.0):
@@ -917,20 +1510,83 @@ class GaussianFilter1D(BaseProcessing):
 
 
 class CombineColumns(BaseProcessing):
-    """
-    A class that combines multiple columns in a pandas DataFrame using mean, sum,
-    average, or dot. Original columns can be dropped.
+    """A transformer that combines multiple columns in a DataFrame using various aggregation methods.
+
+    This transformer creates a new column by combining values from multiple input columns
+    using specified aggregation methods. It supports weighted and unweighted combinations,
+    and can optionally drop the original columns.
 
     Parameters
     ----------
-        function (str): The name of the function to apply for combining columns.
-            Valide names are "mean", "sum", "average", "dot".
-        weights (list[float | int] or np.ndarray, optional): Weights to apply when
-            using 'average' or 'dot'. Ignored for functions like 'mean' or 'sum'.
-        drop_columns (bool): If True, the original columns used for combining will
-            be dropped from the DataFrame. If False, they will be retained.
-        result_column_name (str): The name of the new column that will store the
-            combined values.
+    function : str
+        The aggregation function to use for combining columns. Valid options are:
+            - "mean": Arithmetic mean of the columns
+            - "sum": Sum of the columns
+            - "average": Weighted average of the columns (requires weights)
+            - "dot": Dot product of the columns with weights (weighted sum)
+
+    weights : list[float | int] | np.ndarray, default=None
+        Weights to apply when using 'average' or 'dot' functions. Must be provided
+        for these functions and must match the number of columns. Ignored for
+        'mean' and 'sum' functions.
+
+    drop_columns : bool, default=False
+        Whether to drop the original columns after combining them. If True, only
+        the combined result column is returned.
+
+    result_column_name : str, default="combined"
+        The name for the new column containing the combined values.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import CombineColumns
+    >>> # Create sample data with timezone-aware index
+    >>> dates = pd.date_range(start="2024-01-01", periods=3, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building1": [100, 200, 300],
+    ...         "power__W__building2": [150, 250, 350],
+    ...         "power__W__building3": [200, 300, 400],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Combine columns using mean
+    >>> combiner = CombineColumns(function="mean", result_column_name="power__W__avg")
+    >>> result = combiner.fit_transform(df)
+    >>> print(result)
+                           power__W__building1  power__W__building2  power__W__building3  power__W__avg
+    2024-01-01 00:00:00+00:00           100.0              150.0              200.0         150.0
+    2024-01-01 01:00:00+00:00           200.0              250.0              300.0         250.0
+    2024-01-01 02:00:00+00:00           300.0              350.0              400.0         350.0
+    >>> # Combine columns using weighted average
+    >>> combiner_weighted = CombineColumns(
+    ...     function="average",
+    ...     weights=[0.5, 0.3, 0.2],
+    ...     result_column_name="power__W__weighted",
+    ...     drop_columns=True,
+    ... )
+    >>> result_weighted = combiner_weighted.fit_transform(df)
+    >>> print(result_weighted)
+                           power__W__weighted
+    2024-01-01 00:00:00+00:00          135.0
+    2024-01-01 01:00:00+00:00          235.0
+    2024-01-01 02:00:00+00:00          335.0
+
+    Notes
+    -----
+    - The input DataFrame must have a timezone-aware DatetimeIndex
+    - Weights must be provided when using 'average' or 'dot' functions
+    - Weights are ignored for 'mean' and 'sum' functions
+    - The number of weights must match the number of columns being combined
+    - When drop_columns=True, only the combined result column is returned
+    - The transformer preserves the index of the input DataFrame
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with the combined column added. If drop_columns=True,
+        only the combined column is returned. The output maintains the same
+        index as the input.
     """
 
     def __init__(
@@ -977,56 +1633,57 @@ class CombineColumns(BaseProcessing):
 
 
 class STLFilter(BaseProcessing):
-    """
-    A transformer that applies Seasonal-Trend decomposition using LOESS (STL)
-    to a pandas DataFrame, and filters outliers based on an absolute threshold
-    from the residual (error) component of the decomposition.
-    Detected outliers are replaced with NaN values.
+    """A transformer that applies Seasonal-Trend decomposition using LOESS (STL)
+    to detect and filter outliers in time series data.
+
+    This transformer decomposes each column of the input DataFrame into seasonal,
+    trend, and residual components using STL decomposition. It then identifies
+    outliers in the residual component based on an absolute threshold and replaces
+    them with NaN values.
 
     Parameters
     ----------
-    period : int | str | timedelta
+    period : int | str | dt.timedelta
         The periodicity of the seasonal component. Can be specified as:
-        - an integer for the number of observations in one seasonal cycle,
-        - a string representing the time frequency (e.g., '15T' for 15 minutes),
-        - a timedelta object representing the duration of the seasonal cycle.
+            - An integer for the number of observations in one seasonal cycle
+            - A string representing the time frequency (e.g., '15T' for 15 minutes)
+            - A timedelta object representing the duration of the seasonal cycle
 
-    trend : int | str | dt.timedelta, optional
-        The length of the trend smoother. Must be odd and larger than season
-        Statsplot indicate it is usually around 150% of season.
-        Strongly depends on your time series.
+    trend : int | str | dt.timedelta
+        The length of the trend smoother. Must be odd and larger than season.
+        Typically set to around 150% of the seasonal period. The choice depends
+        on the characteristics of your time series.
 
     absolute_threshold : int | float
         The threshold for detecting anomalies in the residual component.
-        Any value in the residual that exceeds this threshold (absolute value)
-         is considered an anomaly and replaced by NaN.
+        Any value in the residual that exceeds this threshold (in absolute value)
+        is considered an anomaly and replaced by NaN.
 
-    seasonal : int | str | timedelta, optional
+    seasonal : int | str | dt.timedelta, default=None
         The length of the smoothing window for the seasonal component.
         If not provided, it is inferred based on the period.
         Must be an odd integer if specified as an int.
         Can also be specified as a string representing a time frequency or a
         timedelta object.
 
-    stl_additional_kwargs : dict[str, float], optional
+    stl_additional_kwargs : dict[str, float], default=None
         Additional keyword arguments to pass to the STL decomposition.
 
-    Methods
-    -------
-    fit(X, y=None)
-        Stores the columns and index of the input DataFrame but does not change
-        the data. The method is provided for compatibility with the
-        scikit-learn pipeline.
 
-    transform(X)
-        Applies the STL decomposition to each column of the input DataFrame `X`
-        and replaces outliers detected in the residual component with NaN values.
-        The outliers are determined based on the provided `absolute_threshold`.
+    Notes
+    -----
+    - The STL decomposition is applied independently to each column
+    - Outliers are detected based on the residual component of the decomposition
+    - Detected outliers are replaced with NaN values
+    - The trend parameter should be larger than the period parameter
+    - The seasonal parameter is optional and defaults to an inferred value
+    - The transformer preserves the index and column structure of the input
 
     Returns
     -------
     pd.DataFrame
-        The transformed DataFrame with outliers replaced by NaN.
+        The input DataFrame with outliers replaced by NaN values. The output
+        maintains the same index and column structure as the input.
     """
 
     def __init__(
@@ -1067,44 +1724,118 @@ class STLFilter(BaseProcessing):
 
 class FillGapsAR(BaseFiller, BaseProcessing):
     """
-    A class designed to identify gaps in time series data and fill them using
-    a specified model.
+    A transformer that fills gaps in time series data using autoregressive models.
 
-    1- The class identified the gaps to fill and filter them using upper and lower gap
-    thresholds.
-    2- The biggest group of valid data is identified and is used to fit the model.
-    3- The neighboring gaps are filled using backcasting or forecasting.
-    4- OPTIONAL When the data's timestep is too short compared to the periodic behavior
-    (e.g., 5-min data for a 24h pattern):
-        - Resample data to a larger timestep
-        - Perform predictions at the resampled timestep
-        - Use linear interpolation to restore original data resolution
+    This transformer identifies and fills gaps in time series data using a specified
+    model (e.g., Prophet). The filling process depends on the `recursive_fill` parameter:
 
+    When recursive_fill=True:
+        1. Identifies gaps in the data and filters them based on size thresholds
+        2. Uses the largest continuous block of valid data to fit the model
+        3. Fills neighboring gaps using backcasting or forecasting
+        4. Optionally handles high-frequency data by:
+            - Resampling to a larger timestep for better pattern recognition
+            - Performing predictions at the resampled timestep
+            - Using linear interpolation to restore original resolution
+        5. Repeats steps 2-4 until no more gaps remain
 
-    The process is repeated at step 2 until there are no more gaps to fill
+    When recursive_fill=False:
+        1. Identifies gaps in the data and filters them based on size thresholds
+        2. Uses the entire dataset to fit the model
+        3. Fills all gaps in a single pass using the fitted model
+        4. Optionally handles high-frequency data as described above
 
     Parameters
     ----------
-    model_name : str, optional
-        The name of the model to be used for filling gaps, by default "STL".
-        It must be a key of MODEL_MAP
-    model_kwargs : dict, optional
-        A dictionary containing the arguments of the model.
-    lower_gap_threshold : str or datetime.datetime, optional
-        The lower threshold for the size of gaps to be considered, by default None.
-    upper_gap_threshold : str or datetime.datetime, optional
-        The upper threshold for the size of gaps to be considered, by default None.
-    resample_at_td: str or time delta, optinal
-        The time delta to resample fitting data before prediction
+    model_name : str, default="Prophet"
+        The name of the model to use for gap filling. Currently supports "Prophet" and "STL".
+        Note: STL model requires recursive_fill=True as it cannot handle NaN values.
 
-    Attributes
-    ----------
-    model_ : callable
-        The predictive model class used to fill gaps, determined by `model_name`.
-    features_ : list
-        The list of feature columns present in the data.
-    index_ : pd.Index
-        The index of the data passed during the `fit` method.
+    model_kwargs : dict, default={}
+        Additional keyword arguments to pass to the model during initialization.
+
+    gaps_lte : str | datetime | pd.Timestamp, default=None
+        Upper threshold for gap size. Gaps larger than this will not be filled.
+        Can be a string (e.g., "1D"), datetime object, or pd.Timestamp.
+
+    gaps_gte : str | datetime | pd.Timestamp, default=None
+        Lower threshold for gap size. Gaps smaller than this will not be filled.
+        Can be a string (e.g., "1h"), datetime object, or pd.Timestamp.
+
+    resample_at_td : str | timedelta | pd.Timedelta, default=None
+        Optional resampling period for high-frequency data. If provided, data will be
+        resampled to this frequency before model fitting and prediction.
+
+    recursive_fill : bool, default=False
+        Whether to recursively fill gaps until no more gaps remain. If False, only
+        performs one pass of gap filling. Must be True when using STL model.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> from tide.processing import FillGapsAR
+    >>> # Create sample data with gaps
+    >>> dates = pd.date_range(start="2024-01-01", periods=24, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [
+    ...             100,
+    ...             np.nan,
+    ...             np.nan,
+    ...             180,
+    ...             220,
+    ...             190,
+    ...             np.nan,
+    ...             230,
+    ...             180,
+    ...             160,
+    ...             140,
+    ...             120,
+    ...             110,
+    ...             130,
+    ...             150,
+    ...             170,
+    ...             190,
+    ...             210,
+    ...             230,
+    ...             220,
+    ...             200,
+    ...             180,
+    ...             160,
+    ...             140,
+    ...         ]
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Fill gaps using Prophet model (non-recursive)
+    >>> filler = FillGapsAR(
+    ...     model_name="Prophet", gaps_lte="1D", gaps_gte="1h", resample_at_td="1h"
+    ... )
+    >>> result = filler.fit_transform(df)
+    >>> # Fill gaps using STL model (recursive required)
+    >>> filler = FillGapsAR(
+    ...     model_name="STL",
+    ...     gaps_lte="1D",
+    ...     gaps_gte="1h",
+    ...     recursive_fill=True,  # Required for STL
+    ... )
+    >>> result = filler.fit_transform(df)
+
+    Notes
+    -----
+    - Gaps are filled independently for each column
+    - For high-frequency data, resampling can improve pattern recognition
+    - When recursive_fill=True, the model is fitted on the largest continuous block
+      of valid data for each gap
+    - When recursive_fill=False, the model is fitted on the entire dataset
+    - STL model requires recursive_fill=True as it cannot handle NaN values
+    - Prophet model requires additional dependencies (prophet package)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with gaps filled using the specified model. The output maintains
+        the same structure and timezone information as the input.
     """
 
     def __init__(
@@ -1226,45 +1957,68 @@ class FillGapsAR(BaseFiller, BaseProcessing):
 
 
 class ExpressionCombine(BaseProcessing):
-    """
-    Performs specified operations on selected columns, creating a new column
-    based on the provided expression.
-    Useful for aggregation in a single column, or physical expression.
-    The transformer can also optionally drop the columns used in the expression
-    after computation.
+    """A transformer that combines DataFrame columns using a mathematical expression.
+
+    This transformer evaluates a mathematical expression using specified columns from a DataFrame,
+    creating a new column with the result. It supports both simple aggregations and complex
+    physical expressions, with the option to drop the source columns after computation.
 
     Parameters
     ----------
     columns_dict : dict[str, str]
-        A dictionary mapping variable names (as used in the expression) to the
-        column names in the X DataFrame. Keys are variable names in the expression,
-        and values are the corresponding column names in the DataFrame.
+        Dictionary mapping expression variables to DataFrame column names.
+        Keys are the variable names used in the expression, and values are the
+        corresponding column names in the DataFrame.
 
     expression : str
-        A mathematical expression in string format, which will be evaluated using the
-        specified columns from the DataFrame. Variables in the expression should
-        match the keys in `variables_dict`.
+        Mathematical expression to evaluate, using variables defined in columns_dict.
+        The expression should be a valid Python mathematical expression that can be
+        evaluated using pandas.eval().
 
     result_column_name : str
-        Name of the new column in which the result of the evaluated expression
-        will be stored.
+        Name of the new column that will contain the evaluated expression result.
+        Must not already exist in the DataFrame.
 
     drop_columns : bool, default=False
-        If True, the columns used in the calculation will be dropped
-        from the resulting DataFrame after the transformation.
+        Whether to drop the source columns used in the expression after computation.
+        If True, only the result column and other non-source columns are kept.
+
+    Attributes
+    ----------
+    feature_names_out_ : list[str]
+        List of column names in the transformed DataFrame. If drop_columns is True,
+        excludes the source columns used in the expression.
+
+    Raises
+    ------
+    ValueError
+        If result_column_name already exists in the DataFrame.
 
     Examples
     --------
-    combiner = Combiner(
-        columns_dict={
-            "T1": "Tin__°C__building",
-            "T2": "Text__°C__outdoor",
-            "m": "mass_flwr__m3/h__hvac",
-        },
-        expression="(T1 - T2) * m * 1004 * 1.204",
-        result_column_name="loss_ventilation__J__hvac",
-        drop_columns = True
-    )
+    >>> from tide import ExpressionCombine
+    >>> import pandas as pd
+    >>> # Create sample data
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "Tin__°C__building": [20, 21, 22],
+    ...         "Text__°C__outdoor": [10, 11, 12],
+    ...         "mass_flwr__m3/h__hvac": [1, 2, 3],
+    ...     }
+    ... )
+    >>> # Calculate ventilation losses
+    >>> combiner = ExpressionCombine(
+    ...     columns_dict={
+    ...         "T1": "Tin__°C__building",
+    ...         "T2": "Text__°C__outdoor",
+    ...         "m": "mass_flwr__m3/h__hvac",
+    ...     },
+    ...     expression="(T1 - T2) * m * 1004 * 1.204",
+    ...     result_column_name="loss_ventilation__J__hvac",
+    ...     drop_columns=True,
+    ... )
+    >>> # Transform the data
+    >>> result = combiner.fit_transform(df)
     """
 
     def __init__(
@@ -1301,47 +2055,83 @@ class ExpressionCombine(BaseProcessing):
 
 
 class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
-    """
-    A processor that fills gaps using meteorological data from the Oikolab API.
+    """A transformer that fills data gaps using meteorological data from the Oikolab API.
 
-    This class extends BaseFiller to provide functionality for
-    filtering gaps based onthere size. It fills them with corresponding
-    meteorological data retrieved from the Oikolab API.
+    This transformer identifies gaps in time series data and fills them with corresponding
+    meteorological data retrieved from the Oikolab API. It supports filtering gaps based on
+    their size and can handle different data frequencies through automatic interpolation
+    or resampling.
 
-    Attributes:
-    -----------
-    lat : float
+    Parameters
+    ----------
+    gaps_lte : str | pd.Timedelta | dt.timedelta, default=None
+        Maximum gap size to fill. Gaps larger than this will be ignored.
+        Can be specified as a string (e.g., "24h") or timedelta object.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, default=None
+        Minimum gap size to fill. Gaps smaller than this will be ignored.
+        Can be specified as a string (e.g., "1h") or timedelta object.
+
+    lat : float, default=43.47
         Latitude of the location for which to retrieve meteorological data.
-    lon : float
+
+    lon : float, default=-1.51
         Longitude of the location for which to retrieve meteorological data.
-    param_map : dict[str, str]
-        Mapping of input columns to Oikolab API parameters. Oikolab parameters are :
-        'temperature', 'dewpoint_temperature', 'mean_sea_level_pressure',
-        'wind_speed', '100m_wind_speed', 'relative_humidity',
-        'surface_solar_radiation', 'direct_normal_solar_radiation',
-        'surface_diffuse_solar_radiation', 'surface_thermal_radiation',
-        'total_cloud_cover', 'total_precipitation'
-    model : str
-        The meteorological model to use for data retrieval (default is "era5").
-    env_oiko_api_key : str
-        The name of the environement variable that holds the Oikolab API key
-        (set during fitting).
 
-    Example:
+    columns_param_map : dict[str, str], default=None
+        Mapping of input columns to Oikolab API parameters. If None, all columns
+        will be filled with temperature data. Available Oikolab parameters are:
+            - temperature
+            - dewpoint_temperature
+            - mean_sea_level_pressure
+            - wind_speed
+            - 100m_wind_speed
+            - relative_humidity
+            - surface_solar_radiation
+            - direct_normal_solar_radiation
+            - surface_diffuse_solar_radiation
+            - surface_thermal_radiation
+            - total_cloud_cover
+            - total_precipitation
+
+    model : str, default="era5"
+        The meteorological model to use for data retrieval.
+
+    env_oiko_api_key : str, default="OIKO_API_KEY"
+        Name of the environment variable containing the Oikolab API key.
+
+    Examples
     --------
-    >>> filler = FillOikoMeteo(gaps_gte="1h", gaps_lte="24h", lat=43.47, lon=-1.51)
-    >>> filler.fit(X)
-    >>> X_filled = filler.transform(X)
+    >>> from tide import FillOikoMeteo
+    >>> import pandas as pd
+    >>> # Create sample data with gaps
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temperature": [20, None, 22, None, 24],
+    ...         "humidity": [50, None, 55, None, 60],
+    ...     },
+    ...     index=pd.date_range("2024-01-01", periods=5, freq="H"),
+    ... )
+    >>> # Initialize and fit the transformer
+    >>> filler = FillOikoMeteo(
+    ...     gaps_gte="1h",
+    ...     gaps_lte="24h",
+    ...     lat=43.47,
+    ...     lon=-1.51,
+    ...     columns_param_map={
+    ...         "temperature": "temperature",
+    ...         "humidity": "relative_humidity",
+    ...     },
+    ... )
+    >>> # Transform the data
+    >>> result = filler.fit_transform(df)
 
-    Notes:
-    ------
-    - The class requires an Oikolab API key to be set as an environment
-    variable env_oiko_api_key.
-    - If param_map is not provided, all columns will be filled with temperature data.
-    This dumb behavior ensures the processing object is working with default values
-    to comply with scikit learn API recomandation.
-    - The class handles different frequencies of input data, interpolating or
-    resampling as needed.
+    Notes
+    -----
+    - Requires an Oikolab API key to be set as an environment variable.
+    - If columns_param_map is not provided, all columns will be filled with temperature data
+      to comply with scikit-learn API recommendations.
+    - Automatically handles different data frequencies through interpolation or resampling.
     """
 
     def __init__(
@@ -1453,16 +2243,49 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
 
 
 class AddSolarAngles(BaseProcessing):
-    """
-    Transformer that adds solar elevation and azimuth angle to passed DataFrame.
+    """A transformer that adds solar angles (azimuth and elevation) to a DataFrame.
 
-    Attributes:
-        lat (float): The latitude of the location in degrees.
-        lon (float): The longitude of the location in degrees.
-        data_bloc (str): Identifier for the tide data block.
-        Default to "OTHER".
-        data_sub_bloc (str): Identifier for the data sub-block;
-        Default to "OTHER_SUB_BLOC".
+    This transformer calculates and adds solar azimuth and elevation angles for a given
+    location and time series. The angles are calculated using the Astronomical Almanac's
+    algorithm (1950-2050) as described in Michalsky (1988) and subsequent papers.
+
+    Parameters
+    ----------
+    lat : float, default=43.47
+        Latitude of the location in decimal degrees.
+
+    lon : float, default=-1.51
+        Longitude of the location in decimal degrees.
+
+    data_bloc : str, default="OTHER"
+        Name of the data block to store the solar angles.
+
+    data_sub_bloc : str, default="OTHER_SUB_BLOC"
+        Name of the sub-block to store the solar angles.
+
+    Examples
+    --------
+    >>> from tide import AddSolarAngles
+    >>> import pandas as pd
+    >>> # Create sample data with datetime index
+    >>> df = pd.DataFrame(
+    ...     {"temperature": [20, 21, 22]},
+    ...     index=pd.date_range("2024-01-01", periods=3, freq="H"),
+    ... )
+    >>> # Add solar angles
+    >>> transformer = AddSolarAngles(
+    ...     lat=43.47, lon=-1.51, data_bloc="SOLAR", data_sub_bloc="ANGLES"
+    ... )
+    >>> # Transform the data
+    >>> result = transformer.fit_transform(df)
+
+    Notes
+    -----
+    - Requires a DataFrame with a DateTimeIndex.
+    - Adds two new columns: solar_azimuth and solar_elevation.
+    - Uses the Astronomical Almanac's algorithm for solar position calculations.
+    - Valid for years 1950-2050. Given the course of the world right now, I don't think
+      anyone will need to use this transformer for dates after 2050.
     """
 
     def __init__(
@@ -1498,31 +2321,125 @@ class AddSolarAngles(BaseProcessing):
 
 class ProjectSolarRadOnSurfaces(BaseProcessing):
     """
-    Project solar radiation on various surfaces with specific orientations and tilts.
+    A transformer that projects solar radiation onto surfaces with specific orientations and tilts.
 
-    Attributes:
-        bni_column_name (str): Name of the column containing beam normal irradiance
-            (BNI) data.
-        dhi_column_name (str): Name of the column containing diffuse horizontal
-            irradiance (DHI) data.
-        ghi_column_name (str): Name of the column containing global horizontal
-            irradiance (GHI) data.
-        lat (float): Latitude of the location (default is 43.47).
-        lon (float): Longitude of the location (default is -1.51).
-        surface_azimuth_angles (int | float | list[int | float]): Azimuth angles of
-            the surfaces in degrees east of north (default is 180.0,
-            which corresponds to a south-facing surface in the northern hemisphere).
-        surface_tilt_angle (float | list[float]): Tilt angles of the surfaces in
-            degrees (default is 35.0). 0 is façing ground.
-        albedo (float): Ground reflectivity or albedo (default is 0.25).
-        surface_name (str | list[str]): Names for the surfaces
-            (default is "az_180_tilt_35").
-        data_bloc (str): Tide bloc name Default is "OTHER".
-        data_sub_bloc (str): Tide sub_bloc_name default is "OTHER_SUB_BLOC".
+    This transformer calculates the total solar radiation incident on surfaces by combining:
+        - Direct beam radiation (projected onto the tilted surface)
+        - Diffuse sky radiation (from the sky dome)
+        - Ground-reflected radiation (albedo effect)
 
-    Raises:
-        ValueError: If the number of azimuth angles, tilt angles, and surface names
-        do not match.
+    Parameters
+    ----------
+    bni_column_name : str
+        Name of the column containing beam normal irradiance (BNI) data in W/m².
+        This is the direct solar radiation perpendicular to the sun's rays.
+
+    dhi_column_name : str
+        Name of the column containing diffuse horizontal irradiance (DHI) data in W/m².
+        This is the scattered solar radiation from the sky dome.
+
+    ghi_column_name : str
+        Name of the column containing global horizontal irradiance (GHI) data in W/m².
+        This is the total solar radiation on a horizontal surface.
+
+    lat : float, default=43.47
+        Latitude of the location in degrees. Positive for northern hemisphere.
+
+    lon : float, default=-1.51
+        Longitude of the location in degrees. Positive for eastern hemisphere.
+
+    surface_azimuth_angles : int | float | list[int | float], default=180.0
+        Azimuth angles of the surfaces in degrees east of north.
+            - 0°: North-facing
+            - 90°: East-facing
+            - 180°: South-facing
+
+    surface_tilt_angle : float | list[float], default=35.0
+        Tilt angles of the surfaces in degrees from horizontal.
+            - 0°: Horizontal surface
+            - 90°: Vertical surface
+            - 180°: Horizontal surface facing down
+
+    albedo : float, default=0.25
+        Ground reflectivity or albedo coefficient.
+        Typical values:
+            - 0.1-0.2: Dark surfaces (asphalt, forest)
+            - 0.2-0.3: Grass, soil
+            - 0.3-0.4: Light surfaces (concrete, sand)
+            - 0.4-0.5: Snow
+            - 0.8-0.9: Fresh snow
+
+    surface_name : str | list[str], default="az_180_tilt_35"
+        Names for the output columns following Tide naming convention.
+        Example: "south_facing_35deg" will create
+        "south_facing_35deg__W/m²__OTHER__OTHER_SUB_BLOC"
+
+    data_bloc : str, default="OTHER"
+        Tide bloc name for the output columns.
+
+    data_sub_bloc : str, default="OTHER_SUB_BLOC"
+        Tide sub_bloc name for the output columns.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import datetime, timedelta
+    >>> from tide.processing import ProjectSolarRadOnSurfaces
+    >>> import pytz
+
+    >>> # Create a DataFrame with solar radiation data and timezone-aware index
+    >>> dates = pd.date_range(start="2024-01-01", periods=3, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "bni__W/m²__outdoor__meteo": [
+    ...             800,
+    ...             900,
+    ...             1000,
+    ...         ],  # Direct normal irradiance
+    ...         "dhi__W/m²__outdoor__meteo": [
+    ...             200,
+    ...             250,
+    ...             300,
+    ...         ],  # Diffuse horizontal irradiance
+    ...         "ghi__W/m²__outdoor__meteo": [
+    ...             600,
+    ...             700,
+    ...             800,
+    ...         ],  # Global horizontal irradiance
+    ...     },
+    ...     index=dates,
+    ... )
+
+    >>> # Project radiation on a south-facing surface tilted at 35 degrees
+    >>> projector = ProjectSolarRadOnSurfaces(
+    ...     bni_column_name="bni__W/m²__outdoor__meteo",
+    ...     dhi_column_name="dhi__W/m²__outdoor__meteo",
+    ...     ghi_column_name="ghi__W/m²__outdoor__meteo",
+    ...     surface_azimuth_angles=180.0,  # South-facing
+    ...     surface_tilt_angle=35.0,  # 35-degree tilt
+    ...     surface_name="south_facing_35deg",
+    ...     data_bloc="SOLAR",
+    ...     data_sub_bloc="ROOF",
+    ... )
+    >>> result = projector.fit_transform(df)
+    >>> print(result)
+                             bni__W/m²__outdoor__meteo  dhi__W/m²__outdoor__meteo  ghi__W/m²__outdoor__meteo  south_facing_35deg__W/m²__SOLAR__ROOF
+    2024-01-01 00:00:00+00:00                    800.0                     200.0                     600.0                                   850.5
+    2024-01-01 01:00:00+00:00                    900.0                     250.0                     700.0                                   950.2
+    2024-01-01 02:00:00+00:00                   1000.0                     300.0                     800.0                                  1050.8
+
+    Notes
+    -----
+    - All input radiation values must be in W/m²
+    - The output radiation values are also in W/m²
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with additional columns containing the total solar
+        radiation projected onto each specified surface. The output maintains
+        the same DateTimeIndex as the input.
     """
 
     def __init__(
@@ -1590,24 +2507,96 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
 
 
 class FillOtherColumns(BaseFiller, BaseProcessing):
-    """
-    Fill gaps in specified columns using corresponding values from
-    other columns
+    """A transformer that fills missing values in specified columns using values
+    from corresponding filler columns.
+
+    This transformer is useful when you have multiple columns measuring the
+    same quantity (e.g., temperature from different sensors) and want to use one
+    column to fill gaps in another. Or fill gaps with computed values, for example
+    solar radiations on a pyranometer from projected radiations based on
+    meteo services.
 
     Parameters
     ----------
-    gaps_lte : str | pd.Timedelta | dt.timedelta, optional
-        Fill gaps of duration less than or equal to gaps_lte.
-        If None, no upper limit is applied.
-    gaps_gte : str | pd.Timedelta | dt.timedelta, optional
-        Fill gaps of duration greater than or equal to gaps_gte.
-        If None, no lower limit is applied.
-    columns_map : dict[str, str], optional
-        A mapping of target columns to the columns that will be used for filling
-        their gaps. Keys represent the columns with gaps, and values represent the
-        corresponding filler columns.
+    gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration less than or equal to this value.
+
+    gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Only fill gaps with duration greater than or equal to this value.
+
+    columns_map : dict[str, str], optional (default={})
+        A mapping of target columns to their corresponding filler columns.
+        Keys are the columns with gaps to be filled.
+        Values are the columns to use for filling the gaps.
+        Example: {'temp__°C__room1': 'temp__°C__room2'}
+
     drop_filling_columns : bool, default=False
-        If True, removes the filler columns after filling the gaps.
+        Whether to remove the filler columns after filling the gaps.
+        If True, only the target columns remain in the output.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__room1": [20, np.nan, np.nan, 23, 24],
+    ...         "temp__°C__room2": [21, 22, 22, 22, 23],
+    ...         "humid__%__room1": [45, np.nan, 47, np.nan, 49],
+    ...         "humid__%__room2": [46, 46, 48, 48, 50],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Fill gaps in room1 using room2 data
+    >>> filler = FillOtherColumns(
+    ...     columns_map={
+    ...         "temp__°C__room1": "temp__°C__room2",
+    ...         "humid__%__room1": "humid__%__room2",
+    ...     }
+    ... )
+    >>> result = filler.fit_transform(df)
+    >>> print(result)
+                           temp__°C__room1  temp__°C__room2  humid__%__room1  humid__%__room2
+    2024-01-01 00:00:00+00:00          20.0           21.0            45.0           46.0
+    2024-01-01 00:01:00+00:00          22.0           22.0            46.0           46.0
+    2024-01-01 00:02:00+00:00          22.0           22.0            47.0           48.0
+    2024-01-01 00:03:00+00:00          23.0           22.0            48.0           48.0
+    2024-01-01 00:04:00+00:00          24.0           23.0            49.0           50.0
+    >>> # Fill gaps and drop filler columns
+    >>> filler_drop = FillOtherColumns(
+    ...     columns_map={
+    ...         "temp__°C__room1": "temp__°C__room2",
+    ...         "humid__%__room1": "humid__%__room2",
+    ...     },
+    ...     drop_filling_columns=True,
+    ... )
+    >>> result_drop = filler_drop.fit_transform(df)
+    >>> print(result_drop)
+                           temp__°C__room1  humid__%__room1
+    2024-01-01 00:00:00+00:00          20.0            45.0
+    2024-01-01 00:01:00+00:00          22.0            46.0
+    2024-01-01 00:02:00+00:00          22.0            47.0
+    2024-01-01 00:03:00+00:00          23.0            48.0
+    2024-01-01 00:04:00+00:00          24.0            49.0
+
+    Notes
+    -----
+    - When using gap duration parameters (gaps_lte or gaps_gte), only gaps within
+      the specified time ranges will be filled
+    - The filler columns must contain valid values at the timestamps where
+      the target columns have gaps
+    - If drop_filling_columns is True, the output DataFrame will only contain
+      the target columns with filled gaps
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with gaps filled using values from the specified filler columns.
+        If drop_filling_columns is True, the filler columns are removed from the output.
     """
 
     def __init__(
@@ -1643,15 +2632,71 @@ class FillOtherColumns(BaseFiller, BaseProcessing):
 
 
 class DropColumns(BaseProcessing):
-    """
-    Drop specified columns.
+    """A transformer that removes specified columns from a pandas DataFrame.
+
+    It is particularly useful for data preprocessing when certain columns are
+    no longer needed or for removing intermediate calculation columns.
 
     Parameters
     ----------
-    columns : str or list[str], optional
+    columns : str | list[str], optional (default=None)
         The column name or a list of column names to be dropped.
-        If None, no columns are dropped.
+        If None, no columns are dropped and the DataFrame is returned unchanged.
+        Example: 'temp__°C' or ['temp__°C', 'humid__%']
 
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (input columns minus dropped columns).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C": [20, 21, 22],
+    ...         "humid__%": [45, 50, 55],
+    ...         "press__Pa": [1000, 1010, 1020],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Drop a single column
+    >>> dropper = DropColumns(columns="temp__°C")
+    >>> result = dropper.fit_transform(df)
+    >>> print(result)
+                           humid__%  press__Pa
+    2024-01-01 00:00:00+00:00     45.0     1000.0
+    2024-01-01 00:01:00+00:00     50.0     1010.0
+    2024-01-01 00:02:00+00:00     55.0     1020.0
+    >>> # Drop multiple columns
+    >>> dropper_multi = DropColumns(columns=["temp__°C", "humid__%"])
+    >>> result_multi = dropper_multi.fit_transform(df)
+    >>> print(result_multi)
+                           press__Pa
+    2024-01-01 00:00:00+00:00     1000.0
+    2024-01-01 00:01:00+00:00     1010.0
+    2024-01-01 00:02:00+00:00     1020.0
+
+    Notes
+    -----
+    - If a specified column doesn't exist in the DataFrame, it will be silently
+      ignored
+    - The order of remaining columns is preserved
+    - If no columns are specified (columns=None), the DataFrame is returned
+      unchanged
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with specified columns removed. The output maintains
+        the same DateTimeIndex as the input, with only the specified columns
+        removed.
     """
 
     def __init__(self, columns: str | list[str] = None):
@@ -1672,15 +2717,69 @@ class DropColumns(BaseProcessing):
 
 
 class ReplaceTag(BaseProcessing):
-    """
-    Replaces Tide tag components with new values based on a specified mapping.
-    Tags are structured as strings separated by "__", typically following the format
-    "Name__unit__bloc__sub_bloc".
+    """A transformer that replaces components of Tide tag names with new values.
 
-    Attributes:
-        tag_map (dict[str, str]): A dictionary mapping old tag substrings to new
-        tag substrings.
+    This transformer allows you to selectively replace parts of Tide tag names
+    (components separated by "__") with new values. It is particularly useful
+    for standardizing tag names, updating units, or changing block/sub-block
+    names across multiple columns.
 
+    Parameters
+    ----------
+    tag_map : dict[str, str], optional (default=None)
+        A dictionary mapping old tag components to new values.
+        Keys are the components to replace, values are their replacements.
+        Example: {'°C': 'K', 'room1': 'room2'}
+        If None, no replacements are made and the DataFrame is returned unchanged.
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns with replaced tag components.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__room1__north": [20, 21, 22],
+    ...         "humid__%__room1__north": [45, 50, 55],
+    ...         "press__Pa__room1__north": [1000, 1010, 1020],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Replace room1 with room2 and °C with K
+    >>> replacer = ReplaceTag(
+    ...     tag_map={
+    ...         "room1": "room2",
+    ...         "°C": "K",  # It is dumb, just for the exemple
+    ...     }
+    ... )
+    >>> result = replacer.fit_transform(df)
+    >>> print(result)
+                           temp__K__room2__north  humid__%__room2__north  press__Pa__room2__north
+    2024-01-01 00:00:00+00:00              20.0                     0.45                   1000.0
+    2024-01-01 00:01:00+00:00              21.0                     0.50                   1010.0
+    2024-01-01 00:02:00+00:00              22.0                     0.55                   1020.0
+
+    Notes
+    -----
+    - Tide tags follow the format "name__unit__block__sub_block"
+    - The transformer preserves the order of tag components
+    - Components not specified in tag_map remain unchanged
+    - If tag_map is None, the DataFrame is returned unchanged
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with updated column names based on the tag replacements.
+        The output maintains the same DateTimeIndex and data values as the input.
     """
 
     def __init__(self, tag_map: dict[str, str] = None):

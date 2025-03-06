@@ -79,58 +79,124 @@ def get_influx_data(
     waited_seconds_at_retry: int = 5,
     verbose: bool = False,
 ) -> pd.DataFrame:
-    """
-    Fetches data from an InfluxDB instance for the specified time range,
-    bucket, and measurement, optionally splitting the request into smaller time
-    intervals.
+    """Fetch time series data from an InfluxDB instance.
+
+    This function retrieves data from InfluxDB and formats it according to Tide's
+    hierarchical column naming convention. It supports:
+
+        - Flexible time range specification
+        - Automatic query splitting for large time ranges
+        - Retry mechanism for handling timeouts
+        - Timezone-aware data handling
 
     Parameters
     ----------
-    start : str, pd.Timestamp, or datetime.datetime
-        The start of the time range for the query. Can be:
-        - A relative time string (e.g., "-1d", "-2h").
-        - A `pd.Timestamp` or `datetime.datetime` object.
+    start : str or pd.Timestamp or datetime.datetime
+        Start time for the query. Can be:
+            - A relative time string (e.g., "-1d", "-2h")
+            - A pandas Timestamp
+            - A datetime object
+        If using relative time strings, they are interpreted relative to the current time.
 
-    stop : str, pd.Timestamp, or datetime.datetime
-        The end of the time range for the query.
-        Accepts the same formats as `start`.
+    stop : str or pd.Timestamp or datetime.datetime
+        End time for the query. Accepts the same formats as start.
 
     bucket : str
-        The name of the InfluxDB bucket to query data from.
+        Name of the InfluxDB bucket to query.
 
     measurement : str
-        The _measurement name within the InfluxDB bucket to filter data.
+        Name of the InfluxDB measurement to filter data.
 
     tide_tags : list[str]
-        A list of fields or tags in Influx that correspond to Tide tags.
-        Must be specified in the following order name__unit__bloc__sub_bloc.
+        List of InfluxDB fields/tags to combine into Tide column names.
+        Must be specified in order: [name, unit, bloc, sub_bloc].
+        Example: ["name", "unit", "location", "room"] will create columns like
+        "temperature__°C__zone1__room1"
 
     url : str
-        The URL of the InfluxDB instance (e.g., "http://localhost:8086").
+        URL of the InfluxDB instance (e.g., "http://localhost:8086")
 
     org : str
-        The organization name in the InfluxDB instance.
+        InfluxDB organization name
 
     token : str
-        The authentication token for accessing the InfluxDB instance.
+        Authentication token for InfluxDB access
 
-    split_td : str, datetime.timedelta, or pd.Timedelta, optional
-        The time interval for splitting the query into smaller chunks
-        (e.g., "1d", "12h"). If `None`, the query will not be split.
+    split_td : str or datetime.timedelta or pd.Timedelta, optional
+        Time interval for splitting large queries into smaller chunks.
+        Useful for handling large time ranges or rate limits.
+        Example: "1d" for daily chunks, "12h" for half-day chunks.
+        If None, queries the entire time range at once.
 
-    tz_info : str, optional
-        The timezone for interpreting the start and stop times.
-        Defaults to "UTC".
+    tz_info : str, default "UTC"
+        Timezone for interpreting start and stop times.
+        Must be a valid timezone name from the IANA Time Zone Database.
 
-    verbose : bool, optional
-        If `True`, prints progress messages for each time chunk being fetched.
-        Defaults to `False`.
+    max_retry : int, default 5
+        Maximum number of retry attempts for failed queries.
+        Only applies to ReadTimeoutError exceptions.
 
-    max_retry: int, default 5
-        Number of retries for a query in case of ReadTimeoutError.
+    waited_seconds_at_retry : int, default 5
+        Number of seconds to wait between retry attempts.
 
-    waited_seconds_at_retry:  int default 5
-        Number of seconds waited before re-sending the query
+    verbose : bool, default False
+        Whether to print progress information during data fetching.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing the fetched data with:
+            - Datetime index in UTC
+            - Columns named according to Tide's convention (name__unit__bloc__sub_bloc)
+            - Values from the InfluxDB _value field
+
+    Raises
+    ------
+    ReadTimeoutError
+        If all retry attempts fail to fetch data
+    ValueError
+        If tz_info is required but not provided for naive datetime objects
+
+    Examples
+    --------
+    >>> from tide import get_influx_data
+    >>> import pandas as pd
+    >>> # Fetch last 24 hours of data
+    >>> df = get_influx_data(
+    ...     start="-24h",
+    ...     stop="now",
+    ...     bucket="my_bucket",
+    ...     measurement="sensors",
+    ...     tide_tags=["name", "unit", "location"],
+    ...     url="http://localhost:8086",
+    ...     org="my_org",
+    ...     token="my_token",
+    ... )
+    >>> # Fetch specific time range with daily splitting
+    >>> df = get_influx_data(
+    ...     start="2023-01-01",
+    ...     stop="2023-01-07",
+    ...     bucket="my_bucket",
+    ...     measurement="sensors",
+    ...     tide_tags=["name", "unit", "location", "room"],
+    ...     url="http://localhost:8086",
+    ...     org="my_org",
+    ...     token="my_token",
+    ...     split_td="1d",
+    ...     verbose=True,
+    ... )
+    >>> # Fetch data with custom timezone
+    >>> df = get_influx_data(
+    ...     start="2023-01-01T00:00:00",
+    ...     stop="2023-01-01T23:59:59",
+    ...     bucket="my_bucket",
+    ...     measurement="sensors",
+    ...     tide_tags=["name", "unit", "location"],
+    ...     url="http://localhost:8086",
+    ...     org="my_org",
+    ...     token="my_token",
+    ...     tz_info="Europe/Paris",
+    ... )
     """
 
     if isinstance(start, str) and isinstance(stop, str):
