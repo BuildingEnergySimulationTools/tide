@@ -46,6 +46,10 @@ html_theme_options = {
     "navigation_depth": 4,
     "includehidden": True,
     "titles_only": False,
+    # GitHub link
+    "github_url": "https://github.com/bdurandestebe/tide",
+    "github_repo": "tide",
+    "github_user": "bdurandestebe",
 }
 
 # Add any paths that contain custom static files (such as style sheets)

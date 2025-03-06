@@ -3,8 +3,9 @@ Processing Module
 
 The processing module provides transformers for data processing and manipulation.
 
-Data Transformers
----------------
+.. autoclass:: tide.processing.Identity
+   :members:
+   :show-inheritance:
 
 .. autoclass:: tide.processing.Interpolate
    :members:
@@ -90,13 +91,15 @@ Data Transformers
    :members:
    :show-inheritance:
 
-Base Classes
------------
-
-.. autoclass:: tide.processing.BaseTransformer
+.. autoclass:: tide.processing.FillGapsAR
    :members:
    :show-inheritance:
 
-.. autoclass:: tide.processing.Identity
+.. autoclass:: tide.processing.GaussianFilter1D
    :members:
    :show-inheritance:
+
+.. autoclass:: tide.processing.STLFilter
+   :members:
+   :show-inheritance:
+

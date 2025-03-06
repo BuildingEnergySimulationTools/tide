@@ -9,6 +9,7 @@
 [![codecov](https://codecov.io/gh/BuildingEnergySimulationTools/tide/branch/main/graph/badge.svg?token=F51O9CXI61)](https://codecov.io/gh/BuildingEnergySimulationTools/tide)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![Documentation Status](https://readthedocs.org/projects/python-tide/badge/?version=latest)](https://python-tide.readthedocs.io/en/latest/?badge=latest)
 
 ## Pipeline Development and Data Visualization for Time Series in Physical Measurements
 
@@ -206,9 +207,9 @@ plumber.plot(
 </td>
 <td>
 The development of this library has been supported by ENSNARE Project, which
-has received funding from the European Union’s Horizon 2020 Research and Innovation
+has received funding from the European Union's Horizon 2020 Research and Innovation
 Programme under Grant Agreement No. 953193. The sole responsibility for the content of
-this library lies entirely with the author’s view. The European Commission is not
+this library lies entirely with the author's view. The European Commission is not
 responsible for any use that may be made of the information it contains. 
 </td>
 </tr>
