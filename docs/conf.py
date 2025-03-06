@@ -9,7 +9,7 @@ copyright = "2024, Baptiste Durand-Estebe"
 author = "Baptiste Durand-Estebe"
 
 # The full version, including alpha/beta/rc tags
-release = "0.1.4"
+release = "0.1.5"
 
 # General configuration
 extensions = [
