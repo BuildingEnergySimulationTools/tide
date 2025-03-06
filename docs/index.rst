@@ -5,8 +5,15 @@ Welcome to python-tide's documentation!
    :width: 200px
    :align: center
 
+
 python-tide is a Python library for time series data visualization and pipeline creation, 
 with a focus on building data processing pipelines and analyzing data gaps.
+
+GitHub Repository
+----------------
+
+The source code for python-tide is available on GitHub:
+`github.com/yourusername/python-tide <https://github.com/BuildingEnergySimulationTools/tide/tree/24-add-readthedoc>`_
 
 .. toctree::
    :maxdepth: 2
