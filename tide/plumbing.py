@@ -156,30 +156,28 @@ class Plumber:
     --------
     >>> from tide import Plumber
     >>> import pandas as pd
-    >>> 
     >>> # Create sample data with hierarchical column names
-    >>> data = pd.DataFrame({
-    ...     "temp__°C__zone1": [20, 21, np.nan, 23],
-    ...     "humid__%HR__zone1": [50, 55, 60, np.nan],
-    ...     "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
-    ... }, index=pd.date_range("2023", freq="h", periods=4, tz="UTC"))
-    >>> 
+    >>> data = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+    ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+    ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+    ...     },
+    ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+    ... )
     >>> # Define pipeline configuration
     >>> pipe_dict = {
     ...     "pre_processing": {
     ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
-    ...         "%HR": [["ReplaceThreshold", {"upper": 100}]]
+    ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
     ...     },
-    ...     "common": [["Interpolate", ["linear"]]]
+    ...     "common": [["Interpolate", ["linear"]]],
     ... }
-    >>> 
     >>> # Initialize and process data
     >>> plumber = Plumber(data, pipe_dict)
     >>> corrected = plumber.get_corrected_data()
-    >>> 
     >>> # Analyze gaps
     >>> gaps = plumber.get_gaps_description()
-    >>> 
     >>> # Visualize data
     >>> plumber.plot(y_axis_level="unit")
 
@@ -409,36 +407,33 @@ class Plumber:
         --------
         >>> from tide import Plumber
         >>> import pandas as pd
-        >>> 
         >>> # Create sample data
-        >>> data = pd.DataFrame({
-        ...     "temp__°C__zone1": [20, 21, np.nan, 23],
-        ...     "humid__%HR__zone1": [50, 55, 60, np.nan],
-        ...     "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
-        ... }, index=pd.date_range("2023", freq="h", periods=4, tz="UTC"))
-        >>> 
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
         >>> # Define pipeline configuration
         >>> pipe_dict = {
         ...     "pre_processing": {
         ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
-        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]]
+        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
         ...     },
-        ...     "common": [["Interpolate", ["linear"]]]
+        ...     "common": [["Interpolate", ["linear"]]],
         ... }
-        >>> 
         >>> # Initialize Plumber
         >>> plumber = Plumber(data, pipe_dict)
-        >>> 
         >>> # Get pipeline for temperature columns only
         >>> temp_pipe = plumber.get_pipeline(select="°C")
-        >>> 
         >>> # Get pipeline for all columns with only pre-processing step
         >>> pre_pipe = plumber.get_pipeline(steps="pre_processing")
-        >>> 
         >>> # Get pipeline for specific columns and steps
         >>> custom_pipe = plumber.get_pipeline(
         ...     select=["temp__°C__zone1", "power__kW__hvac"],
-        ...     steps=["pre_processing", "common"]
+        ...     steps=["pre_processing", "common"],
         ... )
         """
         if self.data is None:
@@ -514,39 +509,34 @@ class Plumber:
         --------
         >>> from tide import Plumber
         >>> import pandas as pd
-        >>> 
         >>> # Create sample data
-        >>> data = pd.DataFrame({
-        ...     "temp__°C__zone1": [20, 21, np.nan, 23],
-        ...     "humid__%HR__zone1": [50, 55, 60, np.nan],
-        ...     "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
-        ... }, index=pd.date_range("2023", freq="h", periods=4, tz="UTC"))
-        >>> 
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
         >>> # Define pipeline configuration
         >>> pipe_dict = {
         ...     "pre_processing": {
         ...         "°C": [["ReplaceThreshold", {"upper": 25}]],
-        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]]
+        ...         "%HR": [["ReplaceThreshold", {"upper": 100}]],
         ...     },
-        ...     "common": [["Interpolate", ["linear"]]]
+        ...     "common": [["Interpolate", ["linear"]]],
         ... }
-        >>> 
         >>> # Initialize Plumber
         >>> plumber = Plumber(data, pipe_dict)
-        >>> 
         >>> # Get corrected data for temperature columns only
         >>> temp_data = plumber.get_corrected_data(select="°C")
-        >>> 
         >>> # Get corrected data for a specific time range
         >>> time_slice = plumber.get_corrected_data(
-        ...     start="2023-01-01T00:00:00",
-        ...     stop="2023-01-01T12:00:00"
+        ...     start="2023-01-01T00:00:00", stop="2023-01-01T12:00:00"
         ... )
-        >>> 
         >>> # Get corrected data with specific steps
         >>> pre_processed = plumber.get_corrected_data(
-        ...     select=["temp__°C__zone1", "power__kW__hvac"],
-        ...     steps="pre_processing"
+        ...     select=["temp__°C__zone1", "power__kW__hvac"], steps="pre_processing"
         ... )
         """
         if self.data is None:
@@ -630,33 +620,28 @@ class Plumber:
         --------
         >>> from tide import Plumber
         >>> import pandas as pd
-        >>> 
         >>> # Create sample data with gaps
-        >>> data = pd.DataFrame({
-        ...     "temp__°C__zone1": [20, np.nan, 23, np.nan, 25],
-        ...     "humid__%HR__zone1": [50, 55, np.nan, 60, np.nan],
-        ...     "power__kW__hvac": [1.5, 1.8, 1.6, np.nan, 1.7],
-        ... }, index=pd.date_range("2023", freq="h", periods=5, tz="UTC"))
-        >>> 
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, np.nan, 23, np.nan, 25],
+        ...         "humid__%HR__zone1": [50, 55, np.nan, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, np.nan, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=5, tz="UTC"),
+        ... )
         >>> # Initialize Plumber
         >>> plumber = Plumber(data)
-        >>> 
         >>> # Create heatmap for all columns
         >>> fig = plumber.plot_gaps_heatmap()
         >>> fig.show()
-        >>> 
         >>> # Create heatmap for temperature data with daily aggregation
         >>> fig = plumber.plot_gaps_heatmap(
-        ...     select="°C",
-        ...     time_step="1d",
-        ...     title="Temperature Data Gaps"
+        ...     select="°C", time_step="1d", title="Temperature Data Gaps"
         ... )
         >>> fig.show()
-        >>> 
         >>> # Create heatmap for specific time range
         >>> fig = plumber.plot_gaps_heatmap(
-        ...     start="2023-01-01T00:00:00",
-        ...     stop="2023-01-01T12:00:00"
+        ...     start="2023-01-01T00:00:00", stop="2023-01-01T12:00:00"
         ... )
         >>> fig.show()
         """
@@ -810,38 +795,36 @@ class Plumber:
         --------
         >>> from tide import Plumber
         >>> import pandas as pd
-        >>> 
         >>> # Create sample data
-        >>> data = pd.DataFrame({
-        ...     "temp__°C__zone1": [20, 21, np.nan, 23],
-        ...     "humid__%HR__zone1": [50, 55, 60, np.nan],
-        ...     "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
-        ... }, index=pd.date_range("2023", freq="h", periods=4, tz="UTC"))
-        >>> 
+        >>> data = pd.DataFrame(
+        ...     {
+        ...         "temp__°C__zone1": [20, 21, np.nan, 23],
+        ...         "humid__%HR__zone1": [50, 55, 60, np.nan],
+        ...         "power__kW__hvac": [1.5, 1.8, 1.6, 1.7],
+        ...     },
+        ...     index=pd.date_range("2023", freq="h", periods=4, tz="UTC"),
+        ... )
         >>> # Initialize Plumber
         >>> plumber = Plumber(data)
-        >>> 
         >>> # Create basic plot with automatic y-axes
         >>> fig = plumber.plot(y_axis_level="unit")
         >>> fig.show()
-        >>> 
         >>> # Create plot with custom styling and gap highlighting
         >>> fig = plumber.plot(
         ...     select=["temp__°C__zone1", "power__kW__hvac"],
         ...     data_mode="lines+markers",
         ...     plot_gaps=True,
         ...     gaps_lower_td="1h",
-        ...     title="Temperature and Power Data"
+        ...     title="Temperature and Power Data",
         ... )
         >>> fig.show()
-        >>> 
         >>> # Create plot comparing raw and processed data
         >>> fig = plumber.plot(
         ...     steps="pre_processing",
         ...     steps_2=None,
         ...     data_mode="lines",
         ...     data_2_mode="markers",
-        ...     title="Raw vs Processed Data"
+        ...     title="Raw vs Processed Data",
         ... )
         >>> fig.show()
         """

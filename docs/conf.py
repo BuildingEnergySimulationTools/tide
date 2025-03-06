@@ -57,7 +57,7 @@ html_static_path = ["_static"]
 
 # Custom CSS
 html_css_files = [
-    'custom.css',
+    "custom.css",
 ]
 
 # Logo

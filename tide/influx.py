@@ -160,7 +160,6 @@ def get_influx_data(
     --------
     >>> from tide import get_influx_data
     >>> import pandas as pd
-    >>> 
     >>> # Fetch last 24 hours of data
     >>> df = get_influx_data(
     ...     start="-24h",
@@ -170,9 +169,8 @@ def get_influx_data(
     ...     tide_tags=["name", "unit", "location"],
     ...     url="http://localhost:8086",
     ...     org="my_org",
-    ...     token="my_token"
+    ...     token="my_token",
     ... )
-    >>> 
     >>> # Fetch specific time range with daily splitting
     >>> df = get_influx_data(
     ...     start="2023-01-01",
@@ -184,9 +182,8 @@ def get_influx_data(
     ...     org="my_org",
     ...     token="my_token",
     ...     split_td="1d",
-    ...     verbose=True
+    ...     verbose=True,
     ... )
-    >>> 
     >>> # Fetch data with custom timezone
     >>> df = get_influx_data(
     ...     start="2023-01-01T00:00:00",
@@ -197,7 +194,7 @@ def get_influx_data(
     ...     url="http://localhost:8086",
     ...     org="my_org",
     ...     token="my_token",
-    ...     tz_info="Europe/Paris"
+    ...     tz_info="Europe/Paris",
     ... )
     """
 

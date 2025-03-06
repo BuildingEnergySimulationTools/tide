@@ -795,14 +795,15 @@ class Ffill(BaseFiller, BaseProcessing):
     >>> import numpy as np
     >>> # Create DataFrame with DateTimeIndex
     >>> dates = pd.date_range(
-    ...     start='2024-01-01 00:00:00',
-    ...     end='2024-01-01 00:04:00',
-    ...     freq='1min'
-    ... ).tz_localize('UTC')
-    >>> df = pd.DataFrame({
-    ...     'temp__°C__room': [20, np.nan, np.nan, 23, 24],
-    ...     'press__Pa__room': [1000, np.nan, 900, np.nan, 1000]
-    ... }, index=dates)
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temp__°C__room": [20, np.nan, np.nan, 23, 24],
+    ...         "press__Pa__room": [1000, np.nan, 900, np.nan, 1000],
+    ...     },
+    ...     index=dates,
+    ... )
     >>> # Forward-fill all missing values
     >>> filler = Ffill()
     >>> result = filler.fit_transform(df)
@@ -824,7 +825,7 @@ class Ffill(BaseFiller, BaseProcessing):
     2024-01-01 00:03:00+00:00          23.0           900.0
     2024-01-01 00:04:00+00:00          24.0          1000.0
     >>> # Forward-fill only gaps of 1 hour or less
-    >>> filler_timed = Ffill(gaps_lte='1h')
+    >>> filler_timed = Ffill(gaps_lte="1h")
     >>> result_timed = filler_timed.fit_transform(df)
     >>> print(result_timed)
                            temp__°C__room  press__Pa__room
@@ -1209,17 +1210,18 @@ class Resample(BaseProcessing):
     >>> import numpy as np
     >>> # Create DataFrame with DateTimeIndex
     >>> dates = pd.date_range(
-    ...     start='2024-01-01 00:00:00',
-    ...     end='2024-01-01 00:04:00',
-    ...     freq='1min'
-    ... ).tz_localize('UTC')
-    >>> df = pd.DataFrame({
-    ...     'power__W__building': [1000, 1200, 1100, 1300, 1400],
-    ...     'temp__°C__room': [20, 21, 22, 23, 24],
-    ...     'humid__%__room': [45, 46, 47, 48, 49]
-    ... }, index=dates)
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [1000, 1200, 1100, 1300, 1400],
+    ...         "temp__°C__room": [20, 21, 22, 23, 24],
+    ...         "humid__%__room": [45, 46, 47, 48, 49],
+    ...     },
+    ...     index=dates,
+    ... )
     >>> # Resample to 5-minute intervals using mean
-    >>> resampler = Resample(rule='5min')
+    >>> resampler = Resample(rule="5min")
     >>> result = resampler.fit_transform(df)
     >>> print(result)
                            power__W__building  temp__°C__room  humid__%__room
@@ -1227,9 +1229,9 @@ class Resample(BaseProcessing):
     2024-01-01 00:05:00+00:00           1350.0           23.5           48.5
     >>> # Resample with custom methods
     >>> resampler_custom = Resample(
-    ...     rule='5min',
-    ...     tide_format_methods={'name': 'power', 'method': 'min'},
-    ...     columns_methods=[(['temp__°C__room'], 'max')]
+    ...     rule="5min",
+    ...     tide_format_methods={"name": "power", "method": "min"},
+    ...     columns_methods=[(["temp__°C__room"], "max")],
     ... )
 
 
@@ -1327,13 +1329,16 @@ class AddTimeLag(BaseProcessing):
     >>> import pandas as pd
     >>> from tide.processing import AddTimeLag
     >>> # Create sample data
-    >>> dates = pd.date_range(start='2024-01-01', periods=5, freq='1h', tz="UTC")
-    >>> df = pd.DataFrame({
-    ...     'power__W__building': [100, 200, 300, 400, 500],
-    ...     'temp__°C__room': [20, 21, 22, 23, 24]
-    ... }, index=dates)
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [100, 200, 300, 400, 500],
+    ...         "temp__°C__room": [20, 21, 22, 23, 24],
+    ...     },
+    ...     index=dates,
+    ... )
     >>> # Add 1-hour lagged features
-    >>> lagger = AddTimeLag(time_lag='1h')
+    >>> lagger = AddTimeLag(time_lag="1h")
     >>> result = lagger.fit_transform(df)
     >>> print(result)
                            power__W__building  temp__°C__room  1h_power__W__building  1h_temp__°C__room
@@ -1344,10 +1349,10 @@ class AddTimeLag(BaseProcessing):
     2024-01-01 04:00:00               500.0           24.0                 400.0              23.0
     >>> # Add custom lagged features with specific marker
     >>> lagger_custom = AddTimeLag(
-    ...     time_lag='1h',
-    ...     features_to_lag=['power__W__building'],
-    ...     feature_marker='prev_',
-    ...     drop_resulting_nan=True
+    ...     time_lag="1h",
+    ...     features_to_lag=["power__W__building"],
+    ...     feature_marker="prev_",
+    ...     drop_resulting_nan=True,
     ... )
     >>> result_custom = lagger_custom.fit_transform(df)
     >>> print(result_custom)
@@ -1454,11 +1459,14 @@ class GaussianFilter1D(BaseProcessing):
     >>> import pandas as pd
     >>> from tide.processing import GaussianFilter1D
     >>> # Create sample data with timezone-aware index
-    >>> dates = pd.date_range(start='2024-01-01', periods=5, freq='1h', tz='UTC')
-    >>> df = pd.DataFrame({
-    ...     'power__W__building': [100, 150, 200, 180, 220],
-    ...     'temp__°C__room': [20, 21, 22, 21, 23]
-    ... }, index=dates)
+    >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [100, 150, 200, 180, 220],
+    ...         "temp__°C__room": [20, 21, 22, 21, 23],
+    ...     },
+    ...     index=dates,
+    ... )
     >>> # Apply Gaussian filter with default settings
     >>> smoother = GaussianFilter1D(sigma=2)
     >>> result = smoother.fit_transform(df)
@@ -1536,17 +1544,17 @@ class CombineColumns(BaseProcessing):
     >>> import pandas as pd
     >>> from tide.processing import CombineColumns
     >>> # Create sample data with timezone-aware index
-    >>> dates = pd.date_range(start='2024-01-01', periods=3, freq='1h', tz='UTC')
-    >>> df = pd.DataFrame({
-    ...     'power__W__building1': [100, 200, 300],
-    ...     'power__W__building2': [150, 250, 350],
-    ...     'power__W__building3': [200, 300, 400]
-    ... }, index=dates)
-    >>> # Combine columns using mean
-    >>> combiner = CombineColumns(
-    ...     function='mean',
-    ...     result_column_name='power__W__avg'
+    >>> dates = pd.date_range(start="2024-01-01", periods=3, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building1": [100, 200, 300],
+    ...         "power__W__building2": [150, 250, 350],
+    ...         "power__W__building3": [200, 300, 400],
+    ...     },
+    ...     index=dates,
     ... )
+    >>> # Combine columns using mean
+    >>> combiner = CombineColumns(function="mean", result_column_name="power__W__avg")
     >>> result = combiner.fit_transform(df)
     >>> print(result)
                            power__W__building1  power__W__building2  power__W__building3  power__W__avg
@@ -1555,10 +1563,10 @@ class CombineColumns(BaseProcessing):
     2024-01-01 02:00:00+00:00           300.0              350.0              400.0         350.0
     >>> # Combine columns using weighted average
     >>> combiner_weighted = CombineColumns(
-    ...     function='average',
+    ...     function="average",
     ...     weights=[0.5, 0.3, 0.2],
-    ...     result_column_name='power__W__weighted',
-    ...     drop_columns=True
+    ...     result_column_name="power__W__weighted",
+    ...     drop_columns=True,
     ... )
     >>> result_weighted = combiner_weighted.fit_transform(df)
     >>> print(result_weighted)
@@ -1769,18 +1777,41 @@ class FillGapsAR(BaseFiller, BaseProcessing):
     >>> import pandas as pd
     >>> from tide.processing import FillGapsAR
     >>> # Create sample data with gaps
-    >>> dates = pd.date_range(start='2024-01-01', periods=24, freq='1h', tz='UTC')
-    >>> df = pd.DataFrame({
-    ...     'power__W__building': [100, np.nan, np.nan, 180, 220, 190, np.nan, 230,
-    ...                            180, 160, 140, 120, 110, 130, 150, 170,
-    ...                            190, 210, 230, 220, 200, 180, 160, 140]
-    ... }, index=dates)
+    >>> dates = pd.date_range(start="2024-01-01", periods=24, freq="1h", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "power__W__building": [
+    ...             100,
+    ...             np.nan,
+    ...             np.nan,
+    ...             180,
+    ...             220,
+    ...             190,
+    ...             np.nan,
+    ...             230,
+    ...             180,
+    ...             160,
+    ...             140,
+    ...             120,
+    ...             110,
+    ...             130,
+    ...             150,
+    ...             170,
+    ...             190,
+    ...             210,
+    ...             230,
+    ...             220,
+    ...             200,
+    ...             180,
+    ...             160,
+    ...             140,
+    ...         ]
+    ...     },
+    ...     index=dates,
+    ... )
     >>> # Fill gaps using Prophet model (non-recursive)
     >>> filler = FillGapsAR(
-    ...     model_name="Prophet",
-    ...     gaps_lte="1D",
-    ...     gaps_gte="1h",
-    ...     resample_at_td="1h"
+    ...     model_name="Prophet", gaps_lte="1D", gaps_gte="1h", resample_at_td="1h"
     ... )
     >>> result = filler.fit_transform(df)
     >>> # Fill gaps using STL model (recursive required)
@@ -1788,7 +1819,7 @@ class FillGapsAR(BaseFiller, BaseProcessing):
     ...     model_name="STL",
     ...     gaps_lte="1D",
     ...     gaps_gte="1h",
-    ...     recursive_fill=True  # Required for STL
+    ...     recursive_fill=True,  # Required for STL
     ... )
     >>> result = filler.fit_transform(df)
 
@@ -1969,14 +2000,14 @@ class ExpressionCombine(BaseProcessing):
     --------
     >>> from tide import ExpressionCombine
     >>> import pandas as pd
-    >>> 
     >>> # Create sample data
-    >>> df = pd.DataFrame({
-    ...     'Tin__°C__building': [20, 21, 22],
-    ...     'Text__°C__outdoor': [10, 11, 12],
-    ...     'mass_flwr__m3/h__hvac': [1, 2, 3]
-    ... })
-    >>> 
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "Tin__°C__building": [20, 21, 22],
+    ...         "Text__°C__outdoor": [10, 11, 12],
+    ...         "mass_flwr__m3/h__hvac": [1, 2, 3],
+    ...     }
+    ... )
     >>> # Calculate ventilation losses
     >>> combiner = ExpressionCombine(
     ...     columns_dict={
@@ -1986,9 +2017,8 @@ class ExpressionCombine(BaseProcessing):
     ...     },
     ...     expression="(T1 - T2) * m * 1004 * 1.204",
     ...     result_column_name="loss_ventilation__J__hvac",
-    ...     drop_columns=True
+    ...     drop_columns=True,
     ... )
-    >>> 
     >>> # Transform the data
     >>> result = combiner.fit_transform(df)
     """
@@ -2076,13 +2106,14 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
     --------
     >>> from tide import FillOikoMeteo
     >>> import pandas as pd
-    >>> 
     >>> # Create sample data with gaps
-    >>> df = pd.DataFrame({
-    ...     'temperature': [20, None, 22, None, 24],
-    ...     'humidity': [50, None, 55, None, 60]
-    ... }, index=pd.date_range('2024-01-01', periods=5, freq='H'))
-    >>> 
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temperature": [20, None, 22, None, 24],
+    ...         "humidity": [50, None, 55, None, 60],
+    ...     },
+    ...     index=pd.date_range("2024-01-01", periods=5, freq="H"),
+    ... )
     >>> # Initialize and fit the transformer
     >>> filler = FillOikoMeteo(
     ...     gaps_gte="1h",
@@ -2090,11 +2121,10 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
     ...     lat=43.47,
     ...     lon=-1.51,
     ...     columns_param_map={
-    ...         'temperature': 'temperature',
-    ...         'humidity': 'relative_humidity'
-    ...     }
+    ...         "temperature": "temperature",
+    ...         "humidity": "relative_humidity",
+    ...     },
     ... )
-    >>> 
     >>> # Transform the data
     >>> result = filler.fit_transform(df)
 
@@ -2239,21 +2269,15 @@ class AddSolarAngles(BaseProcessing):
     --------
     >>> from tide import AddSolarAngles
     >>> import pandas as pd
-    >>> 
     >>> # Create sample data with datetime index
     >>> df = pd.DataFrame(
-    ...     {'temperature': [20, 21, 22]},
-    ...     index=pd.date_range('2024-01-01', periods=3, freq='H')
+    ...     {"temperature": [20, 21, 22]},
+    ...     index=pd.date_range("2024-01-01", periods=3, freq="H"),
     ... )
-    >>> 
     >>> # Add solar angles
     >>> transformer = AddSolarAngles(
-    ...     lat=43.47,
-    ...     lon=-1.51,
-    ...     data_bloc="SOLAR",
-    ...     data_sub_bloc="ANGLES"
+    ...     lat=43.47, lon=-1.51, data_bloc="SOLAR", data_sub_bloc="ANGLES"
     ... )
-    >>> 
     >>> # Transform the data
     >>> result = transformer.fit_transform(df)
 
@@ -2776,4 +2800,3 @@ class ReplaceTag(BaseProcessing):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         X.columns = self.feature_names_out_
         return X
-
