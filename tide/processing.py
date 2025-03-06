@@ -98,9 +98,9 @@ class ReplaceDuplicated(BaseProcessing):
     keep : str, default 'first'
         Specify which of the duplicated (if any) value to keep.
         Allowed arguments : 'first', 'last', False.
-        - 'first': Keep first occurrence of duplicated values
-        - 'last': Keep last occurrence of duplicated values
-        - False: Keep no occurrence (replace all duplicates)
+            - 'first': Keep first occurrence of duplicated values
+            - 'last': Keep last occurrence of duplicated values
+            - False: Keep no occurrence (replace all duplicates)
 
     value : float, default np.nan
         Value used to replace the non-kept duplicated values.
@@ -167,9 +167,9 @@ class Dropna(BaseProcessing):
     ----------
     how : str, default 'all'
         How to drop missing values in the data:
-        - 'all': Drop row if all values are missing
-        - 'any': Drop row if any value is missing
-        - int: Drop row if at least this many values are missing
+            - 'all': Drop row if all values are missing
+            - 'any': Drop row if any value is missing
+            - int: Drop row if at least this many values are missing
 
     Attributes
     ----------
@@ -238,10 +238,10 @@ class RenameColumns(BaseProcessing):
     ----------
     new_names : list[str] | dict[str, str]
         New names for the columns. Can be specified in two ways:
-        - list[str]: List of new names in the same order as current columns.
-          Must have the same length as the number of columns.
-        - dict[str, str]: Dictionary mapping old column names to new names.
-          Keys must be existing column names, values are the new names.
+            - list[str]: List of new names in the same order as current columns.
+            Must have the same length as the number of columns.
+            - dict[str, str]: Dictionary mapping old column names to new names.
+            Keys must be existing column names, values are the new names.
 
     Attributes
     ----------
@@ -538,8 +538,8 @@ class DropTimeGradient(BaseProcessing):
     - For the lower_rate threshold, only the current gradient needs to be below
       the threshold for a value to be removed
     - NaN values are handled according to the dropna parameter:
-      - If True (default): NaN values are removed before processing
-      - If False: NaN values are kept and may affect gradient calculations
+        - If True (default): NaN values are removed before processing
+        - If False: NaN values are kept and may affect gradient calculations
     - The rate parameters (upper_rate and lower_rate) must be specified in units of
       value/second. To convert from per-minute rates, divide by 60.
 
@@ -613,11 +613,11 @@ class ApplyExpression(BaseProcessing):
         A string representing a valid Python mathematical expression.
         The expression can use the input DataFrame `X` as a variable.
         Common operations include:
-        - Basic arithmetic: +, -, *, /, **, %
-        - Comparison: >, <, >=, <=, ==, !=
-        - Boolean operations: &, |, ~
-        - Mathematical functions: abs(), sqrt(), pow(), etc.
-        Example: "X * 2" or "X / 1000" or "X ** 2"
+            - Basic arithmetic: +, -, *, /, **, %
+            - Comparison: >, <, >=, <=, ==, !=
+            - Boolean operations: &, |, ~
+            - Mathematical functions: abs(), sqrt(), pow(), etc.
+            Example: "X * 2" or "X / 1000" or "X ** 2"
 
     new_unit : str, optional (default=None)
         The new unit to apply to the column names after transformation.
@@ -999,9 +999,8 @@ class FillNa(BaseFiller, BaseProcessing):
     >>> import numpy as np
     >>> from datetime import datetime, timedelta
     >>> from tide.processing import FillNa
-    >>> import pytz
 
-    # Create a DataFrame with missing values and timezone-aware index
+    >>> # Create a DataFrame with missing values and timezone-aware index
     >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
     >>> df = pd.DataFrame(
     ...     {
@@ -1011,7 +1010,7 @@ class FillNa(BaseFiller, BaseProcessing):
     ...     index=dates,
     ... )
 
-    # Fill all missing values with 0
+    >>> # Fill all missing values with 0
     >>> filler = FillNa(value=0)
     >>> df_filled = filler.fit_transform(df)
     >>> print(df_filled)
@@ -1022,7 +1021,7 @@ class FillNa(BaseFiller, BaseProcessing):
     2024-01-01 03:00:00+00:00        22.0          0.0
     2024-01-01 04:00:00+00:00        23.0       1014.0
 
-    # Fill only gaps of 1 hour or less with -999
+    >>> # Fill only gaps of 1 hour or less with -999
     >>> filler = FillNa(value=-999, gaps_lte="1h")
     >>> df_filled = filler.fit_transform(df)
     >>> print(df_filled)
@@ -1038,8 +1037,8 @@ class FillNa(BaseFiller, BaseProcessing):
     - When using gap duration parameters (gaps_lte or gaps_gte), only gaps within
       the specified time ranges will be filled
     - This transformer is particularly useful for:
-      * Replacing missing values with a known default value
-      * Handling sensor errors or invalid measurements
+        - Replacing missing values with a known default value
+        - Handling sensor errors or invalid measurements
 
     Returns
     -------
@@ -1082,19 +1081,19 @@ class Interpolate(BaseFiller, BaseProcessing):
     ----------
     method : str, default="linear"
         The interpolation method to use. Sample of useful available methods:
-        - "linear": Linear interpolation (default)
-        - "slinear": Spline interpolation of order 1
-        - "quadratic": Spline interpolation of order 2
-        - "cubic": Spline interpolation of order 3
-        - "barycentric": Barycentric interpolation
-        - "polynomial": Polynomial interpolation
-        - "krogh": Krogh interpolation
-        - "piecewise_polynomial": Piecewise polynomial interpolation
-        - "spline": Spline interpolation
-        - "pchip": Piecewise cubic Hermite interpolation
-        - "akima": Akima interpolation
-        - "cubicspline": Cubic spline interpolation
-        - "from_derivatives": Interpolation from derivatives
+            - "linear": Linear interpolation (default)
+            - "slinear": Spline interpolation of order 1
+            - "quadratic": Spline interpolation of order 2
+            - "cubic": Spline interpolation of order 3
+            - "barycentric": Barycentric interpolation
+            - "polynomial": Polynomial interpolation
+            - "krogh": Krogh interpolation
+            - "piecewise_polynomial": Piecewise polynomial interpolation
+            - "spline": Spline interpolation
+            - "pchip": Piecewise cubic Hermite interpolation
+            - "akima": Akima interpolation
+            - "cubicspline": Cubic spline interpolation
+            - "from_derivatives": Interpolation from derivatives
 
     gaps_lte : str | pd.Timedelta | dt.timedelta, optional (default=None)
         Only interpolate gaps with duration less than or equal to this value.
@@ -1108,9 +1107,8 @@ class Interpolate(BaseFiller, BaseProcessing):
     >>> import numpy as np
     >>> from datetime import datetime, timedelta
     >>> from tide.processing import Interpolate
-    >>> import pytz
 
-    # Create a DataFrame with missing values and timezone-aware index
+    >>> # Create a DataFrame with missing values and timezone-aware index
     >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
     >>> df = pd.DataFrame(
     ...     {
@@ -1120,7 +1118,7 @@ class Interpolate(BaseFiller, BaseProcessing):
     ...     index=dates,
     ... )
 
-    # Linear interpolation of all missing values
+    >>> # Linear interpolation of all missing values
     >>> interpolator = Interpolate(method="linear")
     >>> df_interpolated = interpolator.fit_transform(df)
     >>> print(df_interpolated)
@@ -1136,8 +1134,8 @@ class Interpolate(BaseFiller, BaseProcessing):
     - When using gap duration parameters (gaps_lte or gaps_gte), only gaps within
       the specified time ranges will be interpolated
     - Different interpolation methods may produce different results:
-      * Linear interpolation is simple but may not capture complex patterns
-      * Cubic interpolation provides smoother curves but may overshoot
+        - Linear interpolation is simple but may not capture complex patterns
+        - Cubic interpolation provides smoother curves but may overshoot
 
     Returns
     -------
@@ -1180,15 +1178,15 @@ class Resample(BaseProcessing):
     ----------
     rule : str | pd.Timedelta | dt.timedelta
         The frequency to resample to. Can be specified as:
-        - String: '1min', '5min', '1h', '1D', etc.
-        - Timedelta object: pd.Timedelta('1 hour')
-        - datetime.timedelta object: dt.timedelta(hours=1)
+            - String: '1min', '5min', '1h', '1D', etc.
+            - Timedelta object: pd.Timedelta('1 hour')
+            - datetime.timedelta object: dt.timedelta(hours=1)
 
     method : str | Callable, default='mean'
         The default aggregation method to use for resampling.
         Can be:
-        - String: 'mean', 'sum', 'min', 'max', 'std', etc.
-        - Callable: Any function that can be used with pandas' resample
+            - String: 'mean', 'sum', 'min', 'max', 'std', etc.
+            - Callable: Any function that can be used with pandas' resample
 
     tide_format_methods : dict[str, str | Callable], optional (default=None)
         A dictionary mapping Tide tag components to specific aggregation methods.
@@ -1200,8 +1198,8 @@ class Resample(BaseProcessing):
     columns_methods : list[tuple[list[str], str | Callable]], optional (default=None)
         A list of tuples specifying custom methods for specific columns.
         Each tuple contains:
-        - list[str]: List of column names to apply the method to
-        - str | Callable: The aggregation method to use
+            - list[str]: List of column names to apply the method to
+            - str | Callable: The aggregation method to use
         Example: [(['power__W__building'], 'sum')]
 
     Examples
@@ -1301,18 +1299,18 @@ class AddTimeLag(BaseProcessing):
     ----------
     time_lag : str | pd.Timedelta | dt.timedelta, default="1h"
         The time lag to apply when creating new features. Can be specified as:
-        - A string (e.g., "1h", "30min", "1d")
-        - A pandas Timedelta object
-        - A datetime timedelta object
+            - A string (e.g., "1h", "30min", "1d")
+            - A pandas Timedelta object
+            - A datetime timedelta object
         A positive time lag creates features with past values, while a negative
         time lag creates features with future values.
 
     features_to_lag : str | list[str] | None, default=None
         The features to create lagged versions of. If None, all features in the
         input DataFrame will be lagged. Can be specified as:
-        - A single feature name (string)
-        - A list of feature names
-        - None (to lag all features)
+            - A single feature name (string)
+            - A list of feature names
+            - None (to lag all features)
 
     feature_marker : str | None, default=None
         The prefix to use for the new lagged feature names. If None, the
@@ -1435,24 +1433,24 @@ class GaussianFilter1D(BaseProcessing):
     ----------
     sigma : float, default=5
         Standard deviation of the Gaussian kernel. Controls the level of smoothing:
-        - Larger values result in smoother output but may lose fine details
-        - Smaller values preserve more details but may not reduce noise effectively
-        - Must be positive
+            - Larger values result in smoother output but may lose fine details
+            - Smaller values preserve more details but may not reduce noise effectively
+            - Must be positive
 
     mode : str, default='nearest'
         How to handle values outside the input boundaries. Options are:
-        - 'nearest': Use the nearest edge value (default)
-        - 'reflect': Reflect values around the edge
-        - 'mirror': Mirror values around the edge
-        - 'constant': Use a constant value (0)
-        - 'wrap': Wrap values around the edge
+            - 'nearest': Use the nearest edge value (default)
+            - 'reflect': Reflect values around the edge
+            - 'mirror': Mirror values around the edge
+            - 'constant': Use a constant value (0)
+            - 'wrap': Wrap values around the edge
 
     truncate : float, default=4.0
         The filter window size in terms of standard deviations. Values outside
         the range (mean ± truncate * sigma) are ignored. This parameter:
-        - Controls the effective size of the filter window
-        - Affects the computational efficiency
-        - Must be positive
+            - Controls the effective size of the filter window
+            - Affects the computational efficiency
+            - Must be positive
 
     Examples
     --------
@@ -1522,10 +1520,10 @@ class CombineColumns(BaseProcessing):
     ----------
     function : str
         The aggregation function to use for combining columns. Valid options are:
-        - "mean": Arithmetic mean of the columns
-        - "sum": Sum of the columns
-        - "average": Weighted average of the columns (requires weights)
-        - "dot": Dot product of the columns with weights (weighted sum)
+            - "mean": Arithmetic mean of the columns
+            - "sum": Sum of the columns
+            - "average": Weighted average of the columns (requires weights)
+            - "dot": Dot product of the columns with weights (weighted sum)
 
     weights : list[float | int] | np.ndarray, default=None
         Weights to apply when using 'average' or 'dot' functions. Must be provided
@@ -1647,9 +1645,9 @@ class STLFilter(BaseProcessing):
     ----------
     period : int | str | dt.timedelta
         The periodicity of the seasonal component. Can be specified as:
-        - An integer for the number of observations in one seasonal cycle
-        - A string representing the time frequency (e.g., '15T' for 15 minutes)
-        - A timedelta object representing the duration of the seasonal cycle
+            - An integer for the number of observations in one seasonal cycle
+            - A string representing the time frequency (e.g., '15T' for 15 minutes)
+            - A timedelta object representing the duration of the seasonal cycle
 
     trend : int | str | dt.timedelta
         The length of the trend smoother. Must be odd and larger than season.
@@ -1732,20 +1730,20 @@ class FillGapsAR(BaseFiller, BaseProcessing):
     model (e.g., Prophet). The filling process depends on the `recursive_fill` parameter:
 
     When recursive_fill=True:
-    1. Identifies gaps in the data and filters them based on size thresholds
-    2. Uses the largest continuous block of valid data to fit the model
-    3. Fills neighboring gaps using backcasting or forecasting
-    4. Optionally handles high-frequency data by:
-       - Resampling to a larger timestep for better pattern recognition
-       - Performing predictions at the resampled timestep
-       - Using linear interpolation to restore original resolution
-    5. Repeats steps 2-4 until no more gaps remain
+        1. Identifies gaps in the data and filters them based on size thresholds
+        2. Uses the largest continuous block of valid data to fit the model
+        3. Fills neighboring gaps using backcasting or forecasting
+        4. Optionally handles high-frequency data by:
+            - Resampling to a larger timestep for better pattern recognition
+            - Performing predictions at the resampled timestep
+            - Using linear interpolation to restore original resolution
+        5. Repeats steps 2-4 until no more gaps remain
 
     When recursive_fill=False:
-    1. Identifies gaps in the data and filters them based on size thresholds
-    2. Uses the entire dataset to fit the model
-    3. Fills all gaps in a single pass using the fitted model
-    4. Optionally handles high-frequency data as described above
+        1. Identifies gaps in the data and filters them based on size thresholds
+        2. Uses the entire dataset to fit the model
+        3. Fills all gaps in a single pass using the fitted model
+        4. Optionally handles high-frequency data as described above
 
     Parameters
     ----------
@@ -2083,18 +2081,18 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
     columns_param_map : dict[str, str], default=None
         Mapping of input columns to Oikolab API parameters. If None, all columns
         will be filled with temperature data. Available Oikolab parameters are:
-        - temperature
-        - dewpoint_temperature
-        - mean_sea_level_pressure
-        - wind_speed
-        - 100m_wind_speed
-        - relative_humidity
-        - surface_solar_radiation
-        - direct_normal_solar_radiation
-        - surface_diffuse_solar_radiation
-        - surface_thermal_radiation
-        - total_cloud_cover
-        - total_precipitation
+            - temperature
+            - dewpoint_temperature
+            - mean_sea_level_pressure
+            - wind_speed
+            - 100m_wind_speed
+            - relative_humidity
+            - surface_solar_radiation
+            - direct_normal_solar_radiation
+            - surface_diffuse_solar_radiation
+            - surface_thermal_radiation
+            - total_cloud_cover
+            - total_precipitation
 
     model : str, default="era5"
         The meteorological model to use for data retrieval.
@@ -2326,9 +2324,9 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
     A transformer that projects solar radiation onto surfaces with specific orientations and tilts.
 
     This transformer calculates the total solar radiation incident on surfaces by combining:
-    - Direct beam radiation (projected onto the tilted surface)
-    - Diffuse sky radiation (from the sky dome)
-    - Ground-reflected radiation (albedo effect)
+        - Direct beam radiation (projected onto the tilted surface)
+        - Diffuse sky radiation (from the sky dome)
+        - Ground-reflected radiation (albedo effect)
 
     Parameters
     ----------
@@ -2352,24 +2350,24 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
 
     surface_azimuth_angles : int | float | list[int | float], default=180.0
         Azimuth angles of the surfaces in degrees east of north.
-        - 0°: North-facing
-        - 90°: East-facing
-        - 180°: South-facing
+            - 0°: North-facing
+            - 90°: East-facing
+            - 180°: South-facing
 
     surface_tilt_angle : float | list[float], default=35.0
         Tilt angles of the surfaces in degrees from horizontal.
-        - 0°: Horizontal surface
-        - 90°: Vertical surface
-        - 180°: Horizontal surface facing down
+            - 0°: Horizontal surface
+            - 90°: Vertical surface
+            - 180°: Horizontal surface facing down
 
     albedo : float, default=0.25
         Ground reflectivity or albedo coefficient.
         Typical values:
-        - 0.1-0.2: Dark surfaces (asphalt, forest)
-        - 0.2-0.3: Grass, soil
-        - 0.3-0.4: Light surfaces (concrete, sand)
-        - 0.4-0.5: Snow
-        - 0.8-0.9: Fresh snow
+            - 0.1-0.2: Dark surfaces (asphalt, forest)
+            - 0.2-0.3: Grass, soil
+            - 0.3-0.4: Light surfaces (concrete, sand)
+            - 0.4-0.5: Snow
+            - 0.8-0.9: Fresh snow
 
     surface_name : str | list[str], default="az_180_tilt_35"
         Names for the output columns following Tide naming convention.
@@ -2390,7 +2388,7 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
     >>> from tide.processing import ProjectSolarRadOnSurfaces
     >>> import pytz
 
-    # Create a DataFrame with solar radiation data and timezone-aware index
+    >>> # Create a DataFrame with solar radiation data and timezone-aware index
     >>> dates = pd.date_range(start="2024-01-01", periods=3, freq="1h", tz="UTC")
     >>> df = pd.DataFrame(
     ...     {
@@ -2413,7 +2411,7 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
     ...     index=dates,
     ... )
 
-    # Project radiation on a south-facing surface tilted at 35 degrees
+    >>> # Project radiation on a south-facing surface tilted at 35 degrees
     >>> projector = ProjectSolarRadOnSurfaces(
     ...     bni_column_name="bni__W/m²__outdoor__meteo",
     ...     dhi_column_name="dhi__W/m²__outdoor__meteo",
