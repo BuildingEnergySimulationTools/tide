@@ -83,18 +83,19 @@ def get_influx_data(
 
     This function retrieves data from InfluxDB and formats it according to Tide's
     hierarchical column naming convention. It supports:
-    - Flexible time range specification
-    - Automatic query splitting for large time ranges
-    - Retry mechanism for handling timeouts
-    - Timezone-aware data handling
+
+        - Flexible time range specification
+        - Automatic query splitting for large time ranges
+        - Retry mechanism for handling timeouts
+        - Timezone-aware data handling
 
     Parameters
     ----------
     start : str or pd.Timestamp or datetime.datetime
         Start time for the query. Can be:
-        - A relative time string (e.g., "-1d", "-2h")
-        - A pandas Timestamp
-        - A datetime object
+            - A relative time string (e.g., "-1d", "-2h")
+            - A pandas Timestamp
+            - A datetime object
         If using relative time strings, they are interpreted relative to the current time.
 
     stop : str or pd.Timestamp or datetime.datetime
@@ -145,9 +146,9 @@ def get_influx_data(
     -------
     pd.DataFrame
         DataFrame containing the fetched data with:
-        - Datetime index in UTC
-        - Columns named according to Tide's convention (name__unit__bloc__sub_bloc)
-        - Values from the InfluxDB _value field
+            - Datetime index in UTC
+            - Columns named according to Tide's convention (name__unit__bloc__sub_bloc)
+            - Values from the InfluxDB _value field
 
     Raises
     ------
