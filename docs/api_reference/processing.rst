@@ -103,3 +103,6 @@ The processing module provides transformers for data processing and manipulation
    :members:
    :show-inheritance:
 
+.. autoclass:: tide.processing.AddFourierPairs
+   :members:
+   :show-inheritance:

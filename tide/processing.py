@@ -2802,51 +2802,51 @@ class ReplaceTag(BaseProcessing):
 
 
 class AddFourierPairs(BaseProcessing):
-    """
-         A transformer that adds a pair of new columns with sine and cosine
-         signal of given period.
-         Based on time series index, phase shift is computed from the beginning
-         of the year.
+    """A transformer that adds a pair of new columns with sine and cosine
+    signal of given period.
 
-        Parameters
-        ----------
-        period: str | pd.Timedelta | dt.timedelta = "24h"
-            Period of thte signal. Will automaticaly convert a string to pandas TimeDelta
-        order: int = 1,
-            Sinus and Cosinus order. Will add a pair of feature for order "n", with a
-            pulsation n * 2 * pi * f
-        amplitude: float | int = 1.0,
-            Amplitude of the signal
-        unit: str = "-",
-            Unit of the signal
-        block: str = "BLOCK",
-            block tag according to tide taging system. Will only be used if level 2 tags
-            or more are already used
-        sub_block: str = "SUB_BLOCK",
-            sub_block tag according to tide taging system. Will only be used if level 3 tags
-            or more are already used
+    Based on time series index, phase shift is computed from the beginning
+    of the year.
 
-        Attributes
-        ----------
-        feature_names_in_ : list[str]
-            Names of input columns (set during fit).
-        feature_names_out_ : list[str]
-            Names of output columns with replaced tag components.
+    Parameters
+    ----------
+    period: str | pd.Timedelta | dt.timedelta = "24h"
+        Period of thte signal. Will automaticaly convert a string to pandas TimeDelta
+    order: int = 1,
+        Sinus and Cosinus order. Will add a pair of feature for order "n", with a
+        pulsation n * 2 * pi * f
+    amplitude: float | int = 1.0,
+        Amplitude of the signal
+    unit: str = "-",
+        Unit of the signal
+    block: str = "BLOCK",
+        block tag according to tide taging system. Will only be used if level 2 tags
+        or more are already used
+    sub_block: str = "SUB_BLOCK",
+        sub_block tag according to tide taging system. Will only be used if level 3 tags
+        or more are already used
 
-        Examples
-        --------
-        >>> import pandas as pd
-        >>> # Create DataFrame with DateTimeIndex
-        >>> data = pd.DataFrame(
-        ...     data=np.arange(24).astype("float64"),
-        ...     index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
-        ...     columns=["feat_1"],
-        ... )
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns with replaced tag components.
 
-        >>> signal = AddFourierPairs(period="24h", order=2)
-        >>> result = signal.fit_transform(data)
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> data = pd.DataFrame(
+    ...     data=np.arange(24).astype("float64"),
+    ...     index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+    ...     columns=["feat_1"],
+    ... )
 
-        >>> print(result.head())
+    >>> signal = AddFourierPairs(period="24h", order=2)
+    >>> result = signal.fit_transform(data)
+
+    >>> print(result.head())
                                feat_1  1 days 00:00:00_order_1_Sine  1 days 00:00:00_order_1_Cosine  1 days 00:00:00_order_2_Sine  1 days 00:00:00_order_2_Cosine
     2009-01-01 00:00:00+00:00     0.0                      0.000000                        1.000000                      0.000000                    1.000000e+00
     2009-01-01 01:00:00+00:00     1.0                      0.258819                        0.965926                      0.500000                    8.660254e-01
@@ -2855,17 +2855,17 @@ class AddFourierPairs(BaseProcessing):
     2009-01-01 04:00:00+00:00     4.0                      0.866025                        0.500000                      0.866025                   -5.000000e-01
 
 
-        Notes
-        -----
-        - Tide tags follow the format "name__unit__block__sub_block"
-        - If unit, block or sub_block is given, but data have a lower level tag, it will be
-        ignored.
-        - The transformer preserves the order of tag components
+    Notes
+    -----
+    - Tide tags follow the format "name__unit__block__sub_block"
+    - If unit, block or sub_block is given, but data have a lower level tag, it will be
+    ignored.
+    - The transformer preserves the order of tag components
 
-        Returns
-        -------
-        pd.DataFrame
-            The DataFrame with new columns corresponding to the Fourier pairs
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with new columns corresponding to the Fourier pairs
     """
 
     def __init__(
