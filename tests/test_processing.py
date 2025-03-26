@@ -1058,9 +1058,9 @@ class TestCustomTransformers:
         )
 
         signal = AddFourierPairs(period=dt.timedelta(hours=24), unit="W")
-        res = signal.fit_transform(test_df)
+        signal.fit_transform(test_df)
 
-        assert list(res.columns) == [
+        assert signal.feature_names_out_ == [
             "feat_1__°C__building__room",
             "1 day, 0:00:00_order_1_Sine__W__BLOCK__SUB_BLOCK",
             "1 day, 0:00:00_order_1_Cosine__W__BLOCK__SUB_BLOCK",

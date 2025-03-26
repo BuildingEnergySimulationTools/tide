@@ -2900,7 +2900,7 @@ class AddFourierPairs(BaseProcessing):
                 if max_level > 2:
                     name += f"__{self.sub_block}"
                 self.new_columns_.append(name)
-        self.feature_names_out_.append(self.new_columns_)
+        self.feature_names_out_.extend(self.new_columns_)
 
         return self
 
