@@ -36,6 +36,7 @@ from tide.processing import (
     FillOtherColumns,
     DropColumns,
     ReplaceTag,
+    AddFourierPairs,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -988,3 +989,79 @@ class TestCustomTransformers:
         rep = ReplaceTag({"Whr": "Wh"})
         res = rep.fit_transform(df)
         check_feature_names_out(rep, res)
+
+    def test_add_fourier_pairs(self):
+        test_df = pd.DataFrame(
+            data=np.arange(24).astype("float64"),
+            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+            columns=["feat_1"],
+        )
+
+        signal = AddFourierPairs(period="24h", order=2)
+        res = signal.fit_transform(test_df)
+
+        ref_df = pd.DataFrame(
+            data=np.array(
+                [
+                    [0.0, 0.000000e00, 1.000000e00, 0.000000e00, 1.000000e00],
+                    [1.0, 2.588190e-01, 9.659258e-01, 5.000000e-01, 8.660254e-01],
+                    [2.0, 5.000000e-01, 8.660254e-01, 8.660254e-01, 5.000000e-01],
+                    [3.0, 7.071068e-01, 7.071068e-01, 1.000000e00, 6.123234e-17],
+                    [4.0, 8.660254e-01, 5.000000e-01, 8.660254e-01, -5.000000e-01],
+                    [5.0, 9.659258e-01, 2.588190e-01, 5.000000e-01, -8.660254e-01],
+                    [6.0, 1.000000e00, 6.123234e-17, 1.224647e-16, -1.000000e00],
+                    [7.0, 9.659258e-01, -2.588190e-01, -5.000000e-01, -8.660254e-01],
+                    [8.0, 8.660254e-01, -5.000000e-01, -8.660254e-01, -5.000000e-01],
+                    [9.0, 7.071068e-01, -7.071068e-01, -1.000000e00, -1.836970e-16],
+                    [10.0, 5.000000e-01, -8.660254e-01, -8.660254e-01, 5.000000e-01],
+                    [11.0, 2.588190e-01, -9.659258e-01, -5.000000e-01, 8.660254e-01],
+                    [12.0, 1.224647e-16, -1.000000e00, -2.449294e-16, 1.000000e00],
+                    [13.0, -2.588190e-01, -9.659258e-01, 5.000000e-01, 8.660254e-01],
+                    [14.0, -5.000000e-01, -8.660254e-01, 8.660254e-01, 5.000000e-01],
+                    [15.0, -7.071068e-01, -7.071068e-01, 1.000000e00, 3.061617e-16],
+                    [16.0, -8.660254e-01, -5.000000e-01, 8.660254e-01, -5.000000e-01],
+                    [17.0, -9.659258e-01, -2.588190e-01, 5.000000e-01, -8.660254e-01],
+                    [18.0, -1.000000e00, -1.836970e-16, 3.673940e-16, -1.000000e00],
+                    [19.0, -9.659258e-01, 2.588190e-01, -5.000000e-01, -8.660254e-01],
+                    [20.0, -8.660254e-01, 5.000000e-01, -8.660254e-01, -5.000000e-01],
+                    [21.0, -7.071068e-01, 7.071068e-01, -1.000000e00, -4.286264e-16],
+                    [22.0, -5.000000e-01, 8.660254e-01, -8.660254e-01, 5.000000e-01],
+                    [23.0, -2.588190e-01, 9.659258e-01, -5.000000e-01, 8.660254e-01],
+                ]
+            ),
+            columns=[
+                "feat_1",
+                "1 days 00:00:00_order_1_Sine",
+                "1 days 00:00:00_order_1_Cosine",
+                "1 days 00:00:00_order_2_Sine",
+                "1 days 00:00:00_order_2_Cosine",
+            ],
+            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+        )
+
+        pd.testing.assert_frame_equal(res, ref_df)
+
+        test_df_phi = pd.DataFrame(
+            data=np.arange(24),
+            index=pd.date_range("2009-01-01 06:00:00", freq="H", periods=24),
+            columns=["feat_1"],
+        )
+        test_df_phi = test_df_phi.tz_localize("UTC")
+        res = signal.transform(test_df_phi)
+
+        assert res.iloc[0, 1] == 1.0
+
+        test_df = pd.DataFrame(
+            data=np.arange(24).astype("float64"),
+            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+            columns=["feat_1__°C__building__room"],
+        )
+
+        signal = AddFourierPairs(period=dt.timedelta(hours=24), unit="W")
+        res = signal.fit_transform(test_df)
+
+        assert list(res.columns) == [
+            "feat_1__°C__building__room",
+            "1 day, 0:00:00_order_1_Sine__W__BLOCK__SUB_BLOCK",
+            "1 day, 0:00:00_order_1_Cosine__W__BLOCK__SUB_BLOCK",
+        ]

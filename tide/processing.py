@@ -19,6 +19,7 @@ from tide.utils import (
 from tide.regressors import SkSTLForecast, SkProphet
 from tide.classifiers import STLEDetector
 from tide.meteo import sun_position, beam_component, sky_diffuse, ground_diffuse
+from tide.utils import get_tags_max_level
 
 FUNCTION_MAP = {"mean": np.mean, "average": np.average, "sum": np.sum, "dot": np.dot}
 
@@ -2797,4 +2798,138 @@ class ReplaceTag(BaseProcessing):
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         X.columns = self.feature_names_out_
+        return X
+
+
+class AddFourierPairs(BaseProcessing):
+    """
+         A transformer that adds a pair of new columns with sine and cosine
+         signal of given period.
+         Based on time series index, phase shift is computed from the beginning
+         of the year.
+
+        Parameters
+        ----------
+        period: str | pd.Timedelta | dt.timedelta = "24h"
+            Period of thte signal. Will automaticaly convert a string to pandas TimeDelta
+        order: int = 1,
+            Sinus and Cosinus order. Will add a pair of feature for order "n", with a
+            pulsation n * 2 * pi * f
+        amplitude: float | int = 1.0,
+            Amplitude of the signal
+        unit: str = "-",
+            Unit of the signal
+        block: str = "BLOCK",
+            block tag according to tide taging system. Will only be used if level 2 tags
+            or more are already used
+        sub_block: str = "SUB_BLOCK",
+            sub_block tag according to tide taging system. Will only be used if level 3 tags
+            or more are already used
+
+        Attributes
+        ----------
+        feature_names_in_ : list[str]
+            Names of input columns (set during fit).
+        feature_names_out_ : list[str]
+            Names of output columns with replaced tag components.
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> # Create DataFrame with DateTimeIndex
+        >>> data = pd.DataFrame(
+        ...     data=np.arange(24).astype("float64"),
+        ...     index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+        ...     columns=["feat_1"],
+        ... )
+
+        >>> signal = AddFourierPairs(period="24h", order=2)
+        >>> result = signal.fit_transform(data)
+
+        >>> print(result.head())
+                               feat_1  1 days 00:00:00_order_1_Sine  1 days 00:00:00_order_1_Cosine  1 days 00:00:00_order_2_Sine  1 days 00:00:00_order_2_Cosine
+    2009-01-01 00:00:00+00:00     0.0                      0.000000                        1.000000                      0.000000                    1.000000e+00
+    2009-01-01 01:00:00+00:00     1.0                      0.258819                        0.965926                      0.500000                    8.660254e-01
+    2009-01-01 02:00:00+00:00     2.0                      0.500000                        0.866025                      0.866025                    5.000000e-01
+    2009-01-01 03:00:00+00:00     3.0                      0.707107                        0.707107                      1.000000                    6.123234e-17
+    2009-01-01 04:00:00+00:00     4.0                      0.866025                        0.500000                      0.866025                   -5.000000e-01
+
+
+        Notes
+        -----
+        - Tide tags follow the format "name__unit__block__sub_block"
+        - If unit, block or sub_block is given, but data have a lower level tag, it will be
+        ignored.
+        - The transformer preserves the order of tag components
+
+        Returns
+        -------
+        pd.DataFrame
+            The DataFrame with new columns corresponding to the Fourier pairs
+    """
+
+    def __init__(
+        self,
+        period: str | pd.Timedelta | dt.timedelta = "24h",
+        order: int = 1,
+        amplitude: float | int = 1.0,
+        unit: str = "-",
+        block: str = "BLOCK",
+        sub_block: str = "SUB_BLOCK",
+    ):
+        BaseProcessing.__init__(self)
+
+        self.period = pd.to_timedelta(period) if isinstance(period, str) else period
+        self.order = order
+        self.amplitude = amplitude
+        self.unit = unit
+        self.block = block
+        self.sub_block = sub_block
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.fit_check_features(X)
+        max_level = get_tags_max_level(X.columns)
+        self.new_columns_ = []
+        for od in range(1, self.order + 1):
+            for trig in ["Sine", "Cosine"]:
+                name = f"{self.period}_order_{od}_{trig}"
+                if max_level > 0:
+                    name += f"__{self.unit}"
+                if max_level > 1:
+                    name += f"__{self.block}"
+                if max_level > 2:
+                    name += f"__{self.sub_block}"
+                self.new_columns_.append(name)
+        self.feature_names_out_.append(self.new_columns_)
+
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(
+            self, attributes=["feature_names_in_", "feature_names_out_", "new_columns_"]
+        )
+        begin = X.index[0]
+        frequency = 1 / self.period.total_seconds()
+        year_start = pd.Timestamp(begin.year, 1, 1)
+        if begin.tz:
+            year_start = year_start.tz_localize(begin.tz)
+        seconds_from_start_of_year = (begin - year_start).total_seconds()
+        phi = 2 * np.pi * frequency * seconds_from_start_of_year
+
+        new_index = X.index.to_frame().diff().squeeze()
+        sec_dt = [element.total_seconds() for element in new_index]
+        increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy()
+        increasing_seconds[0] = 0
+
+        omega = 2 * np.pi * frequency
+        for od, idx in zip(
+            range(1, self.order + 1), range(0, len(self.new_columns_), 2)
+        ):
+            X[self.new_columns_[idx]] = self.amplitude * np.sin(
+                od * omega * increasing_seconds + phi
+            )
+            X[self.new_columns_[idx + 1]] = self.amplitude * np.cos(
+                od * omega * increasing_seconds + phi
+            )
+
         return X
