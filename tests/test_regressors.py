@@ -23,8 +23,16 @@ class TestRegressors:
         )
 
         toy_series = pd.Series(annual + daily + 5, index=index)
+
+        exo = 12 + 3 * np.arange(index.shape[0])
+
         toy_df = pd.DataFrame(
-            {"Temp_1__°C": toy_series, "Temp_2__°C": toy_series * 1.25 + 2}
+            {
+                "Temp_1__°C": toy_series,
+                "Temp_2__°C": toy_series * 1.25 + 2,
+                "Temp_3__°C": toy_series + exo,
+                "Exo": exo,
+            }
         )
         return toy_df
 
@@ -36,40 +44,71 @@ class TestRegressors:
             backcast=False,
         )
 
-        forecaster.fit(toy_data["2009-01-24":"2009-07-24"])
+        forecaster.fit(
+            X=toy_data["2009-01-24":"2009-07-24"].index,
+            y=toy_data.loc["2009-01-24":"2009-07-24", ["Temp_1__°C", "Temp_2__°C"]],
+        )
         reg_score = forecaster.score(
-            toy_data["2009-07-27":"2009-07-30"], toy_data["2009-07-27":"2009-07-30"]
+            toy_data["2009-07-27":"2009-07-30"],
+            toy_data.loc["2009-07-27":"2009-07-30", ["Temp_1__°C", "Temp_2__°C"]],
         )
         assert reg_score > 0.99
 
         backcaster = SkSTLForecast(backcast=True)
 
-        backcaster.fit(toy_data["2009-01-24":"2009-07-24"])
+        backcaster.fit(
+            X=toy_data.loc["2009-01-24":"2009-07-24"],
+            y=toy_data.loc["2009-01-24":"2009-07-24", ["Temp_1__°C", "Temp_2__°C"]],
+        )
 
         reg_score = backcaster.score(
-            toy_data["2009-01-20":"2009-01-22"], toy_data["2009-01-20":"2009-01-22"]
+            toy_data["2009-01-20":"2009-01-22"].index,
+            toy_data.loc["2009-01-20":"2009-01-22", ["Temp_1__°C", "Temp_2__°C"]],
         )
 
         assert reg_score > 0.99
 
     def test_prophet_forecaster(self, toy_data):
         forecaster = SkProphet()
-        forecaster.fit(toy_data["2009-01-24":"2009-07-24"])
+        forecaster.fit(
+            X=toy_data["2009-01-24":"2009-07-24"].index,
+            y=toy_data.loc["2009-01-24":"2009-07-24", ["Temp_1__°C", "Temp_2__°C"]],
+        )
 
         reg_score = forecaster.score(
-            toy_data["2009-07-27":"2009-07-30"], toy_data["2009-07-27":"2009-07-30"]
+            toy_data["2009-07-27":"2009-07-30"].index,
+            toy_data.loc["2009-07-27":"2009-07-30", ["Temp_1__°C", "Temp_2__°C"]],
         )
         assert reg_score > 0.99
 
         reg_score = forecaster.score(
-            toy_data["2009-01-20":"2009-01-22"], toy_data["2009-01-20":"2009-01-22"]
+            toy_data["2009-01-20":"2009-01-22"].index,
+            toy_data.loc["2009-01-20":"2009-01-22", ["Temp_1__°C", "Temp_2__°C"]],
         )
 
         assert reg_score > 0.99
 
         forecaster = SkProphet(return_upper_lower_bounds=True)
-        forecaster.fit(toy_data["2009-01-24":"2009-07-24"])
+        forecaster.fit(
+            X=toy_data["2009-01-24":"2009-07-24"].index,
+            y=toy_data.loc["2009-01-24":"2009-07-24", ["Temp_1__°C", "Temp_2__°C"]],
+        )
+
         feat_out = list(forecaster.get_feature_names_out())
-        predictions = forecaster.predict(toy_data["2009-07-27":"2009-07-30"])
+        predictions = forecaster.predict(toy_data["2009-07-27":"2009-07-30"].index)
 
         assert np.all([feat in predictions.columns for feat in feat_out])
+
+        forecaster = SkProphet()
+        forecaster.fit(
+            X=toy_data.loc["2009-01-24":"2009-07-24", "Exo"],
+            y=toy_data.loc["2009-01-24":"2009-07-24", "Temp_3__°C"],
+        )
+
+        reg_score = forecaster.score(
+            toy_data.loc["2009-01-24":"2009-07-24", "Exo"],
+            toy_data.loc["2009-01-24":"2009-07-24", "Temp_3__°C"],
+        )
+
+        assert reg_score > 0.99
+        assert forecaster.get_feature_names_in() == ["Exo"]

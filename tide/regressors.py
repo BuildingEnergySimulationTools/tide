@@ -1,32 +1,43 @@
 import datetime as dt
-import warnings
 
 import pandas as pd
 import numpy as np
+from pandas import DatetimeIndex
 
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.forecasting.stl import STLForecast
 from sklearn.base import RegressorMixin, BaseEstimator
-from sklearn.utils import check_array
 from sklearn.utils.validation import check_is_fitted
 
 from prophet import Prophet
 
 from tide.base import BaseSTL, TideBaseMixin
-from tide.utils import check_and_return_dt_index_df
+from tide.utils import check_and_return_dt_index_df, check_datetime_index
 
 MODEL_MAP = {"ARIMA": ARIMA}
 MODEL_DEFAULT_CONF = {"ARIMA": {"order": (1, 1, 0), "trend": "t"}}
 
 
-def series_to_prophet_df(x: pd.Series | pd.DatetimeIndex) -> pd.DataFrame:
+def format_prophet_df(
+    x: pd.Series | pd.DataFrame | pd.DatetimeIndex, y: pd.Series = None
+) -> pd.DataFrame:
     df = pd.DataFrame()
-    if isinstance(x, pd.Series):
-        idx = x.index
-        df["y"] = x.values
+    if y is not None:
+        if not x.shape[0] == y.shape[0]:
+            raise ValueError("x and y have incompatible shape")
+        df["y"] = y.values
+
+    if not isinstance(x, pd.DatetimeIndex):
+        x = check_and_return_dt_index_df(x)
+        df["ds"] = x.index.tz_localize(None)
+        df[x.columns] = x.values
+    elif isinstance(x, pd.DatetimeIndex):
+        df["ds"] = x.tz_localize(None)
     else:
-        idx = x
-    df["ds"] = idx.tz_localize(None)
+        raise ValueError(
+            f"Invalid x. Was expecting an instance of DateTimeIndex"
+            f"DataFrame or Series, got {type(x)}"
+        )
     return df
 
 
@@ -99,26 +110,29 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
         self.ar_model = ar_model
         self.ar_kwargs = ar_kwargs
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def fit(self, X: pd.Index | pd.Series | pd.DataFrame, y=pd.Series | pd.DataFrame):
+        if not isinstance(X, pd.DatetimeIndex):
+            X = check_and_return_dt_index_df(X)
+        y = check_and_return_dt_index_df(y)
+
         ar_model = MODEL_MAP[self.ar_model]
         if self.ar_kwargs is None:
             ar_kwargs = MODEL_DEFAULT_CONF[self.ar_model]
         else:
             ar_kwargs = self.ar_kwargs
 
-        self._pre_fit(X)
+        self._pre_fit(y)
         self.training_freq_ = (
-            X.index.freq if X.index.freq is not None else X.index.inferred_freq
+            y.index.freq if y.index.freq is not None else y.index.inferred_freq
         )
         if self.backcast:
-            X = X[::-1]
-        self.train_dat_end_ = X.index[-1]
+            y = y[::-1]
+        self.train_dat_end_ = y.index[-1]
         self.forecaster_ = {}
 
-        for feat in X:
+        for feat in y:
             self.forecaster_[feat] = STLForecast(
-                endog=X[feat].to_numpy(),
+                endog=y[feat].to_numpy(),
                 model=ar_model,
                 model_kwargs=ar_kwargs,
                 **self.stl_kwargs,
@@ -126,7 +140,7 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
 
         return self
 
-    def predict(self, X: pd.Series | pd.DataFrame):
+    def predict(self, X: pd.DatetimeIndex | pd.Series | pd.DataFrame):
         check_is_fitted(
             self,
             attributes=[
@@ -135,9 +149,11 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
                 "training_freq_",
             ],
         )
-
-        X = check_and_return_dt_index_df(X)
-        check_array(X)
+        if isinstance(X, DatetimeIndex):
+            check_datetime_index(X)
+            X = X.to_frame()
+        else:
+            X = check_and_return_dt_index_df(X)
 
         if X.index.shape[0] == 2:
             X.index.freq = pd.tseries.frequencies.to_offset(
@@ -161,13 +177,6 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
             )
 
         output_index = X.index[::-1] if self.backcast else X.index
-
-        if set(self.forecaster_.keys()) != set(X.columns):
-            warnings.warn(
-                "Columns in X differs from columns in the training DataSet. "
-                "Forecast will be performed for the trained data",
-                UserWarning,
-            )
 
         casting_steps = int(
             len(output_index)
@@ -220,6 +229,64 @@ class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
         Fit the Prophet model to the input data.
     predict(X)
         Make predictions using the fitted Prophet model.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> import datetime as dt
+    >>> from tide.regressors import SkProphet
+
+    >>> index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h", tz="UTC")
+    >>> cumsum_second = np.arange(
+    ...     0, (index[-1] - index[0]).total_seconds() + 1, step=3600
+    ... )
+
+    >>> annual = 5 * -np.cos(
+    ... 2 * np.pi / dt.timedelta(days=360).total_seconds() * cumsum_second
+    ...)
+
+    >>> daily = 5 * np.sin(
+    ... 2 * np.pi / dt.timedelta(days=1).total_seconds() * cumsum_second
+    ...)
+
+    >>> toy_series = pd.Series(annual + daily + 5, index=index)
+
+    >>> exo = 12 + 3 * np.arange(index.shape[0])
+
+    >>> toy_df = pd.DataFrame(
+    ...    {
+    ...        "Temp_3__°C": toy_series + exo,
+    ...        "Exo": exo,
+    ...    }
+    ...)
+
+    >>> forecaster = SkProphet()
+    >>> forecaster.fit(
+    ...    X=toy_df.loc["2009-01-24":"2009-07-24", "Exo"],
+    ...    y=toy_df.loc["2009-01-24":"2009-07-24", "Temp_3__°C"],
+    ...)
+
+    >>> result = forecaster.predict(X=toy_df.loc["2009-07-25":"2009-07-30", "Exo"])
+    >>> print(result.head())
+                                 Temp_3__°C
+    2009-07-25 00:00:00+00:00  14781.715143
+    2009-07-25 01:00:00+00:00  14786.009401
+    2009-07-25 02:00:00+00:00  14790.215280
+    2009-07-25 03:00:00+00:00  14794.250621
+    2009-07-25 04:00:00+00:00  14798.044970
+
+    Notes
+    -----
+    - Additional regressors are passed in X during fitting operation
+    - Holidays cannot be configured in this regressor. We recommend to pass it
+    as a feature during the fitting process. It will be treated as an additional
+    regressor
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with DateTime index. Columns are the y targets
     """
 
     def __init__(
@@ -237,43 +304,58 @@ class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
         self.return_upper_lower_bounds = return_upper_lower_bounds
         self.backcast = backcast
 
-    def fit(self, X: pd.Series | pd.DataFrame, y=None):
-        X = check_and_return_dt_index_df(X)
+    def fit(self, X: pd.Index | pd.Series | pd.DataFrame, y=pd.Series | pd.DataFrame):
+        y = check_and_return_dt_index_df(y)
+        self.feature_names_out_ = list(y.columns)
+        if isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
+            X = check_and_return_dt_index_df(X)
+            self.feature_names_in_ = list(X.columns)
+        else:
+            check_datetime_index(X)
+            self.feature_names_in_ = []
+
         self.forecaster_ = {}
-        self.fit_check_features(X)
         if self.return_upper_lower_bounds:
             self.added_columns = []
             for bound in ["upper", "lower"]:
-                for feat in self.feature_names_in_:
+                for feat in self.feature_names_out_:
                     parts = feat.split("__")
                     parts[0] = f"{parts[0]}_{bound}"
                     self.added_columns.append("__".join(parts))
 
-        for feat in X:
-            x = series_to_prophet_df(X[feat])
-            self.forecaster_[feat] = Prophet(
+        for target in y:
+            prophet_df = format_prophet_df(X, y[target])
+            model = Prophet(
                 seasonality_prior_scale=self.seasonality_prior_scale,
                 changepoint_prior_scale=self.changepoint_prior_scale,
                 **self.prophet_kwargs,
-            ).fit(x)
+            )
+            if isinstance(X, pd.DataFrame):
+                for feat in X:
+                    model.add_regressor(feat)
+            self.forecaster_[target] = model.fit(prophet_df)
         return self
 
-    def predict(self, X: pd.Series | pd.DataFrame):
-        X = check_and_return_dt_index_df(X)
+    def predict(self, X: pd.Index | pd.Series | pd.DataFrame):
         check_is_fitted(
             self,
             attributes=["forecaster_", "feature_names_in_"],
         )
-        if not np.all([f in self.feature_names_in_ for f in X.columns]):
-            raise ValueError(
-                "One of the requested feature was not present during fitting"
-            )
 
-        X = check_and_return_dt_index_df(X)
-        inferred_df = pd.DataFrame(index=X.index)
+        if isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
+            X = check_and_return_dt_index_df(X)
+            if not np.all([f in self.feature_names_in_ for f in X.columns]):
+                raise ValueError(
+                    "One of the requested feature was not present during fitting"
+                )
+        else:
+            check_datetime_index(X)
+
+        out_idx = X if isinstance(X, pd.DatetimeIndex) else X.index
+        inferred_df = pd.DataFrame(index=out_idx)
         for feat in self.forecaster_.keys():
-            x = series_to_prophet_df(X.index)
-            prediction = self.forecaster_[feat].predict(x)
+            df_prophet = format_prophet_df(X)
+            prediction = self.forecaster_[feat].predict(df_prophet)
             inferred_df[feat] = prediction["yhat"].values
             if self.return_upper_lower_bounds:
                 for bound in ["upper", "lower"]:

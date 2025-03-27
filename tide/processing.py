@@ -1912,10 +1912,9 @@ class FillGapsAR(BaseFiller, BaseProcessing):
         if self.resample_at_td:
             self._check_forecast_horizon(idx)
         x_fit, idx_pred = self._get_x_and_idx_at_freq(X.loc[group, col], idx, backcast)
-        bc_model.fit(x_fit)
-        to_predict = idx_pred.to_series()
-        to_predict.name = col
-        to_predict = to_predict[to_predict.index.isin(X.index)]
+        bc_model.fit(X=x_fit.index, y=x_fit)
+        to_predict = idx_pred
+        to_predict = to_predict[to_predict.isin(X.index)]
         # Here a bit dirty. STL doesn't allow forecast on its fitting set
         if self.model_name == "STL":
             to_predict = to_predict[~to_predict.isin(x_fit.index)]
