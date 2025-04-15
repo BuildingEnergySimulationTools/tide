@@ -8,7 +8,7 @@ from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
 from tide.utils import (
-    parse_request_to_col_names,
+    tide_request,
     check_and_return_dt_index_df,
     data_columns_to_tree,
     get_data_level_values,
@@ -62,7 +62,7 @@ def _get_column_wise_transformer(
 ) -> ColumnTransformer | None:
     col_trans_list = []
     for req, proc_list in proc_dict.items():
-        requested_col = parse_request_to_col_names(data_columns, req)
+        requested_col = tide_request(data_columns, req)
         if not requested_col:
             pass
         else:
@@ -358,7 +358,7 @@ class Plumber:
         pd.Index
             Selected column names
         """
-        return parse_request_to_col_names(self.data, select)
+        return tide_request(self.data, select)
 
     def get_pipeline(
         self,
@@ -438,7 +438,7 @@ class Plumber:
         """
         if self.data is None:
             raise ValueError("data is required to build a pipeline")
-        selection = parse_request_to_col_names(self.data, select)
+        selection = tide_request(self.data, select)
         if steps is None or self.pipe_dict is None:
             dict_to_pipe = None
         else:
@@ -541,7 +541,7 @@ class Plumber:
         """
         if self.data is None:
             raise ValueError("Cannot get corrected data. data are missing")
-        select = parse_request_to_col_names(self.data, select)
+        select = tide_request(self.data, select)
         data = self.data.loc[
             start or self.data.index[0] : stop or self.data.index[-1], select
         ].copy()
@@ -834,9 +834,7 @@ class Plumber:
         # for example) So we just process the whole data hoping to find the result
         # after.
         select_corr = (
-            self.data.columns
-            if not parse_request_to_col_names(self.data, select)
-            else select
+            self.data.columns if not tide_request(self.data, select) else select
         )
 
         data_1 = self.get_corrected_data(select_corr, start, stop, steps, verbose)
