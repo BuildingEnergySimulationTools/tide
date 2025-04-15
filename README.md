@@ -9,7 +9,7 @@
 [![codecov](https://codecov.io/gh/BuildingEnergySimulationTools/tide/branch/main/graph/badge.svg?token=F51O9CXI61)](https://codecov.io/gh/BuildingEnergySimulationTools/tide)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
-[![Documentation Status](https://readthedocs.org/projects/python-tide/badge/?version=latest)](https://python-tide.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/python-tide/badge/?version=main)](https://python-tide.readthedocs.io/en/main/?badge=main)
 
 ## Pipeline Development and Data Visualization for Time Series in Physical Measurements
 
