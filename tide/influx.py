@@ -1,6 +1,7 @@
 import time
 import datetime as dt
 from zoneinfo import ZoneInfo
+
 from urllib3.exceptions import ReadTimeoutError
 
 import pandas as pd
@@ -8,6 +9,16 @@ from influxdb_client import InfluxDBClient
 
 from tide.utils import check_and_return_dt_index_df
 
+def _build_tide_influx_tag_expression(tide_tags: list[str], influx_type:str):
+    is_string = True if influx_type == "string" else False
+    expr = f"r.{tide_tags[0]}"
+    if len(tide_tags) > 1:
+        for i, tag in enumerate(tide_tags[1:]):
+            if i==0 and is_string:
+                expr += f' + "__no_unit"'
+            else:
+                expr += f' + "__" + r.{tag}'
+    return expr
 
 def _date_objects_tostring(date: dt.datetime | pd.Timestamp, tz_info=None):
     if date.tzinfo is None:
@@ -18,6 +29,44 @@ def _date_objects_tostring(date: dt.datetime | pd.Timestamp, tz_info=None):
     date_utc = date.astimezone(ZoneInfo("UTC"))
     return date_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+def _build_flux_block(
+        influx_type: str,
+        tide_tags: list[str],
+        bucket: str,
+        start,
+        stop,
+        measurement,
+        tz_info
+):
+
+    tide_expr = _build_tide_influx_tag_expression(tide_tags, influx_type)
+    start_str = _date_objects_tostring(start, tz_info)
+    stop_str = _date_objects_tostring(stop, tz_info)
+
+    return f"""
+        {influx_type} = from(bucket: "{bucket}")
+            |> range(start: {start_str}, stop: {stop_str})
+            |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+            |> filter(fn: (r) => types.isType(v: r._value, type: "{influx_type}"))
+            |> map(fn: (r) => ({{r with tide: {tide_expr}}}))
+            |> keep(columns: ["_time", "_value", "tide"])
+            |> pivot(rowKey: ["_time"], columnKey: ["tide"], valueColumn: "_value")
+    """
+
+def _build_query(bucket, start, stop, measurement, tide_tags, tz_info):
+
+    strings_block = _build_flux_block("string", tide_tags, bucket, start, stop, measurement, tz_info)
+    floats_block = _build_flux_block("float", tide_tags, bucket, start, stop, measurement, tz_info)
+
+    final_query = f"""
+    import "types"
+    {strings_block}
+    {floats_block}
+
+    union(tables: [string, float])
+        |> sort(columns: ["_time"], desc: false)
+    """
+    return final_query
 
 def _single_influx_request(
     start: str | pd.Timestamp | dt.datetime,
@@ -29,26 +78,11 @@ def _single_influx_request(
     org: str,
     token: str,
     tz_info: str = "UTC",
+    timeout:int= 10000
 ) -> pd.DataFrame:
-    client = InfluxDBClient(url=url, org=org, token=token)
+    client = InfluxDBClient(url=url, org=org, token=token, timeout=timeout)
     query_api = client.query_api()
-    query = f"""
-        from(bucket: "{bucket}")
-        |> range(start: {_date_objects_tostring(start, tz_info)}, 
-                 stop: {_date_objects_tostring(stop, tz_info)})
-        |> filter(fn: (r) => r["_measurement"] == "{measurement}")
-        |> map(fn: (r) => ({{r with tide: r.{tide_tags[0]}
-    """
-    if len(tide_tags) > 1:
-        for tag in tide_tags[1:]:
-            query += f' + "__" + r.{tag}'
-    query += "}))"
-    query += """
-        |> keep(columns: ["_time", "_value", "tide"])
-        |> pivot(rowKey: ["_time"], columnKey: ["tide"], valueColumn: "_value")
-        |> sort(columns: ["_time"])
-        """
-
+    query = _build_query(bucket, start, stop, measurement, tide_tags, tz_info)
     tables = query_api.query(query)
 
     records = []
@@ -76,6 +110,7 @@ def get_influx_data(
     split_td: str | dt.timedelta | pd.Timedelta = None,
     tz_info: str = "UTC",
     max_retry: int = 5,
+    request_timeout:int = 10000,
     waited_seconds_at_retry: int = 5,
     verbose: bool = False,
 ) -> pd.DataFrame:
@@ -159,7 +194,7 @@ def get_influx_data(
 
     Examples
     --------
-    >>> from tide import get_influx_data
+    >>> from tide.influx import get_influx_data
     >>> import pandas as pd
     >>> # Fetch last 24 hours of data
     >>> df = get_influx_data(
@@ -225,6 +260,7 @@ def get_influx_data(
                         org=org,
                         token=token,
                         tz_info=tz_info,
+                        timeout=request_timeout
                     )
                 )
                 break
