@@ -2762,10 +2762,10 @@ class KeepColumns(BaseProcessing):
         >>> keeper_multi = KeepColumns(columns="°C|%")
         >>> result_multi = keeper_multi.fit_transform(df)
         >>> print(result_multi)
-                               temp__°C  humid__%
-    2024-01-01 00:00:00+00:00        20        45
-    2024-01-01 00:01:00+00:00        21        50
-    2024-01-01 00:02:00+00:00        22        55
+                                   temp__°C  humid__%
+        2024-01-01 00:00:00+00:00        20        45
+        2024-01-01 00:01:00+00:00        21        50
+        2024-01-01 00:02:00+00:00        22        55
 
         Notes
         -----
