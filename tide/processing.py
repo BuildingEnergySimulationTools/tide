@@ -2714,6 +2714,87 @@ class DropColumns(BaseProcessing):
         )
 
 
+class KeepColumns(BaseProcessing):
+    """
+        A transformer that keeps specified columns from a pandas DataFrame.
+
+        It is particularly useful at the final step of data preprocessing.
+        When only some columns are passed to a model
+
+        Parameters
+        ----------
+        columns : str | list[str], optional (default=None)
+            The column name or a list of column names to be dropped.
+            If None, no columns are dropped and the DataFrame is returned unchanged.
+            Example: 'temp__°C' or ['temp__°C', 'humid__%'] or '°C|%'
+
+        Attributes
+        ----------
+        feature_names_in_ : list[str]
+            Names of input columns (set during fit).
+        feature_names_out_ : list[str]
+            Names of output columns (input columns minus dropped columns).
+
+        Examples
+        --------
+        >>> import pandas as pd
+        >>> # Create DataFrame with DateTimeIndex
+        >>> dates = pd.date_range(
+        ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+        ... ).tz_localize("UTC")
+        >>> df = pd.DataFrame(
+        ...     {
+        ...         "temp__°C": [20, 21, 22],
+        ...         "humid__%": [45, 50, 55],
+        ...         "press__Pa": [1000, 1010, 1020],
+        ...     },
+        ...     index=dates,
+        ... )
+        >>> # Keep a single column
+        >>> keeper = KeepColumns(columns="temp__°C")
+        >>> result = keeper.fit_transform(df)
+        >>> print(result)
+                                   temp__°C
+        2024-01-01 00:00:00+00:00        20
+        2024-01-01 00:01:00+00:00        21
+        2024-01-01 00:02:00+00:00        22
+        >>> # Keep multiple columns
+        >>> keeper_multi = KeepColumns(columns="°C|%")
+        >>> result_multi = keeper_multi.fit_transform(df)
+        >>> print(result_multi)
+                                   temp__°C  humid__%
+        2024-01-01 00:00:00+00:00        20        45
+        2024-01-01 00:01:00+00:00        21        50
+        2024-01-01 00:02:00+00:00        22        55
+
+        Notes
+        -----
+        - If a specified column doesn't exist in the DataFrame, it will be silently
+          ignored
+        - The order of selected columns is preserved
+        - If no columns are specified (columns=None), the DataFrame is returned
+          unchanged
+
+        Returns
+        -------
+        pd.DataFrame
+            The DataFrame with specified columns removed. The output maintains
+            the same DateTimeIndex as the input, with only the specified columns
+            removed.
+    """
+
+    def __init__(self, columns: str | list[str] = None):
+        self.columns = columns
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.required_columns = tide_request(X, self.columns)
+        self.feature_names_out_ = self.required_columns
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        return X[self.feature_names_out_]
+
+
 class ReplaceTag(BaseProcessing):
     """A transformer that replaces components of Tide tag names with new values.
 

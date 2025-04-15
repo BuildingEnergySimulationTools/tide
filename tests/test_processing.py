@@ -35,6 +35,7 @@ from tide.processing import (
     ProjectSolarRadOnSurfaces,
     FillOtherColumns,
     DropColumns,
+    KeepColumns,
     ReplaceTag,
     AddFourierPairs,
 )
@@ -962,7 +963,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
-        col_dropper = DropColumns()
+        col_dropper = KeepColumns()
         col_dropper.fit(df)
         res = col_dropper.transform(df.copy())
         pd.testing.assert_frame_equal(df, res)
@@ -979,6 +980,30 @@ class TestCustomTransformers:
         res = col_dropper.transform(df.copy())
         assert res.shape == (2, 0)
         check_feature_names_out(col_dropper, res)
+
+    def test_keep_columns(self):
+        df = pd.DataFrame(
+            {"a": [1, 2], "b": [1, 2], "c": [1, 2]},
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
+        )
+
+        col_keeper = KeepColumns()
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df, res)
+        check_feature_names_out(col_keeper, res)
+
+        col_keeper = KeepColumns(columns="a")
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df[["a"]], res)
+        check_feature_names_out(col_keeper, res)
+
+        col_keeper = KeepColumns(columns=["a|b", "c"])
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df, res)
+        check_feature_names_out(col_keeper, res)
 
     def test_replace_tag(self):
         df = pd.DataFrame(
