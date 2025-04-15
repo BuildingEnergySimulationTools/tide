@@ -193,8 +193,8 @@ def tide_request(
     tags.
 
     A column name can include up to four hierarchical parts:
-        'name__unit__bloc__sub_bloc'
-    where each part is optional, but must be separated with double underscores.
+    'name__unit__bloc__sub_bloc' where each part is optional, but must be separated
+    with double underscores.
 
     The `request` argument allows searching for columns matching one or more
     of these parts using full or partial tag patterns. Multiple tag patterns
@@ -251,7 +251,7 @@ def tide_request(
     >>> tide_request(DF_COLUMNS, "kWh|°C")
     ['name_5__kWh', 'name_1__°C__bloc1', 'name_1__°C__bloc2']
 
-    # Columns are not selected twice
+    >>> # Columns are not selected twice
     >>> tide_request(DF_COLUMNS, ["kWh|°C", "name_5__kWh"])
     ['name_5__kWh', 'name_1__°C__bloc1', 'name_1__°C__bloc2']
     """
