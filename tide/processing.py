@@ -13,7 +13,7 @@ from tide.utils import (
     get_data_blocks,
     get_outer_timestamps,
     check_and_return_dt_index_df,
-    parse_request_to_col_names,
+    tide_request,
     ensure_list,
 )
 from tide.regressors import SkSTLForecast, SkProphet
@@ -1269,9 +1269,7 @@ class Resample(BaseProcessing):
         if self.tide_format_methods:
             self.columns_methods = []
             for req, method in self.tide_format_methods.items():
-                self.columns_methods.append(
-                    (parse_request_to_col_names(X.columns, req), method)
-                )
+                self.columns_methods.append((tide_request(X.columns, req), method))
 
         return self
 

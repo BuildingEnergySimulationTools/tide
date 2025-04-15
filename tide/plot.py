@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 
 from tide.utils import (
     check_and_return_dt_index_df,
-    parse_request_to_col_names,
+    tide_request,
     data_columns_to_tree,
     get_data_level_values,
     get_data_blocks,
@@ -63,7 +63,7 @@ def get_cols_axis_maps_and_labels(
     col_axes_map = {}
     axes_col_map = {}
     for i, tag in enumerate(y_tags):
-        selected_cols = parse_request_to_col_names(columns, tag)
+        selected_cols = tide_request(columns, tag)
         axes_col_map["y" if i == 0 else f"y{i + 1}"] = selected_cols
         for col in selected_cols:
             col_axes_map[col] = {"yaxis": "y"} if i == 0 else {"yaxis": f"y{i + 1}"}

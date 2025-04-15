@@ -143,40 +143,136 @@ def get_data_col_names_from_root(data_root):
     ][-1]
 
 
-def parse_request_to_col_names(
+def find_cols_with_tide_tags(
+    data_columns: pd.Index | list[str], request: str
+) -> list[str]:
+    request_parts = request.split("__")
+
+    if not (1 <= len(request_parts) <= 4):
+        raise ValueError(
+            f"Request '{request}' is malformed. "
+            f"Use 'name__unit__bloc__sub_bloc' format or a "
+            f"combination of these tags."
+        )
+
+    full_tag_col_map = {
+        col_name_tag_enrichment(col, get_tags_max_level(data_columns)): col
+        for col in data_columns
+    }
+
+    def find_exact_match(search_str, target):
+        pattern = rf"(?:^|__)(?:{re.escape(search_str)})(?:$|__)"
+        match = re.search(pattern, target)
+        return match is not None
+
+    return [
+        full_tag_col_map[augmented_col]
+        for augmented_col in full_tag_col_map.keys()
+        if all(find_exact_match(part, augmented_col) for part in request_parts)
+    ]
+
+
+def find_cols_multiple_tag_groups(
+    data_columns: pd.Index | list[str], request: str
+) -> list[str]:
+    request_parts = request.split("|")
+    list_to_return = []
+    for req in request_parts:
+        list_to_return.extend(find_cols_with_tide_tags(data_columns, req))
+    return list_to_return
+
+
+def tide_request(
     data_columns: pd.Index | list[str], request: str | pd.Index | list[str] = None
 ) -> list[str]:
+    """
+    Select columns by matching structured TIDE-style tags.
+
+    Filters column names based on a TIDE-style structured tag syntax. Columns are
+    expected to use a naming convention with double underscores (`__`) separating
+    tags.
+
+    A column name can include up to four hierarchical parts:
+        'name__unit__bloc__sub_bloc'
+    where each part is optional, but must be separated with double underscores.
+
+    The `request` argument allows searching for columns matching one or more
+    of these parts using full or partial tag patterns. Multiple tag patterns
+    can be combined using the pipe `|` character to form OR conditions.
+
+    Parameters
+    ----------
+    data_columns : pandas.Index or list of str
+        A collection of column names to filter. Each column name should follow
+        the TIDE format (e.g., "sensor__°C__bloc1").
+
+    request : str or list of str or pandas.Index, optional
+        Tag(s) to match against the column names. Each tag string may be:
+
+        - A full structured tag (e.g., "name__°C__bloc2")
+        - A partial tag (e.g., "°C", "bloc1")
+        - A group of tags separated by "|" (e.g., "kWh|°C")
+
+        If None, all columns from `data_columns` are returned.
+
+    Returns
+    -------
+    list of str
+        The list of column names that match any of the provided tag queries.
+
+    Notes
+    -----
+    - Matching is done per tag part, not substrings. For instance, the query
+      "bloc1" will match "name__°C__bloc1" but not "bloc11".
+    - If multiple requests are given, columns are returned if they match
+      at least one of them (logical OR).
+    - Tags can include between 1 and 4 parts, split by `__`.
+
+    Examples
+    --------
+    >>> DF_COLUMNS = [
+    ...     "name_1__°C__bloc1",
+    ...     "name_1__°C__bloc2",
+    ...     "name_2",
+    ...     "name_2__DIMENSIONLESS__bloc2",
+    ...     "name_3__kWh/m²",
+    ...     "name_5__kWh",
+    ...     "name4__DIMENSIONLESS__bloc4",
+    ... ]
+
+    >>> tide_request(DF_COLUMNS)
+    ['name_1__°C__bloc1', 'name_1__°C__bloc2', 'name_2',
+     'name_2__DIMENSIONLESS__bloc2', 'name_3__kWh/m²',
+     'name_5__kWh', 'name4__DIMENSIONLESS__bloc4']
+
+    >>> tide_request(DF_COLUMNS, "°C")
+    ['name_1__°C__bloc1', 'name_1__°C__bloc2']
+
+    >>> tide_request(DF_COLUMNS, "kWh|°C")
+    ['name_5__kWh', 'name_1__°C__bloc1', 'name_1__°C__bloc2']
+
+    # Columns are not selected twice
+    >>> tide_request(DF_COLUMNS, ["kWh|°C", "name_5__kWh"])
+    ['name_5__kWh', 'name_1__°C__bloc1', 'name_1__°C__bloc2']
+    """
+
     if request is None:
         return list(data_columns)
 
-    elif isinstance(request, pd.Index) or isinstance(request, list):
-        return [col for col in request if col in data_columns]
+    elif isinstance(request, str):
+        request = [request]
 
-    else:
-        request_parts = request.split("__")
+    if not (isinstance(request, pd.Index) or isinstance(request, list)):
+        raise ValueError(
+            "Invalid request. Was expected an instance of str, pd.Index or List[str]"
+            f"got {type(request)} instead"
+        )
 
-        if not (1 <= len(request_parts) <= 4):
-            raise ValueError(
-                f"Request '{request}' is malformed. "
-                f"Use 'name__unit__bloc__sub_bloc' format or a "
-                f"combination of these tags."
-            )
+    list_to_return = []
+    for req in request:
+        list_to_return.extend(find_cols_multiple_tag_groups(data_columns, req))
 
-        full_tag_col_map = {
-            col_name_tag_enrichment(col, get_tags_max_level(data_columns)): col
-            for col in data_columns
-        }
-
-        def find_exact_match(search_str, target):
-            pattern = rf"(?:^|__)(?:{re.escape(search_str)})(?:$|__)"
-            match = re.search(pattern, target)
-            return match is not None
-
-        return [
-            full_tag_col_map[augmented_col]
-            for augmented_col in full_tag_col_map.keys()
-            if all(find_exact_match(part, augmented_col) for part in request_parts)
-        ]
+    return list(dict.fromkeys(list_to_return))
 
 
 def data_columns_to_tree(columns: pd.Index | list[str]) -> T:
