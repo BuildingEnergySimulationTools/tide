@@ -1,15 +1,16 @@
 import os
 import sys
+import importlib.metadata
 
 sys.path.insert(0, os.path.abspath(".."))
 
 # Project information
 project = "python-tide"
-copyright = "2024, Baptiste Durand-Estebe"
+copyright = "Nobatek"
 author = "Baptiste Durand-Estebe"
 
 # The full version, including alpha/beta/rc tags
-release = "0.1.5"
+version = release = importlib.metadata.version("python-tide")
 
 # General configuration
 extensions = [
