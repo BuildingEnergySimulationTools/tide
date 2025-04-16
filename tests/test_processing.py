@@ -963,11 +963,11 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
-        col_dropper = KeepColumns()
+        col_dropper = DropColumns()
         col_dropper.fit(df)
         res = col_dropper.transform(df.copy())
-        pd.testing.assert_frame_equal(df, res)
-        check_feature_names_out(col_dropper, res)
+        assert res.shape == (2, 0)
+        check_feature_names_out(col_dropper, pd.DataFrame(index=df.index))
 
         col_dropper = DropColumns(columns="a")
         col_dropper.fit(df)
@@ -975,7 +975,7 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(df[["b", "c"]], res)
         check_feature_names_out(col_dropper, res)
 
-        col_dropper = DropColumns(columns=["a", "b", "c"])
+        col_dropper = DropColumns(columns=["a|b", "c"])
         col_dropper.fit(df)
         res = col_dropper.transform(df.copy())
         assert res.shape == (2, 0)
