@@ -29,8 +29,9 @@ def _single_influx_request(
     org: str,
     token: str,
     tz_info: str = "UTC",
+    timeout: int = 10000,
 ) -> pd.DataFrame:
-    client = InfluxDBClient(url=url, org=org, token=token)
+    client = InfluxDBClient(url=url, org=org, token=token, timeout=timeout)
     query_api = client.query_api()
     query = f"""
         from(bucket: "{bucket}")
@@ -75,6 +76,7 @@ def get_influx_data(
     token: str,
     split_td: str | dt.timedelta | pd.Timedelta = None,
     tz_info: str = "UTC",
+    request_timeout: int = 10000,
     max_retry: int = 5,
     waited_seconds_at_retry: int = 5,
     verbose: bool = False,
@@ -131,6 +133,9 @@ def get_influx_data(
     tz_info : str, default "UTC"
         Timezone for interpreting start and stop times.
         Must be a valid timezone name from the IANA Time Zone Database.
+
+    request_timeout : int, default 10 000
+        Number of ms to wait before the request timeout
 
     max_retry : int, default 5
         Maximum number of retry attempts for failed queries.
@@ -225,6 +230,7 @@ def get_influx_data(
                         org=org,
                         token=token,
                         tz_info=tz_info,
+                        timeout=request_timeout,
                     )
                 )
                 break
