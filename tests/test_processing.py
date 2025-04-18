@@ -35,6 +35,7 @@ from tide.processing import (
     ProjectSolarRadOnSurfaces,
     FillOtherColumns,
     DropColumns,
+    KeepColumns,
     ReplaceTag,
     AddFourierPairs,
 )
@@ -965,8 +966,8 @@ class TestCustomTransformers:
         col_dropper = DropColumns()
         col_dropper.fit(df)
         res = col_dropper.transform(df.copy())
-        pd.testing.assert_frame_equal(df, res)
-        check_feature_names_out(col_dropper, res)
+        assert res.shape == (2, 0)
+        check_feature_names_out(col_dropper, pd.DataFrame(index=df.index))
 
         col_dropper = DropColumns(columns="a")
         col_dropper.fit(df)
@@ -974,11 +975,35 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(df[["b", "c"]], res)
         check_feature_names_out(col_dropper, res)
 
-        col_dropper = DropColumns(columns=["a", "b", "c"])
+        col_dropper = DropColumns(columns=["a|b", "c"])
         col_dropper.fit(df)
         res = col_dropper.transform(df.copy())
         assert res.shape == (2, 0)
         check_feature_names_out(col_dropper, res)
+
+    def test_keep_columns(self):
+        df = pd.DataFrame(
+            {"a": [1, 2], "b": [1, 2], "c": [1, 2]},
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
+        )
+
+        col_keeper = KeepColumns()
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df, res)
+        check_feature_names_out(col_keeper, res)
+
+        col_keeper = KeepColumns(columns="a")
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df[["a"]], res)
+        check_feature_names_out(col_keeper, res)
+
+        col_keeper = KeepColumns(columns=["a|b", "c"])
+        col_keeper.fit(df)
+        res = col_keeper.transform(df.copy())
+        pd.testing.assert_frame_equal(df, res)
+        check_feature_names_out(col_keeper, res)
 
     def test_replace_tag(self):
         df = pd.DataFrame(
@@ -993,7 +1018,7 @@ class TestCustomTransformers:
     def test_add_fourier_pairs(self):
         test_df = pd.DataFrame(
             data=np.arange(24).astype("float64"),
-            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+            index=pd.date_range("2009-01-01 00:00:00", freq="h", periods=24, tz="UTC"),
             columns=["feat_1"],
         )
 
@@ -1036,14 +1061,14 @@ class TestCustomTransformers:
                 "1 days 00:00:00_order_2_Sine",
                 "1 days 00:00:00_order_2_Cosine",
             ],
-            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+            index=pd.date_range("2009-01-01 00:00:00", freq="h", periods=24, tz="UTC"),
         )
 
         pd.testing.assert_frame_equal(res, ref_df)
 
         test_df_phi = pd.DataFrame(
             data=np.arange(24),
-            index=pd.date_range("2009-01-01 06:00:00", freq="H", periods=24),
+            index=pd.date_range("2009-01-01 06:00:00", freq="h", periods=24),
             columns=["feat_1"],
         )
         test_df_phi = test_df_phi.tz_localize("UTC")
@@ -1053,7 +1078,7 @@ class TestCustomTransformers:
 
         test_df = pd.DataFrame(
             data=np.arange(24).astype("float64"),
-            index=pd.date_range("2009-01-01 00:00:00", freq="H", periods=24, tz="UTC"),
+            index=pd.date_range("2009-01-01 00:00:00", freq="h", periods=24, tz="UTC"),
             columns=["feat_1__°C__building__room"],
         )
 

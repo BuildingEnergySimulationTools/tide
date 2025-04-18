@@ -10,7 +10,7 @@ from tide.utils import (
     data_columns_to_tree,
     get_data_col_names_from_root,
     get_data_level_values,
-    parse_request_to_col_names,
+    tide_request,
     timedelta_to_int,
     NamedList,
     _get_series_bloc,
@@ -58,7 +58,7 @@ class TestUtils:
         assert all(col in DF_COLUMNS.columns for col in col_names)
 
     def test_parse_request_to_col_names(self):
-        res = parse_request_to_col_names(DF_COLUMNS)
+        res = tide_request(DF_COLUMNS)
         assert res == [
             "name_1__°C__bloc1",
             "name_1__°C__bloc2",
@@ -69,10 +69,13 @@ class TestUtils:
             "name4__DIMENSIONLESS__bloc4",
         ]
 
-        res = parse_request_to_col_names(DF_COLUMNS, "name_1__°C__bloc1")
+        res = tide_request(DF_COLUMNS, "name_1__°C__bloc1")
         assert res == ["name_1__°C__bloc1"]
 
-        res = parse_request_to_col_names(
+        res = tide_request(DF_COLUMNS, ["name_1__°C__bloc1"])
+        assert res == ["name_1__°C__bloc1"]
+
+        res = tide_request(
             DF_COLUMNS,
             [
                 "name_1__°C__bloc1",
@@ -84,17 +87,27 @@ class TestUtils:
             "name_1__°C__bloc2",
         ]
 
-        res = parse_request_to_col_names(DF_COLUMNS, "°C")
+        res = tide_request(DF_COLUMNS, "°C")
         assert res == ["name_1__°C__bloc1", "name_1__°C__bloc2"]
 
-        res = parse_request_to_col_names(DF_COLUMNS, "OTHER")
+        res = tide_request(DF_COLUMNS, "OTHER")
         assert res == ["name_2", "name_3__kWh/m²", "name_5__kWh"]
 
-        res = parse_request_to_col_names(DF_COLUMNS, "DIMENSIONLESS__bloc2")
+        res = tide_request(DF_COLUMNS, "DIMENSIONLESS__bloc2")
         assert res == ["name_2__DIMENSIONLESS__bloc2"]
 
-        res = parse_request_to_col_names(DF_COLUMNS, "kWh")
+        res = tide_request(DF_COLUMNS, "kWh")
         assert res == ["name_5__kWh"]
+
+        res = tide_request(DF_COLUMNS, "kWh|°C")
+        assert res == ["name_5__kWh", "name_1__°C__bloc1", "name_1__°C__bloc2"]
+
+        res = tide_request(DF_COLUMNS, ["kWh|°C", "name_5__kWh"])
+        assert res == [
+            "name_5__kWh",
+            "name_1__°C__bloc1",
+            "name_1__°C__bloc2",
+        ]
 
     def test_get_data_level_names(self):
         root = data_columns_to_tree(DF_COLUMNS.columns)
