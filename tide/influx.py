@@ -134,6 +134,9 @@ def get_influx_data(
         Timezone for interpreting start and stop times.
         Must be a valid timezone name from the IANA Time Zone Database.
 
+    request_timeout : int, default 10 000
+        Number of ms to wait before the request timeout
+
     max_retry : int, default 5
         Maximum number of retry attempts for failed queries.
         Only applies to ReadTimeoutError exceptions.
