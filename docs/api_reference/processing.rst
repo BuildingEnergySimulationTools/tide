@@ -11,6 +11,10 @@ The processing module provides transformers for data processing and manipulation
    :members:
    :show-inheritance:
 
+.. autoclass:: tide.processing.FillNa
+   :members:
+   :show-inheritance:
+
 .. autoclass:: tide.processing.Ffill
    :members:
    :show-inheritance:
