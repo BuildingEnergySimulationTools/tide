@@ -154,7 +154,7 @@ class Plumber:
 
     Examples
     --------
-    >>> from tide import Plumber
+    >>> from tide.plumbing import Plumber
     >>> import pandas as pd
     >>> # Create sample data with hierarchical column names
     >>> data = pd.DataFrame(
@@ -249,7 +249,7 @@ class Plumber:
         return_combination: bool = True,
     ) -> pd.DataFrame:
         """
-        Get statistical description of gaps durations in the data.
+        Get a statistical description of gaps durations in the data.
 
         Parameters
         ----------
@@ -264,7 +264,8 @@ class Plumber:
         gaps_gte : str or pd.Timedelta or dt.timedelta, optional
             Lower threshold for gap duration
         return_combination : bool, default True
-            Whether to include statistics for gaps present in any column
+            Whether to include statistics for gaps aggregation.
+            Useful to get statistics when all data are available.
 
         Returns
         -------
@@ -301,7 +302,7 @@ class Plumber:
             durations = []
             for gap in gaps_list:
                 if len(gap) > 1:
-                    durations.append(gap[-1] - gap[0])
+                    durations.append(gap[-1] - gap[0] + pd.to_timedelta(gap.freq))
                 else:
                     durations.append(pd.to_timedelta(gap.freq))
 
@@ -405,7 +406,7 @@ class Plumber:
 
         Examples
         --------
-        >>> from tide import Plumber
+        >>> from tide.plumbing import Plumber
         >>> import pandas as pd
         >>> # Create sample data
         >>> data = pd.DataFrame(
@@ -507,7 +508,7 @@ class Plumber:
 
         Examples
         --------
-        >>> from tide import Plumber
+        >>> from tide.plumbing import Plumber
         >>> import pandas as pd
         >>> # Create sample data
         >>> data = pd.DataFrame(
@@ -618,7 +619,7 @@ class Plumber:
 
         Examples
         --------
-        >>> from tide import Plumber
+        >>> from tide.plumbing import Plumber
         >>> import pandas as pd
         >>> # Create sample data with gaps
         >>> data = pd.DataFrame(
@@ -793,7 +794,7 @@ class Plumber:
 
         Examples
         --------
-        >>> from tide import Plumber
+        >>> from tide.plumbing import Plumber
         >>> import pandas as pd
         >>> # Create sample data
         >>> data = pd.DataFrame(

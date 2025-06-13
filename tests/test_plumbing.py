@@ -292,13 +292,19 @@ class TestGapsDescription:
 
         return data
 
-    def test_basic_gaps_description(self, gaps_data):
+    def test_basic_gaps_description(self):
         """Test basic gap analysis functionality."""
-        plumber = Plumber(gaps_data)
+        my_df = pd.DataFrame({
+
+            "temp__°C__Building": [np.nan, 1, np.nan, 3],
+            "power__W__Building": [np.nan, 1, 2, np.nan],
+        }, index=pd.date_range("2009", freq="h", periods=4, tz='UTC'))
+
+        plumber = Plumber(my_df)
         result = plumber.get_gaps_description()
 
         # Check structure
-        assert all(col in result.columns for col in gaps_data.columns)
+        assert all(col in result.columns for col in my_df.columns)
         expected_stats = [
             "data_presence_%",
             "count",
@@ -315,7 +321,8 @@ class TestGapsDescription:
         # Check specific values
         temp_col = "temp__°C__Building"
         assert result[temp_col]["count"] == 2
-        assert result[temp_col]["data_presence_%"] == pytest.approx(83.33, rel=1e-2)
+        assert result[temp_col]["data_presence_%"] == pytest.approx(50., rel=1e-2)
+        assert result["combination"]["max"] == pd.to_timedelta("02:00:00")
 
     def test_gap_thresholds(self, gaps_data):
         """Test gap analysis with duration thresholds."""
