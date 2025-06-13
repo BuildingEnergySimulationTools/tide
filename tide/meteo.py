@@ -87,7 +87,7 @@ def get_oikolab_df(
     )
 
     if not r.status_code == 200:
-        raise ValueError(f"Invalid request. Code:{r.status_code}")
+        raise ValueError(f"Invalid request. Code:{r.status_code}: {r.content}")
 
     df = pd.read_csv(r.url, parse_dates=True, index_col=0)
     df.index = df.index.tz_localize("UTC")
