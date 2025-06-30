@@ -2044,11 +2044,11 @@ class ExpressionCombine(BaseProcessing):
         self.feature_names_out_.append(self.result_column_name)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        exp = self.expression
-        for key, val in self.columns_dict.items():
-            exp = exp.replace(key, f'X["{val}"]')
-
-        X.loc[:, self.result_column_name] = pd.eval(exp, target=X)
+        X.loc[:, self.result_column_name] = pd.eval(
+            self.expression,
+            target=X,
+            local_dict={var: X[col] for var, col in self.columns_dict.items()},
+        )
         return X[self.feature_names_out_]
 
 
