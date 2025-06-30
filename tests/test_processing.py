@@ -831,6 +831,22 @@ class TestCustomTransformers:
         assert res.shape == (3, 6)
         check_feature_names_out(combiner, res)
 
+        combiner_cond = ExpressionCombine(
+            columns_dict={
+                "T1": "Text__°C__outdoor",
+            },
+            expression="(T1 > 10) * 1",
+            result_column_name="where_test_01__hvac",
+        )
+
+        res = combiner_cond.fit_transform(test_df.copy())
+        check_feature_names_out(combiner_cond, res)
+        np.testing.assert_almost_equal(
+            res["where_test_01__hvac"],
+            [0, 0, 0],
+            decimal=1,
+        )
+
     @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
     def test_fill_oiko_meteo(self, mock_get_oikolab):
         data = pd.read_csv(
