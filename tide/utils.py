@@ -615,8 +615,11 @@ def get_idx_freq_delta_or_min_time_interval(dt_idx: pd.DatetimeIndex):
     if freq:
         freq = pd.to_timedelta("1" + freq) if freq.isalpha() else pd.to_timedelta(freq)
     else:
-        freq = dt_idx.to_frame().diff().min().iloc[0]
-
+        deltas = dt_idx.to_series().diff().dropna()
+        deltas = deltas[deltas != pd.Timedelta(0)]
+        if deltas.empty:
+            raise ValueError("All timestamps are identical; cannot infer frequency.")
+        freq = deltas.min()
     return freq
 
 
