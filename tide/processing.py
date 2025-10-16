@@ -1994,7 +1994,7 @@ class ExpressionCombine(BaseProcessing):
 
     Examples
     --------
-    >>> from tide import ExpressionCombine
+    >>> from tide.processing import ExpressionCombine
     >>> import pandas as pd
     >>> # Create sample data
     >>> df = pd.DataFrame(
@@ -2100,7 +2100,7 @@ class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
 
     Examples
     --------
-    >>> from tide import FillOikoMeteo
+    >>> from tide.processing import FillOikoMeteo
     >>> import pandas as pd
     >>> # Create sample data with gaps
     >>> df = pd.DataFrame(
@@ -2263,7 +2263,7 @@ class AddSolarAngles(BaseProcessing):
 
     Examples
     --------
-    >>> from tide import AddSolarAngles
+    >>> from tide.processing import AddSolarAngles
     >>> import pandas as pd
     >>> # Create sample data with datetime index
     >>> df = pd.DataFrame(
@@ -2301,12 +2301,22 @@ class AddSolarAngles(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.fit_check_features(X)
-        self.feature_names_out_.extend(
-            [
-                f"sun_el__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
-                f"sun_az__angle_deg__{self.data_bloc}__{self.data_sub_bloc}",
-            ]
-        )
+
+        if self.data_sub_bloc and not self.data_bloc:
+            raise ValueError(
+                "Cannot provide a subbloc name if bloc name is not provided"
+            )
+
+        parts = [p for p in (self.data_bloc, self.data_sub_bloc) if p]
+        suffix = "__".join(parts) if parts else ""
+        suffix = f"__{suffix}" if suffix else ""
+
+        new_feat_names = [
+            f"sun_el__angle_deg{suffix}",
+            f"sun_az__angle_deg{suffix}",
+        ]
+
+        self.feature_names_out_.extend(new_feat_names)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         df = pd.DataFrame(
