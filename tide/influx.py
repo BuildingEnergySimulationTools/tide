@@ -1,22 +1,11 @@
 import time
 import datetime as dt
-from zoneinfo import ZoneInfo
 from urllib3.exceptions import ReadTimeoutError
 
 import pandas as pd
 from influxdb_client import InfluxDBClient
 
-from tide.utils import check_and_return_dt_index_df
-
-
-def _date_objects_tostring(date: dt.datetime | pd.Timestamp, tz_info=None):
-    if date.tzinfo is None:
-        if tz_info is None:
-            raise ValueError("tz_info must be provided for naive datetime objects.")
-        date = date.replace(tzinfo=ZoneInfo(tz_info))
-
-    date_utc = date.astimezone(ZoneInfo("UTC"))
-    return date_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+from tide.utils import check_and_return_dt_index_df, date_objects_tostring
 
 
 def _single_influx_request(
@@ -35,8 +24,8 @@ def _single_influx_request(
     query_api = client.query_api()
     query = f"""
         from(bucket: "{bucket}")
-        |> range(start: {_date_objects_tostring(start, tz_info)}, 
-                 stop: {_date_objects_tostring(stop, tz_info)})
+        |> range(start: {date_objects_tostring(start, tz_info)}, 
+                 stop: {date_objects_tostring(stop, tz_info)})
         |> filter(fn: (r) => r["_measurement"] == "{measurement}")
         |> map(fn: (r) => ({{r with tide: r.{tide_tags[0]}
     """
@@ -164,7 +153,7 @@ def get_influx_data(
 
     Examples
     --------
-    >>> from tide import get_influx_data
+    >>> from tide.influx import get_influx_data
     >>> import pandas as pd
     >>> # Fetch last 24 hours of data
     >>> df = get_influx_data(

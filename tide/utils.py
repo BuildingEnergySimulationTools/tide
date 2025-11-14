@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -685,3 +687,13 @@ def ensure_list(item):
     if item is None:
         return []
     return item if isinstance(item, list) else [item]
+
+
+def date_objects_tostring(date: dt.datetime | pd.Timestamp, tz_info=None):
+    if date.tzinfo is None:
+        if tz_info is None:
+            raise ValueError("tz_info must be provided for naive datetime objects.")
+        date = date.replace(tzinfo=ZoneInfo(tz_info))
+
+    date_utc = date.astimezone(ZoneInfo("UTC"))
+    return date_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
