@@ -3079,44 +3079,40 @@ class DropQuantile(BaseProcessing):
     >>> from datetime import timedelta
     >>>
     >>> # Create toy temperature dataset with daily and semi-daily patterns
-    >>> index = pd.date_range("2009-01-01", "2009-01-01 23:00:00",
-    ...                        freq="15min", tz="UTC")
-    >>> t_seconds = np.arange(0, 24*3600 + 1, 15*60)
+    >>> index = pd.date_range(
+    ...     "2009-01-01", "2009-01-01 23:00:00", freq="15min", tz="UTC"
+    ... )
+    >>> t_seconds = np.arange(0, 24 * 3600 + 1, 15 * 60)
     >>>
     >>> # Daily sinusoidal pattern
-    >>> daily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (24*3600))
+    >>> daily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (24 * 3600))
     >>>
     >>> # Semi-daily sinusoidal pattern
-    >>> semidaily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (12*3600))
+    >>> semidaily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (12 * 3600))
     >>>
     >>> # Add random noise
     >>> rng = np.random.default_rng(42)
-    >>> temp_data = pd.DataFrame({
-    ...     "Temp_1": daily_pattern + rng.standard_normal(len(daily_pattern)),
-    ...     "Temp_2": semidaily_pattern + 2 * rng.standard_normal(len(semidaily_pattern))
-    ... }, index=index)
+    >>> temp_data = pd.DataFrame(
+    ...     {
+    ...         "Temp_1": daily_pattern + rng.standard_normal(len(daily_pattern)),
+    ...         "Temp_2": semidaily_pattern
+    ...         + 2 * rng.standard_normal(len(semidaily_pattern)),
+    ...     },
+    ...     index=index,
+    ... )
     >>>
     >>> # Apply outlier detection with Gaussian detrending
     >>> dropper = DropQuantile(
     ...     upper_quantile=0.75,
     ...     lower_quantile=0.25,
     ...     n_iqr=1.5,
-    ...     detrend_method="Gaussian"
+    ...     detrend_method="Gaussian",
     ... )
     >>> filtered_data = dropper.fit_transform(temp_data)
     >>>
     >>> # Check detected outliers
     >>> print(f"Outliers in Temp_1: {filtered_data['Temp_1'].isna().sum()}")
     >>> print(f"Outliers in Temp_2: {filtered_data['Temp_2'].isna().sum()}")
-
-    Simple quantile-based filtering without detrending:
-
-    >>> # Remove extreme values (top 5% and bottom 5%)
-    >>> simple_dropper = DropQuantile(
-    ...     upper_quantile=0.95,
-    ...     lower_quantile=0.05
-    ... )
-    >>> filtered_simple = simple_dropper.fit_transform(temp_data)
 
     Notes
     -----
@@ -3141,12 +3137,8 @@ class DropQuantile(BaseProcessing):
     See Also
     --------
     pandas.DataFrame.quantile : Compute quantiles of DataFrame columns.
-    scipy.signal.detrend : Remove linear trend from data.
-
-    References
-    ----------
-    .. [1] Tukey, J. W. (1977). Exploratory Data Analysis. Pearson.
     """
+
     def __init__(
         self,
         upper_quantile: float = 1.0,
@@ -3175,7 +3167,7 @@ class DropQuantile(BaseProcessing):
                 method, kwargs = QUANTILE_METHODS[self.detrend_method]
             except KeyError:
                 raise NotImplementedError(
-                    f"The method {self.detrend_method} is not yet implmented"
+                    f"The method {self.detrend_method} is not yet implemented"
                 )
 
             if self.method_args:

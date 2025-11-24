@@ -38,7 +38,7 @@ from tide.processing import (
     KeepColumns,
     ReplaceTag,
     AddFourierPairs,
-    DropQuantile
+    DropQuantile,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -1135,7 +1135,10 @@ class TestCustomTransformers:
         )
 
         dropper = DropQuantile(
-            upper_quantile=0.75, lower_quantile=0.25, n_iqr=1.5, detrend_method="Gaussian"
+            upper_quantile=0.75,
+            lower_quantile=0.25,
+            n_iqr=1.5,
+            detrend_method="Gaussian",
         )
 
         quant_filtered = dropper.fit_transform(toy_df)
