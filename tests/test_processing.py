@@ -1197,3 +1197,36 @@ class TestCustomTransformers:
                 ["2009-01-01 03:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
             ),
         )
+
+        # Linear trend
+
+        index = pd.date_range(
+            "2009-01-01", "2009-01-01 23:00:00", freq="15min", tz="UTC"
+        )
+
+        rng = np.random.default_rng(42)
+
+        toy_df = pd.DataFrame(
+            {
+                "Temp_1": np.linspace(0, 10, len(index))
+                + rng.standard_normal(len(index)),
+                "Temp_2": np.linspace(5, 10, len(index))
+                + rng.standard_normal(len(index)),
+            },
+            index=index,
+        )
+
+        filter_detrend = DropQuantile(
+            upper_quantile=0.75,
+            lower_quantile=0.25,
+            n_iqr=1.5,
+            detrend_method="Detrend",
+        )
+        filtered = filter_detrend.fit_transform(toy_df)
+
+        pd.testing.assert_index_equal(
+            filtered["Temp_2"][filtered["Temp_2"].isna()].index,
+            pd.DatetimeIndex(
+                ["2009-01-01 11:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+            ),
+        )

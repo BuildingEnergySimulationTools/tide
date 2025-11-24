@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
+from scipy.signal import detrend
 
 from tide.base import BaseProcessing, BaseFiller, BaseOikoMeteo
 from tide.math import time_gradient
@@ -3022,7 +3023,8 @@ class AddFourierPairs(BaseProcessing):
 
 
 QUANTILE_METHODS = {
-    "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap"))
+    "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap")),
+    "Detrend": (detrend, dict(type="linear")),
 }
 
 
@@ -3051,7 +3053,8 @@ class DropQuantile(BaseProcessing):
     detrend_method : str, optional
         Name of the detrending method to apply before computing quantiles.
         Available methods depend on QUANTILE_METHODS dictionary.
-        At the moment only 'Gaussian' is available.
+        At the moment only 'Gaussian' and "Detrend" are available.
+        Detrend is a linear or constant detrending. See scipy.signal.
         If None, quantiles are computed directly on raw data.
     method_args : dict, optional
         Additional keyword arguments to pass to the detrending method.
@@ -3125,8 +3128,7 @@ class DropQuantile(BaseProcessing):
       flag normal seasonal variations as outliers. Consider using:
 
       * 'Gaussian' for smooth trends
-      * 'MovingAverage' for local detrending
-      * 'Polynomial' for polynomial trends
+      * 'Detrend' linear dtrending
 
     - If `detrend_method=None`, the method operates on raw values, which may
       be appropriate only for stationary data without seasonal patterns.
@@ -3173,9 +3175,16 @@ class DropQuantile(BaseProcessing):
             if self.method_args:
                 kwargs.update(self.method_args)
 
-            residue = X - X.apply(partial(method, **kwargs))
+            # Separate methods that returns the trend from the ones that returns
+            # detrended series
+            if self.detrend_method in ["Gaussian"]:
+                residue = X - X.apply(partial(method, **kwargs))
+            else:
+                residue = X.apply(partial(method, **kwargs))
         else:
             residue = X.copy()
+
+        assert True
 
         for col in x:
             q_low = np.quantile(residue[col], self.lower_quantile)
