@@ -38,6 +38,7 @@ from tide.processing import (
     KeepColumns,
     ReplaceTag,
     AddFourierPairs,
+    DropQuantile
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -1106,3 +1107,90 @@ class TestCustomTransformers:
             "1 day, 0:00:00_order_1_Sine__W__BLOCK__SUB_BLOCK",
             "1 day, 0:00:00_order_1_Cosine__W__BLOCK__SUB_BLOCK",
         ]
+
+    def test_drop_quantile(self):
+        index = pd.date_range(
+            "2009-01-01", "2009-01-01 23:00:00", freq="15min", tz="UTC"
+        )
+        cumsum_second = np.arange(
+            start=0, stop=(index[-1] - index[0]).total_seconds() + 1, step=15 * 60
+        )
+
+        daily = 5 * np.sin(
+            2 * np.pi / dt.timedelta(days=1).total_seconds() * cumsum_second
+        )
+
+        twice_daily = 5 * np.sin(
+            2 * np.pi / dt.timedelta(hours=12).total_seconds() * cumsum_second
+        )
+
+        rng = np.random.default_rng(42)
+
+        toy_df = pd.DataFrame(
+            {
+                "Temp_1": daily + rng.standard_normal(daily.shape[0]),
+                "Temp_2": twice_daily + 2 * rng.standard_normal(twice_daily.shape[0]),
+            },
+            index=index,
+        )
+
+        dropper = DropQuantile(
+            upper_quantile=0.75, lower_quantile=0.25, n_iqr=1.5, detrend_method="Gaussian"
+        )
+
+        quant_filtered = dropper.fit_transform(toy_df)
+
+        ref_temp_1 = pd.Series(
+            [np.nan],
+            pd.DatetimeIndex(
+                [pd.Timestamp("2009-01-01 07:30:00+00:00", tz="UTC")], freq="15min"
+            ),
+            name="Temp_1",
+        )
+
+        ref_temp_2 = pd.Series(
+            [np.nan],
+            pd.DatetimeIndex(
+                [pd.Timestamp("2009-01-01 11:30:00+0000", tz="UTC")], freq="15min"
+            ),
+            name="Temp_2",
+        )
+
+        pd.testing.assert_series_equal(
+            quant_filtered["Temp_1"][quant_filtered["Temp_1"].isna()],
+            ref_temp_1,
+        )
+
+        pd.testing.assert_series_equal(
+            quant_filtered["Temp_2"][quant_filtered["Temp_2"].isna()],
+            ref_temp_2,
+        )
+
+        # No filtering method
+        toy_df = pd.DataFrame(
+            {
+                "Noise_1": rng.standard_normal(daily.shape[0]),
+                "Noise_2": rng.standard_normal(twice_daily.shape[0]),
+            },
+            index=index,
+        )
+
+        dropper = DropQuantile(upper_quantile=0.75, lower_quantile=0.25, n_iqr=1.5)
+
+        filtered_noise = dropper.fit_transform(toy_df)
+
+        pd.testing.assert_index_equal(
+            filtered_noise["Noise_1"][filtered_noise["Noise_1"].isna()].index,
+            pd.DatetimeIndex(
+                ["2009-01-01 10:00:00+00:00", "2009-01-01 15:30:00+00:00"],
+                dtype="datetime64[ns, UTC]",
+                freq=None,
+            ),
+        )
+
+        pd.testing.assert_index_equal(
+            filtered_noise["Noise_2"][filtered_noise["Noise_2"].isna()].index,
+            pd.DatetimeIndex(
+                ["2009-01-01 03:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+            ),
+        )

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
+import warnings
 from functools import partial
 from collections.abc import Callable
 
@@ -3018,3 +3019,181 @@ class AddFourierPairs(BaseProcessing):
             )
 
         return X
+
+
+QUANTILE_METHODS = {
+    "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap"))
+}
+
+
+class DropQuantile(BaseProcessing):
+    """
+    Filter outliers in time series data using quantile-based thresholds.
+
+    This processor identifies and replaces outlier values with NaN based on
+    quantile boundaries. It can optionally apply detrending methods before
+    computing quantiles, making it robust against seasonal patterns or trends.
+
+    Parameters
+    ----------
+    upper_quantile : float, default=1.0
+        Upper quantile threshold for outlier detection. Values above this
+        quantile are considered potential outliers. Must be in range [0, 1].
+    lower_quantile : float, default=0.0
+        Lower quantile threshold for outlier detection. Values below this
+        quantile are considered potential outliers. Must be in range [0, 1].
+    n_iqr : float, optional
+        Number of interquartile ranges (IQR) to extend beyond the quantile
+        thresholds. When specified, the bounds are adjusted as:
+        lower_bound = q_low - n_iqr * IQR
+        upper_bound = q_up + n_iqr * IQR
+        Commonly used with quantiles 0.25 and 0.75 (default quartiles).
+    detrend_method : str, optional
+        Name of the detrending method to apply before computing quantiles.
+        Available methods depend on QUANTILE_METHODS dictionary.
+        At the moment only 'Gaussian' is available.
+        If None, quantiles are computed directly on raw data.
+    method_args : dict, optional
+        Additional keyword arguments to pass to the detrending method.
+        For example: {'window': 48} for moving average window size.
+
+    Attributes
+    ----------
+    upper_quantile : float
+        Stored upper quantile threshold.
+    lower_quantile : float
+        Stored lower quantile threshold.
+    n_iqr : float or None
+        Stored IQR multiplier.
+    detrend_method : str or None
+        Stored detrending method name.
+    method_args : dict or None
+        Stored detrending method arguments.
+
+    Examples
+    --------
+    Filter temperature data with outliers using IQR-based detection:
+
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> from datetime import timedelta
+    >>>
+    >>> # Create toy temperature dataset with daily and semi-daily patterns
+    >>> index = pd.date_range("2009-01-01", "2009-01-01 23:00:00",
+    ...                        freq="15min", tz="UTC")
+    >>> t_seconds = np.arange(0, 24*3600 + 1, 15*60)
+    >>>
+    >>> # Daily sinusoidal pattern
+    >>> daily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (24*3600))
+    >>>
+    >>> # Semi-daily sinusoidal pattern
+    >>> semidaily_pattern = 5 * np.sin(2 * np.pi * t_seconds / (12*3600))
+    >>>
+    >>> # Add random noise
+    >>> rng = np.random.default_rng(42)
+    >>> temp_data = pd.DataFrame({
+    ...     "Temp_1": daily_pattern + rng.standard_normal(len(daily_pattern)),
+    ...     "Temp_2": semidaily_pattern + 2 * rng.standard_normal(len(semidaily_pattern))
+    ... }, index=index)
+    >>>
+    >>> # Apply outlier detection with Gaussian detrending
+    >>> dropper = DropQuantile(
+    ...     upper_quantile=0.75,
+    ...     lower_quantile=0.25,
+    ...     n_iqr=1.5,
+    ...     detrend_method="Gaussian"
+    ... )
+    >>> filtered_data = dropper.fit_transform(temp_data)
+    >>>
+    >>> # Check detected outliers
+    >>> print(f"Outliers in Temp_1: {filtered_data['Temp_1'].isna().sum()}")
+    >>> print(f"Outliers in Temp_2: {filtered_data['Temp_2'].isna().sum()}")
+
+    Simple quantile-based filtering without detrending:
+
+    >>> # Remove extreme values (top 5% and bottom 5%)
+    >>> simple_dropper = DropQuantile(
+    ...     upper_quantile=0.95,
+    ...     lower_quantile=0.05
+    ... )
+    >>> filtered_simple = simple_dropper.fit_transform(temp_data)
+
+    Notes
+    -----
+    - When using `n_iqr`, it is conventional to set `upper_quantile=0.75` and
+      `lower_quantile=0.25` (the first and third quartiles). Other quantile
+      values will trigger a warning.
+
+    - The `detrend_method` parameter is critical for time series with trends
+      or seasonality. Without detrending, quantile thresholds may incorrectly
+      flag normal seasonal variations as outliers. Consider using:
+
+      * 'Gaussian' for smooth trends
+      * 'MovingAverage' for local detrending
+      * 'Polynomial' for polynomial trends
+
+    - If `detrend_method=None`, the method operates on raw values, which may
+      be appropriate only for stationary data without seasonal patterns.
+
+    - The transformation replaces outliers with `np.nan` rather than removing
+      rows, preserving the time series structure for subsequent processing.
+
+    See Also
+    --------
+    pandas.DataFrame.quantile : Compute quantiles of DataFrame columns.
+    scipy.signal.detrend : Remove linear trend from data.
+
+    References
+    ----------
+    .. [1] Tukey, J. W. (1977). Exploratory Data Analysis. Pearson.
+    """
+    def __init__(
+        self,
+        upper_quantile: float = 1.0,
+        lower_quantile: float = 0.0,
+        n_iqr: float = None,
+        detrend_method: str = None,
+        method_args: dict = None,
+    ):
+        super().__init__()
+        self.upper_quantile = upper_quantile
+        self.lower_quantile = lower_quantile
+        self.n_iqr = n_iqr
+        self.detrend_method = detrend_method
+        self.method_args = method_args
+
+        if self.n_iqr and (self.upper_quantile != 0.75 or self.lower_quantile != 0.25):
+            warnings.warn("n_iqr is tipicaly used with quantile of 0.25 et 0.75")
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        x = X.copy()
+        if self.detrend_method and self.detrend_method in QUANTILE_METHODS.keys():
+            try:
+                method, kwargs = QUANTILE_METHODS[self.detrend_method]
+            except KeyError:
+                raise NotImplementedError(
+                    f"The method {self.detrend_method} is not yet implmented"
+                )
+
+            if self.method_args:
+                kwargs.update(self.method_args)
+
+            residue = X - X.apply(partial(method, **kwargs))
+        else:
+            residue = X.copy()
+
+        for col in x:
+            q_low = np.quantile(residue[col], self.lower_quantile)
+            q_up = np.quantile(residue[col], self.upper_quantile)
+            if self.n_iqr:
+                iqr = q_up - q_low
+                q_low -= self.n_iqr * iqr
+                q_up += self.n_iqr * iqr
+
+            mask = (residue[col] < q_low) | (residue[col] > q_up)
+            x.loc[mask, col] = np.nan
+
+        return x
