@@ -3187,8 +3187,8 @@ class DropQuantile(BaseProcessing):
         assert True
 
         for col in x:
-            q_low = np.quantile(residue[col], self.lower_quantile)
-            q_up = np.quantile(residue[col], self.upper_quantile)
+            q_low = np.quantile(residue[col].dropna(), self.lower_quantile)
+            q_up = np.quantile(residue[col].dropna(), self.upper_quantile)
             if self.n_iqr:
                 iqr = q_up - q_low
                 q_low -= self.n_iqr * iqr
