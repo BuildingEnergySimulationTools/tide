@@ -56,16 +56,7 @@ class TideBaseMixin:
     """
 
     def __init__(self, required_columns: str | list[str] = None):
-        self.required_columns = required_columns
-
-    def check_required_features(self, X):
-        if self.required_columns is not None:
-            if not set(self.required_columns).issubset(X.columns):
-                raise ValueError("One or several required columns are missing")
-
-    def fit_check_features(self, X):
-        self.check_required_features(X)
-        self.feature_names_in_ = self.feature_names_out_ = list(X.columns)
+        self.required_features = required_columns
 
     def get_set_tags_values_columns(self, X, level: int | str, value: str):
         nb_tags = get_tags_max_level(X.columns)
@@ -87,14 +78,6 @@ class TideBaseMixin:
     def set_tags_values(self, X, tag_level: int, value: str):
         X.columns = self.get_set_tags_values_columns(X, tag_level, value)
 
-    def get_feature_names_out(self, input_features=None):
-        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
-        return self.feature_names_out_
-
-    def get_feature_names_in(self):
-        check_is_fitted(self, attributes=["feature_names_in_"])
-        return self.feature_names_in_
-
 
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
     """
@@ -109,7 +92,7 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
 
     Parameters
     ----------
-    required_columns : str or list[str], optional
+    required_features : str or list[str], optional
         Column names that must be present in the input data. Defaults to None.
     removed_columns : str or list[str], optional
         Column that will be removed during the transform process. Defaults to None.
@@ -141,11 +124,25 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
 
     def __init__(
         self,
-        required_columns: str | list[str] = None,
+        required_features: str | list[str] = None,
     ):
-        TideBaseMixin.__init__(self, required_columns=required_columns)
+        TideBaseMixin.__init__(self)
         TransformerMixin.__init__(self)
         BaseEstimator.__init__(self)
+        self.required_features = required_features
+
+    def check_required_features(self, X):
+        if self.required_features is not None:
+            if not set(self.required_features).issubset(X.columns):
+                raise ValueError("One or several required columns are missing")
+
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        return list(X.columns)
+
+    def fit_check_features(self, X):
+        self.check_required_features(X)
+        self.feature_names_in_ = list(X.columns)
+        self.feature_names_out_ = self._get_feature_names_out(X)
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
         X = check_and_return_dt_index_df(X)
@@ -157,6 +154,18 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
         self.check_required_features(X)
         X = check_and_return_dt_index_df(X)
         return self._transform_implementation(X)
+
+    def get_feature_names_out(self):
+        try:
+            return self.feature_names_out_
+        except AttributeError as exc:
+            raise ValueError("features have not been fitted yet") from exc
+
+    def get_feature_names_in(self):
+        try:
+            return self.feature_names_in_
+        except AttributeError as exc:
+            raise ValueError("features have not been fitted yet") from exc
 
     @abstractmethod
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):

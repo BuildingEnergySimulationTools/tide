@@ -42,6 +42,11 @@ OIKOLAB_DEFAULT_MAP = {
     "total_precipitation": "total_precipitation__mm__outdoor__meteo",
 }
 
+QUANTILE_METHODS = {
+    "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap")),
+    "Detrend": (detrend, dict(type="linear")),
+}
+
 
 class Identity(BaseProcessing):
     """A transformer that returns input data unchanged.
@@ -128,7 +133,7 @@ class ReplaceDuplicated(BaseProcessing):
     ...     {"temp__°C": [20, 20, 22, 22, 23], "humid__%": [45, 45, 50, 50, 55]},
     ...     index=dates,
     ... )
-    >>> # Keep first occurrence of duplicates
+    >>> # Keep the first occurrence of duplicates
     >>> replacer = ReplaceDuplicated(keep="first", value=np.nan)
     >>> result = replacer.fit_transform(df)
     >>> print(result)
@@ -290,16 +295,24 @@ class RenameColumns(BaseProcessing):
         super().__init__()
         self.new_names = new_names
 
-    def _fit_implementation(self, X, y=None):
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
         if isinstance(self.new_names, list):
             if len(self.new_names) != len(X.columns):
                 raise ValueError(
                     "Length of new_names list must match the number "
                     "of columns in the DataFrame."
                 )
-            self.feature_names_out_ = self.new_names
+            return self.new_names
         elif isinstance(self.new_names, dict):
-            self.feature_names_out_ = list(X.rename(columns=self.new_names))
+            return list(X.rename(columns=self.new_names))
+        raise ValueError(
+            f"Invalid new_name attribut. Got {self.new_names}"
+            f"was expecting an instance of list[str] or pd.index"
+            f"or dict[str, str]"
+        )
+
+    def _fit_implementation(self, X, y=None):
+        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
@@ -674,11 +687,14 @@ class ApplyExpression(BaseProcessing):
         self.expression = expression
         self.new_unit = new_unit
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
         if self.new_unit is not None:
-            self.feature_names_out_ = self.get_set_tags_values_columns(
-                X.copy(), 1, self.new_unit
-            )
+            return self.get_set_tags_values_columns(X.copy(), 1, self.new_unit)
+
+        return X.columns.tolist()
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X = eval(self.expression)
@@ -755,11 +771,13 @@ class TimeGradient(BaseProcessing):
         super().__init__()
         self.new_unit = new_unit
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
         if self.new_unit is not None:
-            self.feature_names_out_ = self.get_set_tags_values_columns(
-                X.copy(), 1, self.new_unit
-            )
+            return self.get_set_tags_values_columns(X.copy(), 1, self.new_unit)
+        return X.columns.tolist()
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
@@ -1392,7 +1410,7 @@ class AddTimeLag(BaseProcessing):
         self.feature_marker = feature_marker
         self.drop_resulting_nan = drop_resulting_nan
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+    def _update_features_to_lag_marker_required(self, X: pd.DataFrame):
         if self.features_to_lag is None:
             self.features_to_lag = X.columns
         else:
@@ -1408,9 +1426,19 @@ class AddTimeLag(BaseProcessing):
         )
 
         self.required_columns = self.features_to_lag
-        self.feature_names_out_.extend(
-            [self.feature_marker + name for name in self.required_columns]
-        )
+
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        self._update_features_to_lag_marker_required(X)
+
+        base_features = list(X.columns)
+        lagged_features = [
+            f"{self.feature_marker}{name}" for name in self.required_columns
+        ]
+
+        return base_features + lagged_features
+
+    def _fit_implementation(self, X: pd.DataFrame, y=None):
+        return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
@@ -1603,19 +1631,21 @@ class CombineColumns(BaseProcessing):
         self.drop_columns = drop_columns
         self.result_column_name = result_column_name
 
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        if self.drop_columns:
+            return [self.result_column_name]
+        else:
+            out_feat = list(X.columns)
+            out_feat.append(self.result_column_name)
+            return out_feat
+
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.fit_check_features(X)
         self.method_ = FUNCTION_MAP[self.function]
         if self.function in ["mean", "sum"] and self.weights is not None:
             raise ValueError(
                 f"Weights have been provided, but {self.function} "
                 f"cannot use it. Use one of 'average' or 'dot'"
             )
-
-        if self.drop_columns:
-            self.feature_names_out_ = []
-
-        self.feature_names_out_.append(self.result_column_name)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(
@@ -2028,22 +2058,30 @@ class ExpressionCombine(BaseProcessing):
         result_column_name: str,
         drop_columns: bool = False,
     ):
-        BaseProcessing.__init__(self, required_columns=list(columns_dict.values()))
+        BaseProcessing.__init__(self, required_features=list(columns_dict.values()))
         self.columns_dict = columns_dict
         self.required_columns = list(columns_dict.values())
         self.expression = expression
         self.result_column_name = result_column_name
         self.drop_columns = drop_columns
 
-    def _fit_implementation(self, X, y=None):
-        if self.drop_columns:
-            self.feature_names_out_ = list(X.columns.drop(self.required_columns))
-        if self.result_column_name in self.feature_names_out_:
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        if self.result_column_name in X.columns:
             raise ValueError(
                 f"label_name {self.result_column_name} already in X columns. "
-                f"It cannot be overwritten"
+                "It cannot be overwritten."
             )
-        self.feature_names_out_.append(self.result_column_name)
+
+        if self.drop_columns:
+            feature_names = X.columns.drop(self.required_columns).tolist()
+        else:
+            feature_names = X.columns.tolist()
+
+        feature_names.append(self.result_column_name)
+        return feature_names
+
+    def _fit_implementation(self, X, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X.loc[:, self.result_column_name] = pd.eval(
@@ -2224,6 +2262,11 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
         BaseProcessing.__init__(self)
         self.param_columns_map = param_columns_map
 
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        features = X.columns.tolist()
+        features.extend(list(self.param_columns_map.values()))
+        return features
+
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         mask = X.columns.isin(self.param_columns_map.values())
         if mask.any():
@@ -2231,7 +2274,6 @@ class AddOikoData(BaseOikoMeteo, BaseProcessing):
                 f"Cannot add Oikolab meteo data. {X.columns[mask]} already in columns"
             )
         self.get_api_key_from_env()
-        self.feature_names_out_.extend(list(self.param_columns_map.values()))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(
@@ -2301,9 +2343,7 @@ class AddSolarAngles(BaseProcessing):
         self.data_sub_bloc = data_sub_bloc
         BaseProcessing.__init__(self)
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.fit_check_features(X)
-
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
         if self.data_sub_bloc and not self.data_bloc:
             raise ValueError(
                 "Cannot provide a subbloc name if bloc name is not provided"
@@ -2318,7 +2358,13 @@ class AddSolarAngles(BaseProcessing):
             f"sun_az__angle_deg{suffix}",
         ]
 
-        self.feature_names_out_.extend(new_feat_names)
+        features = X.columns.tolist()
+        features.extend(new_feat_names)
+
+        return features
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         df = pd.DataFrame(
@@ -2466,7 +2512,9 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
         data_bloc: str = "OTHER",
         data_sub_bloc: str = "OTHER_SUB_BLOC",
     ):
-        BaseProcessing.__init__(self)
+        BaseProcessing.__init__(
+            self, required_features=[bni_column_name, dhi_column_name, ghi_column_name]
+        )
         self.bni_column_name = bni_column_name
         self.dhi_column_name = dhi_column_name
         self.ghi_column_name = ghi_column_name
@@ -2479,6 +2527,17 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
         self.data_bloc = data_bloc
         self.data_sub_bloc = data_sub_bloc
 
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        features = X.columns.tolist()
+        features.extend(
+            [
+                f"{name}__W/m²__{self.data_bloc}__{self.data_sub_bloc}"
+                for name in ensure_list(self.surface_name)
+            ]
+        )
+
+        return features
+
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if (
             not len(ensure_list(self.surface_azimuth_angles))
@@ -2487,23 +2546,16 @@ class ProjectSolarRadOnSurfaces(BaseProcessing):
         ):
             raise ValueError("Number of surface azimuth, tilt and name does not match")
 
-        self.required_columns = [
-            self.bni_column_name,
-            self.dhi_column_name,
-            self.ghi_column_name,
-        ]
-        self.added_columns = [
-            f"{name}__W/m²__{self.data_bloc}__{self.data_sub_bloc}"
-            for name in ensure_list(self.surface_name)
-        ]
-        self.feature_names_out_.extend(self.added_columns)
-
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         sun_pos = np.array([sun_position(date, self.lat, self.lon) for date in X.index])
+
+        added_columns = [
+            col for col in self.feature_names_out_ if col not in self.feature_names_in_
+        ]
         for az, til, name in zip(
             ensure_list(self.surface_azimuth_angles),
             ensure_list(self.surface_tilt_angle),
-            self.added_columns,
+            added_columns,
         ):
             X[name] = (
                 beam_component(
@@ -2617,27 +2669,37 @@ class FillOtherColumns(BaseFiller, BaseProcessing):
         drop_filling_columns: bool = False,
     ):
         BaseFiller.__init__(self, gaps_lte, gaps_gte)
-        BaseProcessing.__init__(self)
+        BaseProcessing.__init__(
+            self, required_features=self._combine_required_features(columns_map)
+        )
         self.columns_map = columns_map
         self.drop_filling_columns = drop_filling_columns
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.required_columns = list(self.columns_map.keys()) + list(
-            self.columns_map.values()
-        )
+    def _combine_required_features(self, columns_map):
+        if not columns_map == {}:
+            return list(columns_map.keys()) + list(columns_map.values())
+        return None
+
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        features = X.columns
         if self.drop_filling_columns:
-            self.removed_columns = list(self.columns_map.values())
-            self.feature_names_out_ = list(X.columns.drop(self.removed_columns))
+            removed_columns = list(self.columns_map.values())
+            return features.drop(removed_columns).tolist()
+
+        return X.columns.tolist()
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         gap_dict = self.get_gaps_dict_to_fill(X[list(self.columns_map.keys())])
         for col, idxs in gap_dict.items():
             for idx in idxs:
                 X.loc[idx, col] = X.loc[idx, self.columns_map[col]]
+
+        removed_columns = list(self.columns_map.values())
         return (
-            X.drop(self.removed_columns, axis="columns")
-            if self.drop_filling_columns
-            else X
+            X.drop(removed_columns, axis="columns") if self.drop_filling_columns else X
         )
 
 
@@ -2713,14 +2775,17 @@ class DropColumns(BaseProcessing):
         self.columns = columns
         BaseProcessing.__init__(self)
 
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        # Required columns is here and not in init because required features names
+        # can depend on X columns label
+        self.required_features = tide_request(X, self.columns)
+        return X.drop(self.required_features, axis="columns").columns.tolist()
+
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.required_columns = tide_request(X, self.columns)
-        self.feature_names_out_ = list(
-            X.drop(self.required_columns, axis="columns").columns
-        )
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        return X.drop(self.required_columns, axis="columns")
+        return X.drop(self.required_features, axis="columns")
 
 
 class KeepColumns(BaseProcessing):
@@ -2874,13 +2939,17 @@ class ReplaceTag(BaseProcessing):
         self.tag_map = tag_map
         BaseProcessing.__init__(self)
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.fit_check_features(X)
-        self.feature_names_out_ = []
-        for col in self.feature_names_in_:
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
+        features = []
+        for col in X.columns.tolist():
             parts = col.split("__")
             updated_parts = [self.tag_map.get(part, part) for part in parts]
-            self.feature_names_out_.append("__".join(updated_parts))
+            features.append("__".join(updated_parts))
+
+        return features
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
@@ -2973,10 +3042,10 @@ class AddFourierPairs(BaseProcessing):
         self.block = block
         self.sub_block = sub_block
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        self.fit_check_features(X)
+    def _get_feature_names_out(self, X: pd.DataFrame) -> list[str]:
         max_level = get_tags_max_level(X.columns)
-        self.new_columns_ = []
+        base_features = X.columns.tolist()
+        new_columns = []
         for od in range(1, self.order + 1):
             for trig in ["Sine", "Cosine"]:
                 name = f"{self.period}_order_{od}_{trig}"
@@ -2986,15 +3055,14 @@ class AddFourierPairs(BaseProcessing):
                     name += f"__{self.block}"
                 if max_level > 2:
                     name += f"__{self.sub_block}"
-                self.new_columns_.append(name)
-        self.feature_names_out_.extend(self.new_columns_)
+                new_columns.append(name)
+        return base_features + new_columns
 
-        return self
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        check_is_fitted(
-            self, attributes=["feature_names_in_", "feature_names_out_", "new_columns_"]
-        )
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         begin = X.index[0]
         frequency = 1 / self.period.total_seconds()
         year_start = pd.Timestamp(begin.year, 1, 1)
@@ -3008,24 +3076,20 @@ class AddFourierPairs(BaseProcessing):
         increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy()
         increasing_seconds[0] = 0
 
+        new_columns = [
+            col for col in self.feature_names_out_ if col not in self.feature_names_in_
+        ]
+
         omega = 2 * np.pi * frequency
-        for od, idx in zip(
-            range(1, self.order + 1), range(0, len(self.new_columns_), 2)
-        ):
-            X[self.new_columns_[idx]] = self.amplitude * np.sin(
+        for od, idx in zip(range(1, self.order + 1), range(0, len(new_columns), 2)):
+            X[new_columns[idx]] = self.amplitude * np.sin(
                 od * omega * increasing_seconds + phi
             )
-            X[self.new_columns_[idx + 1]] = self.amplitude * np.cos(
+            X[new_columns[idx + 1]] = self.amplitude * np.cos(
                 od * omega * increasing_seconds + phi
             )
 
         return X
-
-
-QUANTILE_METHODS = {
-    "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap")),
-    "Detrend": (detrend, dict(type="linear")),
-}
 
 
 class DropQuantile(BaseProcessing):
