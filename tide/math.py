@@ -3,7 +3,6 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
-from scipy import integrate
 from collections.abc import Callable
 
 from tide.utils import check_and_return_dt_index_df
@@ -80,8 +79,8 @@ def time_gradient(data: pd.DataFrame | pd.Series) -> pd.DataFrame:
 
 def time_integrate(data: pd.DataFrame | pd.Series) -> pd.Series:
     """
-    Perform time Integration of given time series in X DartaFrame or in a Series.
-    The function computes the integral of each column using `scipy.integrate.trapz`
+    Perform time Integration of given time series in X DataFrame or in a Series.
+    The function computes the integral of each column using `np.trapz`
     function and the time difference between consecutive data points.
 
     Parameters:
@@ -92,14 +91,14 @@ def time_integrate(data: pd.DataFrame | pd.Series) -> pd.Series:
     """
 
     data = check_and_return_dt_index_df(data)
-    chrono = (data.index - data.index[0]).to_series()
-    chrono = chrono.dt.total_seconds()
+    if data.empty:
+        return pd.Series(index=data.columns, dtype=float)
 
-    res_series = pd.Series(dtype="float64")
-    for col in data:
-        res_series[col] = integrate.trapezoid(data[col], chrono)
+    t = (data.index.view("int64") - data.index[0].value) * 1e-9  # seconds
+    y = data.to_numpy()
+    result = np.trapz(y, t, axis=0)
 
-    return res_series
+    return pd.Series(result, index=data.columns)
 
 
 def aggregate_time_series(
