@@ -70,6 +70,18 @@ class TestMath:
 
         pd.testing.assert_series_equal(ref, time_integrate(test) / 3600)
 
+        test = pd.DataFrame(
+            {
+                "cpt1": [],
+                "cpt2": [],
+            },
+            index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=0, tz="UTC"),
+        )
+
+        ref = pd.Series(index=test.columns, dtype=float)
+
+        pd.testing.assert_series_equal(ref, time_integrate(test))
+
     def test_aggregate_time_series(self):
         sim_res = pd.DataFrame(
             {"a": [1, 2], "b": [3, 4]},
