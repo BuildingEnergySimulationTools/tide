@@ -3211,3 +3211,127 @@ class DropQuantile(BaseProcessing):
             x.loc[mask, col] = np.nan
 
         return x
+
+
+class TrimSequence(BaseProcessing):
+    """
+    Trim the beginning and end of valid data sequences in time series.
+
+    This processor identifies continuous sequences of non-NaN values and removes
+    a specified duration from the start and/or end of each sequence. This is
+    useful for removing potentially unreliable measurements at sequence boundaries,
+    such as sensor warm-up periods or shutdown transients.
+
+    Parameters
+    ----------
+    trim_beginning : str, pd.Timedelta, or dt.timedelta, default=pd.Timedelta(0)
+        Duration to trim from the beginning of each valid sequence.
+        Can be specified as a string (e.g., "1h", "30min") or as a Timedelta object.
+        Values within this duration from the start of each sequence are set to NaN.
+    trim_end : str, pd.Timedelta, or dt.timedelta, default=pd.Timedelta(0)
+        Duration to trim from the end of each valid sequence.
+        Can be specified as a string (e.g., "1h", "30min") or as a Timedelta object.
+        Values within this duration from the end of each sequence are set to NaN.
+
+    Attributes
+    ----------
+    trim_beginning : pd.Timedelta
+        Stored duration to trim from sequence beginnings.
+    trim_end : pd.Timedelta
+        Stored duration to trim from sequence ends.
+
+    Examples
+    --------
+    Remove the first and last hour of each measurement sequence:
+
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>>
+    >>> # Create toy dataset with gaps (sensor downtime)
+    >>> index = pd.date_range("2024-01-01", "2024-01-03", freq="1h", tz="UTC")
+    >>> data = pd.DataFrame(
+    ...     {"Temperature": np.random.randn(len(index)) + 20},
+    ...     index=index,
+    ... )
+    >>>
+    >>> # Introduce gaps to simulate sensor downtime
+    >>> data.loc["2024-01-01 12:00":"2024-01-01 18:00", "Temperature"] = np.nan
+    >>> data.loc["2024-01-02 06:00":"2024-01-02 10:00", "Temperature"] = np.nan
+    >>>
+    >>> # Trim first and last hour of each sequence
+    >>> trimmer = TrimSequence(trim_beginning="1h", trim_end="1h")
+    >>> trimmed_data = trimmer.fit_transform(data)
+    >>>
+    >>> # Check how many values were trimmed
+    >>> original_valid = data["Temperature"].notna().sum()
+    >>> trimmed_valid = trimmed_data["Temperature"].notna().sum()
+    >>> print(f"Values removed: {original_valid - trimmed_valid}")
+
+    Notes
+    -----
+    - A "sequence" is defined as a continuous block of non-NaN values. Each
+      sequence is detected independently, and trimming is applied separately
+      to each one.
+
+    - If a sequence is shorter than `trim_beginning + trim_end`, the entire
+      sequence will be set to NaN.
+
+    - The transformation preserves the DataFrame structure and index, replacing
+      trimmed values with `np.nan` rather than removing rows.
+
+    - This processor is particularly useful for:
+      * Removing sensor warm-up periods at measurement start
+      * Excluding shutdown transients at measurement end
+      * Filtering edge effects after data gaps or sensor restarts
+    """
+
+    def __init__(
+        self,
+        trim_beginning: str | pd.Timedelta | dt.timedelta = pd.Timedelta(0),
+        trim_end: str | pd.Timedelta | dt.timedelta = pd.Timedelta(0),
+    ):
+        super().__init__()
+        self.trim_beginning = (
+            pd.Timedelta(trim_beginning)
+            if isinstance(trim_beginning, str)
+            else trim_beginning
+        )
+        self.trim_end = (
+            pd.Timedelta(trim_end) if isinstance(trim_end, str) else trim_end
+        )
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        pass
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        out_cols = []
+        for col in X.columns:
+            s = X[col]
+            notna = s.notna()
+
+            seq_id = (notna & ~notna.shift(fill_value=False)).cumsum()
+
+            bounds = (
+                s.loc[notna]
+                .groupby(seq_id[notna])
+                .agg(start=lambda x: x.index[0], end=lambda x: x.index[-1])
+            )
+
+            bounds["start"] = bounds["start"] + self.trim_beginning
+            bounds["end"] = bounds["end"] - self.trim_end
+
+            start_map = seq_id.map(bounds["start"])
+            end_map = seq_id.map(bounds["end"])
+
+            keep = (
+                notna
+                & start_map.notna()
+                & (s.index >= start_map)
+                & (s.index <= end_map)
+            )
+
+            out = s.copy()
+            out[~keep] = pd.NA
+            out_cols.append(out)
+
+        return pd.concat(out_cols, axis=1)

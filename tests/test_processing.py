@@ -39,6 +39,7 @@ from tide.processing import (
     ReplaceTag,
     AddFourierPairs,
     DropQuantile,
+    TrimSequence,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -1230,3 +1231,55 @@ class TestCustomTransformers:
                 ["2009-01-01 11:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
             ),
         )
+
+    def test_sequence_trim(self):
+        df = pd.DataFrame(
+            {
+                "a": [np.nan, 1.0, 2.0, 3.0, 4.0, np.nan, 6.0, 7.0, np.nan, 9.0],
+                "b": [0.0, 10.0, 20.0, 30.0, np.nan, 50.0, 60.0, 70.0, 80.0, 90.0],
+            },
+            index=pd.date_range("2009-01-01", freq="min", periods=10, tz="UTC"),
+        )
+
+        trimer = TrimSequence()
+        res = trimer.fit_transform(df)
+
+        pd.testing.assert_frame_equal(res, df)
+
+        trimer = TrimSequence("1min")
+        res = trimer.fit_transform(df)
+
+        pd.testing.assert_frame_equal(
+            res,
+            pd.DataFrame(
+                {
+                    "a": [
+                        np.nan,
+                        np.nan,
+                        2.0,
+                        3.0,
+                        4.0,
+                        np.nan,
+                        np.nan,
+                        7.0,
+                        np.nan,
+                        np.nan,
+                    ],
+                    "b": [
+                        np.nan,
+                        10.0,
+                        20.0,
+                        30.0,
+                        np.nan,
+                        np.nan,
+                        60.0,
+                        70.0,
+                        80.0,
+                        90.0,
+                    ],
+                },
+                index=pd.date_range("2009-01-01", freq="min", periods=10, tz="UTC"),
+            ),
+        )
+
+        check_feature_names_out(trimer, res)
