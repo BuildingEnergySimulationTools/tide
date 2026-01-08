@@ -118,3 +118,7 @@ The processing module provides transformers for data processing and manipulation
 .. autoclass:: tide.processing.DropQuantile
    :members:
    :show-inheritance:
+
+.. autoclass:: tide.processing.TrimSequence
+   :members:
+   :show-inheritance:
