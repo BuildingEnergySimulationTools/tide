@@ -19,6 +19,8 @@ from tide.utils import (
     check_and_return_dt_index_df,
     tide_request,
     ensure_list,
+    get_tag,
+    set_tag,
 )
 from tide.regressors import SkSTLForecast, SkProphet
 from tide.classifiers import STLEDetector
@@ -81,8 +83,8 @@ class Identity(BaseProcessing):
         The input data without any modifications.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, drop_original: bool = True):
+        super().__init__(drop_original=drop_original)
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
@@ -671,21 +673,23 @@ class ApplyExpression(BaseProcessing):
         If new_unit is specified, the column names are updated accordingly.
     """
 
-    def __init__(self, expression: str, new_unit: str = None):
-        super().__init__()
+    def __init__(
+        self, expression: str, new_unit: str = None, drop_original: bool = True
+    ):
+        super().__init__(drop_original=drop_original)
         self.expression = expression
         self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.new_unit is not None:
-            self.feature_names_out_ = self.get_set_tags_values_columns(
+            self.transformed_names_ = self.get_set_tags_values_columns(
                 X.copy(), 1, self.new_unit
             )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         X = eval(self.expression)
         if self.new_unit is not None:
-            X.columns = self.feature_names_out_
+            X.columns = self.transformed_names_
         return X
 
 
@@ -757,22 +761,27 @@ class TimeGradient(BaseProcessing):
         If new_unit is specified, the column names are updated accordingly.
     """
 
-    def __init__(self, new_unit: str = None):
-        super().__init__()
+    def __init__(self, new_unit: str = None, drop_original: bool = True):
+        super().__init__(drop_original=drop_original)
         self.new_unit = new_unit
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         if self.new_unit is not None:
-            self.feature_names_out_ = self.get_set_tags_values_columns(
+            self.transformed_names_ = self.get_set_tags_values_columns(
                 X.copy(), 1, self.new_unit
             )
+        else:
+            new_units = [f"{get_tag(col, "unit")}/s" for col in X.columns]
+            self.transformed_names_ = [
+                set_tag(col, "unit", n_u) for col, n_u in zip(X.columns, new_units)
+            ]
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         original_index = X.index.copy()
         derivative = time_gradient(X)
         derivative = derivative.reindex(original_index)
         if self.new_unit is not None:
-            derivative.columns = self.feature_names_out_
+            derivative.columns = self.transformed_names_
         return derivative
 
 
@@ -885,40 +894,23 @@ class TimeIntegrate(BaseProcessing):
         self,
         new_unit: str = None,
         initial_value: float | dict = 0.0,
-        drop_columns: bool = True,
+        drop_original: bool = True,
     ):
-        super().__init__()
+        super().__init__(drop_original=drop_original)
         self.new_unit = new_unit
         self.initial_value = initial_value
-        self.drop_columns = drop_columns
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         # Determine the unit to use for integrated columns
         if self.new_unit is not None:
-            unit_suffix = self.new_unit
-        else:
-            # Extract original unit and append ".s"
-            # Assuming Tide naming convention: "name__unit__block__sub_block"
-            unit_suffix = None
-            sample_col = X.columns[0] if len(X.columns) > 0 else None
-            if sample_col and "__" in sample_col:
-                parts = sample_col.split("__")
-                if len(parts) >= 2:
-                    original_unit = parts[1]
-                    unit_suffix = f"{original_unit}.s"
-
-        # Create feature names for integrated columns
-        self.integrated_feature_names_ = self.get_set_tags_values_columns(
-            X.copy(), 1, unit_suffix
-        )
-
-        # Determine final output feature names
-        if self.drop_columns:
-            self.feature_names_out_ = self.integrated_feature_names_
-        else:
-            self.feature_names_out_ = list(X.columns) + list(
-                self.integrated_feature_names_
+            self.transformed_names_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
             )
+        else:
+            new_units = [f"{get_tag(col, "unit")}.s" for col in X.columns]
+            self.transformed_names_ = [
+                set_tag(col, "unit", n_u) for col, n_u in zip(X.columns, new_units)
+            ]
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
@@ -951,13 +943,9 @@ class TimeIntegrate(BaseProcessing):
 
             integrated[col] = integrals
 
-        integrated.columns = self.integrated_feature_names_
+        integrated.columns = self.transformed_names_
 
-        if self.drop_columns:
-            return integrated
-        else:
-            result = pd.concat([X, integrated], axis=1)
-            return result
+        return integrated
 
 
 class Ffill(BaseFiller, BaseProcessing):

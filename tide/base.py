@@ -20,6 +20,8 @@ from tide.utils import (
     get_tags_max_level,
     NAME_LEVEL_MAP,
     get_blocks_mask_lte_and_gte,
+    set_tag,
+    get_tag,
 )
 
 from tide.meteo import get_oikolab_df
@@ -95,7 +97,6 @@ class TideBaseMixin:
         check_is_fitted(self, attributes=["feature_names_in_"])
         return self.feature_names_in_
 
-
 class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
     """
     Abstract base class for processing pipelines with feature checks and
@@ -157,6 +158,113 @@ class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
         self.check_required_features(X)
         X = check_and_return_dt_index_df(X)
         return self._transform_implementation(X)
+
+    @abstractmethod
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        """Operations happening during fitting process"""
+        pass
+
+    @abstractmethod
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        """Operations happening during transforming process"""
+        pass
+
+
+
+class BaseProcessing(ABC, TransformerMixin, BaseEstimator, TideBaseMixin):
+    """
+    Abstract base class for processing pipelines with feature checks and
+    transformation logic.
+
+    This class is designed to facilitate transformations by checking input data
+    (DataFrame or Series with DatetimeIndex), ensuring the presence
+    of required features, tracking added and removed features, and enabling
+    seamless integration with scikit-learn's API through fit and transform
+    methods.
+
+    Parameters
+    ----------
+    required_columns : str or list[str], optional
+        Column names that must be present in the input data. Defaults to None.
+    drop_original : bool, optional (default=True)
+        If True, only transformed columns are returned.
+        If False, original columns are kept with their original names alongside
+        transformed ones.
+    transformer_name : str, optional (default=None)
+        Name to append to the name tag of transformed columns when drop_original=False.
+        If None, uses the class name in lowercase.
+        Example: "energy__J__building" with transformer_name="gradient"
+        becomes "energy_gradient__J__building"
+
+    Methods
+    -------
+    check_features(X):
+        Ensures that the required columns are present in the input DataFrame.
+    fit_check_features(X):
+        Checks required columns and stores the initial feature names.
+    get_feature_names_out():
+        Computes the final set of feature names, accounting for added and removed
+        columns.
+    get_feature_names_in():
+        Returns the names of the features as initially fitted.
+    fit(X, y=None):
+        Fits the transformer to the input data.
+    transform(X):
+        Applies the transformation to the input data.
+    _fit_implementation(X, y=None):
+        Abstract method for the fitting logic. Must be implemented by subclasses.
+    _transform_implementation(X):
+        Abstract method for the transformation logic. Must be implemented by
+        subclasses.
+    _add_transformer_name_to_columns(X):
+        Adds transformer name to the name tag of transformed columns.
+    """
+
+    def __init__(
+        self,
+        required_columns: str | list[str] = None,
+        drop_original: bool = True,
+    ):
+        TideBaseMixin.__init__(self, required_columns=required_columns)
+        TransformerMixin.__init__(self)
+        BaseEstimator.__init__(self)
+        self.drop_original = drop_original
+
+    def fit(self, X: pd.Series | pd.DataFrame, y=None):
+        X = check_and_return_dt_index_df(X)
+        self.fit_check_features(X)
+        # Default names handling method
+        self.transformed_names_ = self.feature_names_out_
+        if not self.drop_original:
+            self.transformed_names_ = [
+                set_tag(
+                    col,
+                    "name",
+                    f"{get_tag(col, "name")}_{self.__class__.__name__.lower()}",
+                )
+                for col in X.columns
+            ]
+
+        self._fit_implementation(X, y)
+
+        if not self.drop_original:
+            self.feature_names_out_.extend(self.transformed_names_)
+        else:
+            self.feature_names_out_ = self.transformed_names_
+        return self
+
+    def transform(self, X: pd.Series | pd.DataFrame):
+        self.check_required_features(X)
+        X = check_and_return_dt_index_df(X)
+
+        X_transformed = self._transform_implementation(X)
+
+        if not self.drop_original:
+            result = pd.concat([X, X_transformed], axis=1)
+            result.columns = self.feature_names_out_
+            return result
+
+        return X_transformed
 
     @abstractmethod
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):

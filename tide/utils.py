@@ -35,6 +35,23 @@ TREE_LEVEL_NAME_MAP = {
 }
 
 
+def set_tag(col: str, level: str, new_tag: str):
+    parts = col.split("__")
+    if len(parts) > 0:
+        parts[NAME_LEVEL_MAP[level]] = new_tag
+        return "__".join(parts)
+    else:
+        return new_tag
+
+
+def get_tag(col: str, level: str):
+    parts = col.split("__")
+    if len(parts) > 0:
+        return parts[NAME_LEVEL_MAP[level]]
+    else:
+        return col
+
+
 def get_tree_depth_from_level(tree_max_depth: int, level: int | str):
     level = LEVEL_NAME_MAP[level] if isinstance(level, int) else level
     if tree_max_depth not in TREE_LEVEL_NAME_MAP:

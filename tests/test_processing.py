@@ -100,6 +100,16 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(df, res)
         check_feature_names_out(identity, res)
 
+        identity = Identity(drop_original=False)
+        res = identity.fit_transform(df)
+
+        ref = pd.DataFrame(
+            {"a": [1.0], "a_identity": [1.0]},
+            index=pd.date_range("2009", freq="h", periods=1, tz="UTC"),
+        )
+
+        pd.testing.assert_frame_equal(res, ref)
+
     def test_pd_replace_duplicated(self):
         df = pd.DataFrame(
             {"a": [1.0, 1.0, 2.0], "b": [3.0, np.nan, 3.0]},
@@ -251,10 +261,25 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
+        # Assume math is ok. Just check feature names
         transformer = ApplyExpression("X / 1000", "kW")
         res = transformer.fit_transform(df)
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(transformer, res)
+
+        # Assume math is ok. Just check feature names
+        transformer = ApplyExpression("X * 1000", drop_original=False)
+        _ = transformer.fit_transform(df)
+        assert transformer.get_feature_names_out() == [
+            "a__W",
+            "b__W",
+            "a_applyexpression__W",
+            "b_applyexpression__W",
+        ]
+
+        transformer = ApplyExpression("X / 1000", new_unit="kW", drop_original=False)
+        _ = transformer.fit_transform(df)
+        assert transformer.get_feature_names_out() == ["a__W", "b__W", "a__kW", "b__kW"]
 
     def test_pd_time_gradient(self):
         test = (
@@ -279,6 +304,25 @@ class TestCustomTransformers:
         res = derivator.fit_transform(test)
         pd.testing.assert_frame_equal(ref, res, rtol=0.01)
         check_feature_names_out(derivator, res)
+
+        # Assume math and concanetation is ok (concat checked in Identity)
+        derivator = TimeGradient(drop_original=False)
+        _ = derivator.fit_transform(test)
+        assert derivator.get_feature_names_out() == [
+            "cpt1__J",
+            "cpt2__J",
+            "cpt1__J/s",
+            "cpt2__J/s",
+        ]
+
+        derivator = TimeGradient(new_unit="W", drop_original=False)
+        _ = derivator.fit_transform(test)
+        assert derivator.get_feature_names_out() == [
+            "cpt1__J",
+            "cpt2__J",
+            "cpt1__W",
+            "cpt2__W",
+        ]
 
     def test_pd_time_integral(self):
         test = pd.DataFrame(
@@ -306,7 +350,7 @@ class TestCustomTransformers:
         ref.columns = ["cpt1__W.s", "cpt2__W.s"]
         pd.testing.assert_frame_equal(ref, res, rtol=0.01)
 
-        integrator = TimeIntegrate(drop_columns=False)
+        integrator = TimeIntegrate(drop_original=False)
         res = integrator.fit_transform(test)
         pd.testing.assert_frame_equal(pd.concat([test, ref], axis=1), res, rtol=0.01)
 
