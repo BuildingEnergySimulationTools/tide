@@ -693,7 +693,11 @@ class TimeGradient(BaseProcessing):
     """A transformer that calculates the time gradient (derivative) of a pandas DataFrame.
 
     This transformer computes the rate of change of values with respect to time.
-    The gradient is calculated using the time difference between consecutive data points.
+    The gradient is calculated using np centered gradient method.
+
+    d(i) = (yi-1 - yi+1) / (ti-1 - ti+1)
+
+    Method assume linear variation at boundaries
 
     Parameters
     ----------
@@ -770,6 +774,138 @@ class TimeGradient(BaseProcessing):
         if self.new_unit is not None:
             derivative.columns = self.feature_names_out_
         return derivative
+
+
+class TimeIntegrate(BaseProcessing):
+    """
+    A transformer that calculates the time integral (cumulative sum over time) of a
+    pandas DataFrame.
+
+    This transformer computes the cumulative integral of values with respect to time.
+    The integral is calculated using the trapezoidal rule between consecutive data points.
+
+    Int[i] = Int[i - 1] + dt * (Yi-1 + Yi) / 2
+
+    CAUTION given that TimeGradient is a centered derivative. This is not an exact
+    inverse transform.
+
+    Parameters
+    ----------
+    new_unit : str, optional (default=None)
+        The new unit to apply to the column names after transformation.
+        If provided, the transformer will update the unit part of the column names
+        (the part after the second "__" in the Tide naming convention).
+        Example: If input columns are "power__W__building" and new_unit="J",
+        output columns will be "power__J__building".
+
+    initial_value : float or dict, optional (default=0.0)
+        The initial value(s) for the integral at the first timestamp.
+        Can be:
+            - float: Same initial value for all columns
+            - dict: Mapping of column names to their initial values
+        Example: initial_value={"power__W__building": 1000.0}
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:04:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> # Create power data (in Watts) - constant 6000W consumption
+    >>> df = pd.DataFrame(
+    ...     {"power__W__building": [6000, 6000, 6000, 6000, 6000]},
+    ...     index=dates,
+    ... )
+    >>> # Calculate energy (J) from power (W) using time integration
+    >>> # Energy = integral of Power over time (in seconds)
+    >>> transformer = TimeIntegral(new_unit="J")
+    >>> result = transformer.fit_transform(df)
+    >>> print(result)
+                           power__J__building
+    2024-01-01 00:00:00+00:00             0.0
+    2024-01-01 00:01:00+00:00        360000.0
+    2024-01-01 00:02:00+00:00        720000.0
+    2024-01-01 00:03:00+00:00       1080000.0
+    2024-01-01 00:04:00+00:00       1440000.0
+
+    >>> # With initial value (e.g., meter starting at 1000 J)
+    >>> transformer_init = TimeIntegral(new_unit="J", initial_value=1000.0)
+    >>> result_init = transformer_init.fit_transform(df)
+    >>> print(result_init)
+                           power__J__building
+    2024-01-01 00:00:00+00:00          1000.0
+    2024-01-01 00:01:00+00:00        361000.0
+    2024-01-01 00:02:00+00:00        721000.0
+    2024-01-01 00:03:00+00:00       1081000.0
+    2024-01-01 00:04:00+00:00       1441000.0
+
+    Notes
+    -----
+    - The time integral is calculated using the trapezoidal rule:
+      integral += (time2 - time1) * (value1 + value2) / 2
+    - This simulates an energy meter that accumulates energy over time
+    - The first value is set to initial_value (default 0.0)
+    - Time differences are calculated in seconds
+    - When using new_unit, the transformer follows the Tide naming convention
+      of "name__unit__block" for column names
+    - For irregular time series, the integration automatically adapts to
+      the varying time steps
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with cumulative time integrals for each column.
+        The output maintains the same DateTimeIndex as the input.
+        If new_unit is specified, the column names are updated accordingly.
+    """
+
+    def __init__(self, new_unit: str = None, initial_value: float | dict = 0.0):
+        super().__init__()
+        self.new_unit = new_unit
+        self.initial_value = initial_value
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.new_unit is not None:
+            self.feature_names_out_ = self.get_set_tags_values_columns(
+                X.copy(), 1, self.new_unit
+            )
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+
+        if len(X) == 0:
+            return X
+
+        time_diffs = np.diff(X.index.view("int64")) * 1e-9
+
+        result = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
+
+        for col in X.columns:
+            values = X[col].to_numpy()
+
+            if isinstance(self.initial_value, dict):
+                init_val = self.initial_value.get(col, 0.0)
+            else:
+                init_val = self.initial_value
+
+            integrals = np.zeros(len(values))
+            integrals[0] = init_val
+
+            for i in range(1, len(values)):
+                dt = time_diffs[i - 1]
+
+                # Trapezoidal rule: area = dt * (y1 + y2) / 2
+                increment = dt * (values[i - 1] + values[i]) / 2
+                integrals[i] = integrals[i - 1] + increment
+
+            result[col] = integrals
+
+        if self.new_unit is not None:
+            result.columns = self.feature_names_out_
+
+        return result
 
 
 class Ffill(BaseFiller, BaseProcessing):
