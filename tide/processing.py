@@ -797,6 +797,7 @@ class TimeIntegrate(BaseProcessing):
         (the part after the second "__" in the Tide naming convention).
         Example: If input columns are "power__W__building" and new_unit="J",
         output columns will be "power__J__building".
+        If not provided and drop_columns=False, the unit will be "originalunit.s"
 
     initial_value : float or dict, optional (default=0.0)
         The initial value(s) for the integral at the first timestamp.
@@ -804,6 +805,11 @@ class TimeIntegrate(BaseProcessing):
             - float: Same initial value for all columns
             - dict: Mapping of column names to their initial values
         Example: initial_value={"power__W__building": 1000.0}
+
+    drop_columns : bool, optional (default=True)
+        If True, only returns the integrated columns (replaces original data).
+        If False, keeps both the original columns and adds new integrated columns
+        with updated units.
 
     Examples
     --------
@@ -830,16 +836,27 @@ class TimeIntegrate(BaseProcessing):
     2024-01-01 00:03:00+00:00       1080000.0
     2024-01-01 00:04:00+00:00       1440000.0
 
-    >>> # With initial value (e.g., meter starting at 1000 J)
-    >>> transformer_init = TimeIntegral(new_unit="J", initial_value=1000.0)
-    >>> result_init = transformer_init.fit_transform(df)
-    >>> print(result_init)
-                           power__J__building
-    2024-01-01 00:00:00+00:00          1000.0
-    2024-01-01 00:01:00+00:00        361000.0
-    2024-01-01 00:02:00+00:00        721000.0
-    2024-01-01 00:03:00+00:00       1081000.0
-    2024-01-01 00:04:00+00:00       1441000.0
+    >>> # Keep original columns alongside integrated ones
+    >>> transformer_keep = TimeIntegral(new_unit="J", drop_columns=False)
+    >>> result_keep = transformer_keep.fit_transform(df)
+    >>> print(result_keep)
+                           power__W__building  power__J__building
+    2024-01-01 00:00:00+00:00             6000             0.0
+    2024-01-01 00:01:00+00:00             6000        360000.0
+    2024-01-01 00:02:00+00:00             6000        720000.0
+    2024-01-01 00:03:00+00:00             6000       1080000.0
+    2024-01-01 00:04:00+00:00             6000       1440000.0
+
+    >>> # Without specifying new_unit, the unit becomes "W.s"
+    >>> transformer_auto = TimeIntegral(drop_columns=False)
+    >>> result_auto = transformer_auto.fit_transform(df)
+    >>> print(result_auto)
+                           power__W__building  power__W.s__building
+    2024-01-01 00:00:00+00:00             6000             0.0
+    2024-01-01 00:01:00+00:00             6000        360000.0
+    2024-01-01 00:02:00+00:00             6000        720000.0
+    2024-01-01 00:03:00+00:00             6000       1080000.0
+    2024-01-01 00:04:00+00:00             6000       1440000.0
 
     Notes
     -----
@@ -852,24 +869,55 @@ class TimeIntegrate(BaseProcessing):
       of "name__unit__block" for column names
     - For irregular time series, the integration automatically adapts to
       the varying time steps
+    - When drop_columns=False, the original columns are preserved and new
+      integrated columns are added with the appropriate unit suffix
 
     Returns
     -------
     pd.DataFrame
-        The DataFrame with cumulative time integrals for each column.
+        If drop_columns=True: DataFrame with cumulative time integrals for each column.
+        If drop_columns=False: DataFrame with both original and integrated columns.
         The output maintains the same DateTimeIndex as the input.
-        If new_unit is specified, the column names are updated accordingly.
+        If new_unit is specified, the integrated column names are updated accordingly.
     """
 
-    def __init__(self, new_unit: str = None, initial_value: float | dict = 0.0):
+    def __init__(
+        self,
+        new_unit: str = None,
+        initial_value: float | dict = 0.0,
+        drop_columns: bool = True,
+    ):
         super().__init__()
         self.new_unit = new_unit
         self.initial_value = initial_value
+        self.drop_columns = drop_columns
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        # Determine the unit to use for integrated columns
         if self.new_unit is not None:
-            self.feature_names_out_ = self.get_set_tags_values_columns(
-                X.copy(), 1, self.new_unit
+            unit_suffix = self.new_unit
+        else:
+            # Extract original unit and append ".s"
+            # Assuming Tide naming convention: "name__unit__block__sub_block"
+            unit_suffix = None
+            sample_col = X.columns[0] if len(X.columns) > 0 else None
+            if sample_col and "__" in sample_col:
+                parts = sample_col.split("__")
+                if len(parts) >= 2:
+                    original_unit = parts[1]
+                    unit_suffix = f"{original_unit}.s"
+
+        # Create feature names for integrated columns
+        self.integrated_feature_names_ = self.get_set_tags_values_columns(
+            X.copy(), 1, unit_suffix
+        )
+
+        # Determine final output feature names
+        if self.drop_columns:
+            self.feature_names_out_ = self.integrated_feature_names_
+        else:
+            self.feature_names_out_ = list(X.columns) + list(
+                self.integrated_feature_names_
             )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
@@ -880,7 +928,8 @@ class TimeIntegrate(BaseProcessing):
 
         time_diffs = np.diff(X.index.view("int64")) * 1e-9
 
-        result = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
+        # Create DataFrame for integrated values
+        integrated = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
 
         for col in X.columns:
             values = X[col].to_numpy()
@@ -900,12 +949,15 @@ class TimeIntegrate(BaseProcessing):
                 increment = dt * (values[i - 1] + values[i]) / 2
                 integrals[i] = integrals[i - 1] + increment
 
-            result[col] = integrals
+            integrated[col] = integrals
 
-        if self.new_unit is not None:
-            result.columns = self.feature_names_out_
+        integrated.columns = self.integrated_feature_names_
 
-        return result
+        if self.drop_columns:
+            return integrated
+        else:
+            result = pd.concat([X, integrated], axis=1)
+            return result
 
 
 class Ffill(BaseFiller, BaseProcessing):

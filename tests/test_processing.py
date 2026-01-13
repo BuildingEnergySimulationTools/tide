@@ -300,6 +300,16 @@ class TestCustomTransformers:
         integrator = TimeIntegrate(new_unit="J")
         res = integrator.fit_transform(test)
         pd.testing.assert_frame_equal(ref, res, rtol=0.01)
+
+        integrator = TimeIntegrate()
+        res = integrator.fit_transform(test)
+        ref.columns = ["cpt1__W.s", "cpt2__W.s"]
+        pd.testing.assert_frame_equal(ref, res, rtol=0.01)
+
+        integrator = TimeIntegrate(drop_columns=False)
+        res = integrator.fit_transform(test)
+        pd.testing.assert_frame_equal(pd.concat([test, ref], axis=1), res, rtol=0.01)
+
         check_feature_names_out(integrator, res)
 
     def test_pd_ffill(self):
