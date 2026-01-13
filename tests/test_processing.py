@@ -24,6 +24,7 @@ from tide.processing import (
     RenameColumns,
     SkTransform,
     TimeGradient,
+    TimeIntegrate,
     ReplaceDuplicated,
     STLFilter,
     FillGapsAR,
@@ -278,6 +279,28 @@ class TestCustomTransformers:
         res = derivator.fit_transform(test)
         pd.testing.assert_frame_equal(ref, res, rtol=0.01)
         check_feature_names_out(derivator, res)
+
+    def test_pd_time_integral(self):
+        test = pd.DataFrame(
+            {
+                "cpt1__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
+                "cpt2__W": [360.0, 360.0, 180.0, -5.68e-14, 180.0, 360.0],
+            },
+            index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6, tz="UTC"),
+        )
+
+        ref = pd.DataFrame(
+            {
+                "cpt1__J": [0, 3600.0, 6300.0, 7200.0, 8100.0, 10800.0],
+                "cpt2__J": [0, 3600.0, 6300.0, 7200.0, 8100.0, 10800.0],
+            },
+            index=pd.date_range("2009-01-01 00:00:00", freq="10s", periods=6, tz="UTC"),
+        )
+
+        integrator = TimeIntegrate(new_unit="J")
+        res = integrator.fit_transform(test)
+        pd.testing.assert_frame_equal(ref, res, rtol=0.01)
+        check_feature_names_out(integrator, res)
 
     def test_pd_ffill(self):
         test = pd.DataFrame(
