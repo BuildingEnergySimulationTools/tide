@@ -1973,15 +1973,16 @@ class ExpressionCombine(BaseProcessing):
     """A transformer that combines DataFrame columns using a mathematical expression.
 
     This transformer evaluates a mathematical expression using specified columns from a DataFrame,
-    creating a new column with the result. It supports both simple aggregations and complex
-    physical expressions, with the option to drop the source columns after computation.
+    creating new columns with the results. It supports broadcasting: when a tag selector matches
+    multiple columns, the expression is applied to each matching group. Selectors matching a
+    single column are broadcast across all groups.
 
     Parameters
     ----------
     columns_dict : dict[str, str]
-        Dictionary mapping expression variables to DataFrame column names.
+        Dictionary mapping expression variables to TIDE-style column tag patterns.
         Keys are the variable names used in the expression, and values are the
-        corresponding column names in the DataFrame.
+        tag patterns to match columns (e.g., "Tin__°C__building").
 
     expression : str
         Mathematical expression to evaluate, using variables defined in columns_dict.
@@ -1989,82 +1990,285 @@ class ExpressionCombine(BaseProcessing):
         evaluated using pandas.eval().
 
     result_column_name : str
-        Name of the new column that will contain the evaluated expression result.
-        Must not already exist in the DataFrame.
+        Base name for result columns. If multiple column groups are found,
+        the sub-bloc suffix from matched columns is appended.
 
     drop_columns : bool, default=False
         Whether to drop the source columns used in the expression after computation.
-        If True, only the result column and other non-source columns are kept.
+
+    tide_request_func : callable, optional
+        Function to resolve tag patterns to column names. Should have signature
+        (data_columns, request) -> list[str]. If None, uses the global tide_request.
 
     Attributes
     ----------
     feature_names_out_ : list[str]
-        List of column names in the transformed DataFrame. If drop_columns is True,
-        excludes the source columns used in the expression.
+        List of column names in the transformed DataFrame.
 
     Raises
     ------
     ValueError
+        If tag patterns resolve to incompatible column counts (not 1 and not equal).
         If result_column_name already exists in the DataFrame.
 
     Examples
     --------
-    >>> from tide.processing import ExpressionCombine
     >>> import pandas as pd
-    >>> # Create sample data
-    >>> df = pd.DataFrame(
-    ...     {
-    ...         "Tin__°C__building": [20, 21, 22],
-    ...         "Text__°C__outdoor": [10, 11, 12],
-    ...         "mass_flwr__m3/h__hvac": [1, 2, 3],
-    ...     }
-    ... )
-    >>> # Calculate ventilation losses
+    >>> df = pd.DataFrame({
+    ...     "Tin__°C__building__room_1": [20, 21, 22],
+    ...     "Tin__°C__building__room_2": [25, 26, 27],
+    ...     "Text__°C__outdoor__meteo": [10, 11, 12],
+    ...     "mass_flwr__m3/h__hvac__pump": [1, 2, 3],
+    ... })
+    >>>
     >>> combiner = ExpressionCombine(
     ...     columns_dict={
     ...         "T1": "Tin__°C__building",
-    ...         "T2": "Text__°C__outdoor",
-    ...         "m": "mass_flwr__m3/h__hvac",
+    ...         "T2": "Text__°C__outdoor__meteo",
+    ...         "m": "mass_flwr__m3/h__hvac__pump",
     ...     },
     ...     expression="(T1 - T2) * m * 1004 * 1.204",
-    ...     result_column_name="loss_ventilation__J__hvac",
-    ...     drop_columns=True,
+    ...     result_column_name="loss_ventilation__J__building",
     ... )
-    >>> # Transform the data
+    >>>
     >>> result = combiner.fit_transform(df)
+    >>> # Creates: loss_ventilation__J__building__room_1 and
+    >>> #          loss_ventilation__J__building__room_2
     """
 
     def __init__(
-        self,
-        columns_dict: dict[str, str],
-        expression: str,
-        result_column_name: str,
-        drop_columns: bool = False,
+            self,
+            columns_dict: dict[str, str],
+            expression: str,
+            result_column_name: str,
+            drop_columns: bool = False,
     ):
-        BaseProcessing.__init__(self, required_columns=list(columns_dict.values()))
         self.columns_dict = columns_dict
-        self.required_columns = list(columns_dict.values())
         self.expression = expression
         self.result_column_name = result_column_name
         self.drop_columns = drop_columns
 
-    def _fit_implementation(self, X, y=None):
-        if self.drop_columns:
-            self.feature_names_out_ = list(X.columns.drop(self.required_columns))
-        if self.result_column_name in self.feature_names_out_:
-            raise ValueError(
-                f"label_name {self.result_column_name} already in X columns. "
-                f"It cannot be overwritten"
-            )
-        self.feature_names_out_.append(self.result_column_name)
+        # Will be populated during fit
+        self._column_groups = None
+        self._result_columns = None
 
-    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
-        X.loc[:, self.result_column_name] = pd.eval(
-            self.expression,
-            target=X,
-            local_dict={var: X[col] for var, col in self.columns_dict.items()},
-        )
-        return X[self.feature_names_out_]
+        # Initialize BaseProcessing with empty list, will be updated in fit
+        BaseProcessing.__init__(self, required_columns=[])
+
+    def _resolve_column_groups(self, X: pd.DataFrame) -> tuple[list[dict], list[str]]:
+        """Resolve tag patterns to column groups and validate broadcasting rules.
+
+        Returns
+        -------
+        column_groups : list[dict]
+            List of dicts mapping variable names to actual column names for each group.
+        result_columns : list[str]
+            List of result column names with appropriate suffixes.
+        """
+        # Resolve each tag pattern to actual columns
+        resolved = {}
+        for var, tag_pattern in self.columns_dict.items():
+            matched_cols = self.tide_request_func(X.columns, tag_pattern)
+            if not matched_cols:
+                raise ValueError(
+                    f"Tag pattern '{tag_pattern}' for variable '{var}' "
+                    f"matched no columns in DataFrame"
+                )
+            resolved[var] = matched_cols
+
+        # Determine the number of groups (max non-1 length)
+        counts = {var: len(cols) for var, cols in resolved.items()}
+        non_one_counts = [c for c in counts.values() if c > 1]
+
+        if not non_one_counts:
+            # All variables match exactly 1 column
+            n_groups = 1
+        else:
+            # Check all non-1 counts are equal
+            if len(set(non_one_counts)) > 1:
+                raise ValueError(
+                    f"Incompatible column counts for broadcasting: {counts}. "
+                    f"All counts must be 1 or equal to each other."
+                )
+            n_groups = non_one_counts[0]
+
+        # Build column groups
+        column_groups = []
+        result_columns = []
+
+        for i in range(n_groups):
+            group = {}
+            for var, cols in resolved.items():
+                # Broadcast single columns across all groups
+                group[var] = cols[0] if len(cols) == 1 else cols[i]
+            column_groups.append(group)
+
+            # Extract sub-bloc suffix from any multi-column variable
+            suffix = ""
+            for var, cols in resolved.items():
+                if len(cols) > 1:
+                    # Extract suffix after the tag pattern
+                    col_name = cols[i]
+                    tag_pattern = self.columns_dict[var]
+                    # Find the suffix by removing the base pattern
+                    parts = col_name.split("__")
+                    pattern_parts = tag_pattern.split("__")
+                    # The suffix is the parts after the pattern
+                    if len(parts) > len(pattern_parts):
+                        suffix = "__" + "__".join(parts[len(pattern_parts):])
+                    break
+
+            result_columns.append(self.result_column_name + suffix)
+
+        return column_groups, result_columns
+
+    def _fit_implementation(self, X, y=None):
+        """Fit the transformer by resolving column groups."""
+        self._column_groups, self._result_columns = self._resolve_column_groups(X)
+
+        # Update required columns for BaseProcessing
+        all_cols = set()
+        for group in self._column_groups:
+            all_cols.update(group.values())
+        self.required_columns = list(all_cols)
+
+        # Build feature_names_out_
+        if self.drop_columns:
+            self.feature_names_out_ = [
+                col for col in X.columns if col not in self.required_columns
+            ]
+        else:
+            self.feature_names_out_ = list(X.columns)
+
+        # Check for conflicts
+        for result_col in self._result_columns:
+            if result_col in self.feature_names_out_:
+                raise ValueError(
+                    f"Result column '{result_col}' already exists in DataFrame. "
+                    f"It cannot be overwritten."
+                )
+
+        self.feature_names_out_.extend(self._result_columns)
+
+        return self
+
+    def _transform_implementation(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Transform the DataFrame by evaluating expression for each column group."""
+        # Create output DataFrame (vectorized approach)
+        result = X.copy() if not self.drop_columns else X[
+            [col for col in X.columns if col not in self.required_columns]
+        ].copy()
+
+        # Evaluate expression for each group (vectorized)
+        for group, result_col in zip(self._column_groups, self._result_columns):
+            # Build local_dict for pd.eval
+            local_dict = {var: X[col].values for var, col in group.items()}
+
+            # Evaluate expression using numpy arrays for speed
+            result[result_col] = pd.eval(
+                self.expression,
+                local_dict=local_dict,
+                engine='numexpr'  # Faster for numeric operations
+            )
+
+        return result[self.feature_names_out_]
+
+# class ExpressionCombine(BaseProcessing):
+#     """A transformer that combines DataFrame columns using a mathematical expression.
+#
+#     This transformer evaluates a mathematical expression using specified columns from a DataFrame,
+#     creating a new column with the result. It supports both simple aggregations and complex
+#     physical expressions, with the option to drop the source columns after computation.
+#
+#     Parameters
+#     ----------
+#     columns_dict : dict[str, str]
+#         Dictionary mapping expression variables to DataFrame column names.
+#         Keys are the variable names used in the expression, and values are the
+#         corresponding column names in the DataFrame.
+#
+#     expression : str
+#         Mathematical expression to evaluate, using variables defined in columns_dict.
+#         The expression should be a valid Python mathematical expression that can be
+#         evaluated using pandas.eval().
+#
+#     result_column_name : str
+#         Name of the new column that will contain the evaluated expression result.
+#         Must not already exist in the DataFrame.
+#
+#     drop_columns : bool, default=False
+#         Whether to drop the source columns used in the expression after computation.
+#         If True, only the result column and other non-source columns are kept.
+#
+#     Attributes
+#     ----------
+#     feature_names_out_ : list[str]
+#         List of column names in the transformed DataFrame. If drop_columns is True,
+#         excludes the source columns used in the expression.
+#
+#     Raises
+#     ------
+#     ValueError
+#         If result_column_name already exists in the DataFrame.
+#
+#     Examples
+#     --------
+#     >>> from tide.processing import ExpressionCombine
+#     >>> import pandas as pd
+#     >>> # Create sample data
+#     >>> df = pd.DataFrame(
+#     ...     {
+#     ...         "Tin__°C__building": [20, 21, 22],
+#     ...         "Text__°C__outdoor": [10, 11, 12],
+#     ...         "mass_flwr__m3/h__hvac": [1, 2, 3],
+#     ...     }
+#     ... )
+#     >>> # Calculate ventilation losses
+#     >>> combiner = ExpressionCombine(
+#     ...     columns_dict={
+#     ...         "T1": "Tin__°C__building",
+#     ...         "T2": "Text__°C__outdoor",
+#     ...         "m": "mass_flwr__m3/h__hvac",
+#     ...     },
+#     ...     expression="(T1 - T2) * m * 1004 * 1.204",
+#     ...     result_column_name="loss_ventilation__J__hvac",
+#     ...     drop_columns=True,
+#     ... )
+#     >>> # Transform the data
+#     >>> result = combiner.fit_transform(df)
+#     """
+#
+#     def __init__(
+#         self,
+#         columns_dict: dict[str, str],
+#         expression: str,
+#         result_column_name: str,
+#         drop_columns: bool = False,
+#     ):
+#         BaseProcessing.__init__(self, required_columns=list(columns_dict.values()))
+#         self.columns_dict = columns_dict
+#         self.required_columns = list(columns_dict.values())
+#         self.expression = expression
+#         self.result_column_name = result_column_name
+#         self.drop_columns = drop_columns
+#
+#     def _fit_implementation(self, X, y=None):
+#         if self.drop_columns:
+#             self.feature_names_out_ = list(X.columns.drop(self.required_columns))
+#         if self.result_column_name in self.feature_names_out_:
+#             raise ValueError(
+#                 f"label_name {self.result_column_name} already in X columns. "
+#                 f"It cannot be overwritten"
+#             )
+#         self.feature_names_out_.append(self.result_column_name)
+#
+#     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+#         X.loc[:, self.result_column_name] = pd.eval(
+#             self.expression,
+#             target=X,
+#             local_dict={var: X[col] for var, col in self.columns_dict.items()},
+#         )
+#         return X[self.feature_names_out_]
 
 
 class FillOikoMeteo(BaseFiller, BaseOikoMeteo, BaseProcessing):
