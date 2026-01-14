@@ -45,6 +45,107 @@ OIKOLAB_DEFAULT_MAP = {
 }
 
 
+class Duplicate(BaseProcessing):
+    """
+    A transformer that duplicates input columns while modifying Tide tag components.
+
+    This transformer creates an exact copy of the input DataFrame columns and
+    appends them to the original data. The duplicated columns can have one or more
+    Tide tag components (unit, block, sub-block) modified, while preserving the
+    original values.
+
+    No mathematical transformation is applied to the data; values are copied
+    identically.
+
+    Parameters
+    ----------
+    new_unit : str, optional (default=None)
+        The new unit to apply to the duplicated columns.
+        If provided, the unit part of the column names (the second tag in the
+        Tide naming convention) is replaced.
+        Example: ``power__W__total`` → ``power__kWh__total``.
+
+    new_block : str, optional (default=None)
+        The new block to apply to the duplicated columns.
+        If provided, the block part of the column names (the third tag in the
+        Tide naming convention) is replaced.
+
+    new_sub_block : str, optional (default=None)
+        The new sub-block to apply to the duplicated columns.
+        If provided, the sub-block part of the column names (the fourth tag in
+        the Tide naming convention) is replaced.
+
+    Notes
+    -----
+    - The transformer follows Tide's column naming convention:
+      ``name__unit__block__sub_block``.
+    - The original columns are preserved unchanged.
+    - The duplicated columns are appended to the right of the output DataFrame.
+    - At least one of ``new_unit``, ``new_block`` or ``new_sub_block`` should be
+      provided to avoid creating identical duplicate columns.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame(
+    ...     {"energy__kWh__total": [10, 12, 15]},
+    ... )
+
+    >>> # Duplicate columns while changing the unit
+    >>> dup = Duplicate(new_unit="kWh_cumul")
+    >>> result = dup.fit_transform(df)
+    >>> print(result.columns)
+    Index(['energy__kWh__total', 'energy__kWh_cumul__total'], dtype='object')
+
+    >>> # Duplicate columns while changing the block
+    >>> dup = Duplicate(new_block="ref")
+    >>> result = dup.fit_transform(df)
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing both the original columns and their duplicated
+        counterparts with updated Tide tags.
+    """
+    def __init__(
+        self,
+        new_unit: str = None,
+        new_block: str = None,
+        new_sub_block: str = None,
+    ):
+        super().__init__()
+        self.new_unit = new_unit
+        self.new_block = new_block
+        self.new_sub_block = new_sub_block
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        df = X.copy()
+        new_cols = df.columns
+
+        if self.new_unit is not None:
+            new_cols = self.get_set_tags_values_columns(df, 1, self.new_unit)
+            df = df.copy()
+            df.columns = new_cols
+
+        if self.new_block is not None:
+            new_cols = self.get_set_tags_values_columns(df, 2, self.new_block)
+            df = df.copy()
+            df.columns = new_cols
+
+        if self.new_sub_block is not None:
+            new_cols = self.get_set_tags_values_columns(df, 3, self.new_sub_block)
+            df = df.copy()
+            df.columns = new_cols
+
+        self.feature_names_out_ = list(X.columns) + list(df.columns)
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        copied = X.copy()
+        copied.columns = self.feature_names_out_[len(X.columns):]
+        return pd.concat([X, copied], axis=1)
+
+
+
 class Identity(BaseProcessing):
     """A transformer that returns input data unchanged.
 
@@ -555,16 +656,18 @@ class DropTimeGradient(BaseProcessing):
         The output maintains the same DateTimeIndex and column structure as the input.
     """
 
-    def __init__(self, dropna=True, upper_rate=None, lower_rate=None):
+    def __init__(self, dropna=True, upper_rate=None, lower_rate=None, symmetric=True):
         super().__init__()
         self.dropna = dropna
         self.upper_rate = upper_rate
         self.lower_rate = lower_rate
+        self.symmetric = symmetric
 
-    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        pass
+    def _fit_implementation(self, X, y=None):
+        self.feature_names_in_ = list(X.columns)
+        self.feature_names_out_ = self.feature_names_in_.copy()
 
-    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+    def _transform_implementation(self, X):
         X_transformed = []
         for column in X.columns:
             X_column = X[column]
@@ -573,35 +676,23 @@ class DropTimeGradient(BaseProcessing):
                 X_column = X_column.dropna()
 
             time_delta = X_column.index.to_series().diff().dt.total_seconds()
-            abs_der = abs(X_column.diff().divide(time_delta, axis=0))
-            abs_der_two = abs(X_column.diff(periods=2).divide(time_delta, axis=0))
+            grad = X_column.diff().divide(time_delta, axis=0)
+
+            grad_abs = grad.abs() if self.symmetric else grad
+
+            mask_der = pd.Series(False, index=X_column.index)
             if self.upper_rate is not None:
-                mask_der = abs_der >= self.upper_rate
-                mask_der_two = abs_der_two >= self.upper_rate
-            else:
-                mask_der = pd.Series(
-                    np.full(X_column.shape, False),
-                    index=X_column.index,
-                    name=X_column.name,
-                )
-                mask_der_two = mask_der
+                mask_der |= grad_abs >= self.upper_rate
+            if self.lower_rate is not None and not self.symmetric:
+                mask_der |= grad <= self.lower_rate
 
-            if self.lower_rate is not None:
-                mask_constant = abs_der <= self.lower_rate
-            else:
-                mask_constant = pd.Series(
-                    np.full(X_column.shape, False),
-                    index=X_column.index,
-                    name=X_column.name,
-                )
+            X_column.loc[mask_der] = np.nan
 
-            mask_to_remove = np.logical_and(mask_der, mask_der_two)
-            mask_to_remove = np.logical_or(mask_to_remove, mask_constant)
-
-            X_column[mask_to_remove] = np.nan
             if self.dropna:
                 X_column = X_column.reindex(original_index)
+
             X_transformed.append(X_column)
+
         return pd.concat(X_transformed, axis=1)
 
 
