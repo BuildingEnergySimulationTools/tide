@@ -96,7 +96,7 @@ def time_integrate(data: pd.DataFrame | pd.Series) -> pd.Series:
 
     t = (data.index.view("int64") - data.index[0].value) * 1e-9  # seconds
     y = data.to_numpy()
-    result = np.trapz(y, t, axis=0)
+    result = np.trapezoid(y, t, axis=0)
 
     return pd.Series(result, index=data.columns)
 

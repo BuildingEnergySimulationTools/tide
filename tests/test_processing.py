@@ -850,6 +850,29 @@ class TestCustomTransformers:
             decimal=1,
         )
 
+        combiner_broadcast = ExpressionCombine(
+            columns_dict={
+                "T_in": "Tin__°C__building",
+                "T_ext": "Text__°C",
+                "m": "mass_flwr__m3/h__hvac__pump",
+            },
+            expression="(T_in - T_ext) * m * 1004 * 1.204",
+            result_column_name="loss_ventilation__J__building",
+        )
+
+        res = combiner_broadcast.fit_transform(test_df.copy())
+        np.testing.assert_almost_equal(
+            res["loss_ventilation__J__building__room_1"],
+            [3989092.8, 9066120.0, 18857529.6],
+            decimal=1,
+        )
+
+        np.testing.assert_almost_equal(
+            res["loss_ventilation__J__building__room_2"],
+            [7615540.8, 21154280.0, 40616217.6],
+            decimal=1,
+        )
+
     @patch("tide.base.get_oikolab_df", side_effect=mock_get_oikolab_df)
     def test_fill_oiko_meteo(self, mock_get_oikolab):
         data = pd.read_csv(
