@@ -2395,7 +2395,7 @@ class ExpressionCombine(BaseProcessing):
             X
             if not self.drop_columns
             else X[[col for col in X.columns if col not in self.required_columns]]
-        )
+        ).copy()
 
         for group, result_col in zip(self.column_groups_, self.result_columns_):
             # Build local_dict for pd.eval

@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -28,9 +29,9 @@ dependencies = [
     "statsmodels>=0.14.4",
     "matplotlib>=3.5.1",
     "plotly>=5.3.1",
-    "requests>=2.32.3",
+    "requests>=2.32.3, <3.0",
     "influxdb-client>=1.48.0",
-    "prophet>=1.1.5",
+    "prophet>=1.2.1",
 ]
 
 [project.optional-dependencies]
