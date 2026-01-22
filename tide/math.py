@@ -1,9 +1,10 @@
 from enum import Enum
+from collections.abc import Callable
 
 import pandas as pd
 import numpy as np
 
-from collections.abc import Callable
+from scipy.integrate import trapezoid
 
 from tide.utils import check_and_return_dt_index_df
 
@@ -96,7 +97,7 @@ def time_integrate(data: pd.DataFrame | pd.Series) -> pd.Series:
 
     t = (data.index.view("int64") - data.index[0].value) * 1e-9  # seconds
     y = data.to_numpy()
-    result = np.trapz(y, t, axis=0)
+    result = trapezoid(y, t, axis=0)
 
     return pd.Series(result, index=data.columns)
 
