@@ -2349,14 +2349,13 @@ class ExpressionCombine(BaseProcessing):
             # Extract sub-bloc suffix from any multi-column variable
             suffix = ""
             for var, cols in resolved.items():
-                if len(cols) > 1:
-                    col_name = cols[i]
-                    tag_pattern = self.columns_dict[var]
-                    parts = col_name.split("__")
-                    pattern_parts = tag_pattern.split("__")
-                    if len(parts) > len(pattern_parts):
-                        suffix = "__" + "__".join(parts[len(pattern_parts) :])
-                    break
+                col_name = cols[i]
+                tag_pattern = self.columns_dict[var]
+                parts = col_name.split("__")
+                pattern_parts = tag_pattern.split("__")
+                if len(parts) > len(pattern_parts):
+                    suffix = "__" + "__".join(parts[len(pattern_parts) :])
+                break
 
             result_columns.append(self.result_column_name + suffix)
 
@@ -2400,7 +2399,7 @@ class ExpressionCombine(BaseProcessing):
 
         for group, result_col in zip(self.column_groups_, self.result_columns_):
             # Build local_dict for pd.eval
-            local_dict = {var: X[col].values for var, col in group.items()}
+            local_dict = {var: X[col] for var, col in group.items()}
 
             result.loc[:, result_col] = pd.eval(
                 self.expression,
