@@ -41,6 +41,7 @@ from tide.processing import (
     AddFourierPairs,
     DropQuantile,
     TrimSequence,
+    WindowAggregate,
 )
 
 RESOURCES_PATH = Path(__file__).parent / "resources"
@@ -1340,3 +1341,34 @@ class TestCustomTransformers:
         )
 
         check_feature_names_out(trimer, res)
+
+    def test_window_aggregation(self):
+        df = pd.DataFrame(
+            {
+                "a": np.arange(10),
+                "b": np.arange(10) * 2,
+            },
+            index=pd.date_range("2009-01-01", freq="min", periods=10, tz="UTC"),
+        )
+
+        wa = WindowAggregate(
+            window_interval=("-3min", "-1min"),
+            agg_method="mean",
+        )
+
+        out = wa.fit_transform(df)
+
+        assert True
+
+        # # --- manual expected values ---
+        # # t = 00:09 → window [00:07, 00:08] → a = [7, 8], b = [14, 16]
+        assert out.loc["2009-01-01 00:09", "('-3min', '-1min')_a"] == 7.0
+        assert out.loc["2009-01-01 00:09", "('-3min', '-1min')_b"] == 14.0
+        #
+
+        assert wa.get_feature_names_out() == [
+            "a",
+            "b",
+            "('-3min', '-1min')_a",
+            "('-3min', '-1min')_b",
+        ]
