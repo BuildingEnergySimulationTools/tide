@@ -122,3 +122,7 @@ The processing module provides transformers for data processing and manipulation
 .. autoclass:: tide.processing.TrimSequence
    :members:
    :show-inheritance:
+
+.. autoclass:: tide.processing.WindowAggregate
+   :members:
+   :show-inheritance:
