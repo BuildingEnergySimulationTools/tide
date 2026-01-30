@@ -7,6 +7,7 @@ import warnings
 from functools import partial
 from collections.abc import Callable
 
+import sklearn.base
 from sklearn.utils.validation import check_is_fitted
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import detrend
@@ -376,7 +377,7 @@ class SkTransform(BaseProcessing):
         The values are transformed according to the specified scikit-learn transformer.
     """
 
-    def __init__(self, transformer):
+    def __init__(self, transformer: sklearn.base.BaseEstimator):
         super().__init__()
         self.transformer = transformer
 
@@ -854,7 +855,7 @@ class TimeIntegrate(BaseProcessing):
     2024-01-01 00:04:00+00:00             6000       1440000.0
 
     >>> # Without specifying new_unit, the unit becomes "W.s"
-    >>> transformer_auto = TimeIntegral(drop_columns=False)
+    >>> transformer_auto = TimeIntegrate(drop_columns=False)
     >>> result_auto = transformer_auto.fit_transform(df)
     >>> print(result_auto)
                            power__W__building  power__W.s__building
@@ -1499,42 +1500,47 @@ class AddTimeLag(BaseProcessing):
     """A transformer that adds time-lagged features to a pandas DataFrame.
 
     This transformer creates new features by shifting existing features in time,
-    allowing the creation of past or future values as new features. This is
-    particularly useful for time series analysis where historical or future
-    values might be relevant predictors.
+    allowing the creation of past or future values as predictors.
+
+    The transformer works by shifting the DataFrame's temporal index and creating
+    new columns with lagged values. All input features are lagged together.
 
     Parameters
     ----------
     time_lag : str | pd.Timedelta | dt.timedelta, default="1h"
         The time lag to apply when creating new features. Can be specified as:
-            - A string (e.g., "1h", "30min", "1d")
-            - A pandas Timedelta object
-            - A datetime timedelta object
-        A positive time lag creates features with past values, while a negative
-        time lag creates features with future values.
 
-    features_to_lag : str | list[str] | None, default=None
-        The features to create lagged versions of. If None, all features in the
-        input DataFrame will be lagged. Can be specified as:
-            - A single feature name (string)
-            - A list of feature names
-            - None (to lag all features)
+        - A string (e.g., "1h", "30min", "1d")
+        - A pandas Timedelta object
+        - A datetime timedelta object
+
+        A positive time lag creates features with past values (e.g., "1h" gives
+        values from 1 hour ago), while a negative time lag creates features with
+        future values (e.g., "-1h" gives values from 1 hour ahead).
 
     feature_marker : str | None, default=None
-        The prefix to use for the new lagged feature names. If None, the
-        string representation of time_lag followed by an underscore is used.
+        The prefix to use for the new lagged feature names. If None, the string
+        representation of time_lag followed by an underscore is used.
         For example, with time_lag="1h", features will be prefixed with "1h_".
 
-    drop_resulting_nan : bool, default=False
-        Whether to drop rows containing NaN values that result from the lag
-        operation. This is useful when you want to ensure complete data for
-        the lagged features.
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of features seen during fit.
+
+    feature_names_out_ : list[str]
+        Names of all features in the output, including both original and lagged
+        features.
+
+    feature_marker : str
+        The finalized prefix used for lagged feature names. Set during fit.
 
     Examples
     --------
     >>> import pandas as pd
     >>> from tide.processing import AddTimeLag
-    >>> # Create sample data
+    >>>
+    >>> # Create sample time series data
     >>> dates = pd.date_range(start="2024-01-01", periods=5, freq="1h", tz="UTC")
     >>> df = pd.DataFrame(
     ...     {
@@ -1543,91 +1549,90 @@ class AddTimeLag(BaseProcessing):
     ...     },
     ...     index=dates,
     ... )
-    >>> # Add 1-hour lagged features
+    >>>
+    >>> # Add 1-hour lagged features (previous hour's values)
     >>> lagger = AddTimeLag(time_lag="1h")
     >>> result = lagger.fit_transform(df)
     >>> print(result)
-                           power__W__building  temp__°C__room  1h_power__W__building  1h_temp__°C__room
-    2024-01-01 00:00:00               100.0           20.0                   NaN               NaN
-    2024-01-01 01:00:00               200.0           21.0                 100.0              20.0
-    2024-01-01 02:00:00               300.0           22.0                 200.0              21.0
-    2024-01-01 03:00:00               400.0           23.0                 300.0              22.0
-    2024-01-01 04:00:00               500.0           24.0                 400.0              23.0
-    >>> # Add custom lagged features with specific marker
+                         power__W__building  temp__°C__room  1h_power__W__building  1h_temp__°C__room
+    2024-01-01 00:00:00               100.0            20.0                    NaN                NaN
+    2024-01-01 01:00:00               200.0            21.0                  100.0               20.0
+    2024-01-01 02:00:00               300.0            22.0                  200.0               21.0
+    2024-01-01 03:00:00               400.0            23.0                  300.0               22.0
+    2024-01-01 04:00:00               500.0            24.0                  400.0               23.0
+    >>>
+    >>> # Use custom prefix for lagged features
     >>> lagger_custom = AddTimeLag(
-    ...     time_lag="1h",
-    ...     features_to_lag=["power__W__building"],
-    ...     feature_marker="prev_",
-    ...     drop_resulting_nan=True,
+    ...     time_lag="2h",
+    ...     feature_marker="lag2h_",
     ... )
     >>> result_custom = lagger_custom.fit_transform(df)
-    >>> print(result_custom)
-                           power__W__building  temp__°C__room  prev_power__W__building
-    2024-01-01 00:00:00               200.0           21.0                    100.0
-    2024-01-01 01:00:00               300.0           22.0                    200.0
-    2024-01-01 02:00:00               400.0           23.0                    300.0
-    2024-01-01 03:00:00               500.0           24.0                    400.0
+    >>> print(result_custom.columns.tolist())
+    ['power__W__building', 'temp__°C__room', 'lag2h_power__W__building', 'lag2h_temp__°C__room']
+    >>>
+    >>> # Create future lag (values from 1 hour ahead)
+    >>> future_lagger = AddTimeLag(time_lag="-1h", feature_marker="next_")
+    >>> result_future = future_lagger.fit_transform(df)
+    >>> print(result_future)
+                         power__W__building  temp__°C__room  next_power__W__building  next_temp__°C__room
+    2024-01-01 00:00:00               100.0            20.0                    200.0                 21.0
+    2024-01-01 01:00:00               200.0            21.0                    300.0                 22.0
+    2024-01-01 02:00:00               300.0            22.0                    400.0                 23.0
+    2024-01-01 03:00:00               400.0            23.0                    500.0                 24.0
+    2024-01-01 04:00:00               500.0            24.0                      NaN                  NaN
 
     Notes
     -----
-    - The transformer preserves the original features and adds new lagged versions
-    - Lagged features are created by shifting the index and concatenating with
-      the original data
-    - When drop_resulting_nan=True, rows with NaN values in lagged features
-      are removed from the output
-    - The feature_marker parameter allows for custom naming of lagged features
-    - The transformer supports both positive (past) and negative (future) lags
+    - The transformer preserves all original features and adds new lagged versions.
+    - Lagged features are created by shifting the DataFrame's temporal index by
+      time_lag and concatenating with the original data.
+    - NaN values appear where lagged data is unavailable (at the beginning for
+      positive lags, at the end for negative lags).
+    - The output is reindexed to match the original DataFrame's index, ensuring
+      temporal alignment.
+
+    See Also
+    --------
+    pandas.DataFrame.shift : Shift index by desired number of periods.
+    pandas.concat : Concatenate pandas objects along a particular axis.
 
     Returns
     -------
     pd.DataFrame
-        The input DataFrame with additional lagged features. The original
-        features are preserved, and new lagged features are added with the
-        specified prefix.
+        The input DataFrame with additional lagged features. Original features are
+        preserved, and new lagged features are added with the specified prefix.
+        The output has the same index as the input.
     """
 
     def __init__(
         self,
         time_lag: str | pd.Timedelta | dt.timedelta = "1h",
-        features_to_lag: str | list[str] = None,
         feature_marker: str = None,
-        drop_resulting_nan=False,
     ):
         BaseProcessing.__init__(self)
-        self.time_lag = time_lag
-        self.features_to_lag = features_to_lag
+        self.time_lag = (
+            pd.Timedelta(time_lag) if isinstance(time_lag, str) else time_lag
+        )
         self.feature_marker = feature_marker
-        self.drop_resulting_nan = drop_resulting_nan
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        if self.features_to_lag is None:
-            self.features_to_lag = X.columns
-        else:
-            self.features_to_lag = (
-                [self.features_to_lag]
-                if isinstance(self.features_to_lag, str)
-                else self.features_to_lag
-            )
         self.feature_marker = (
             str(self.time_lag) + "_"
             if self.feature_marker is None
             else self.feature_marker
         )
 
-        self.required_columns = self.features_to_lag
-        self.feature_names_out_.extend(
-            [self.feature_marker + name for name in self.required_columns]
-        )
+        self.feature_names_out_ = self.feature_names_in_ + [
+            self.feature_marker + name for name in self.feature_names_in_
+        ]
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
-        to_lag = X[self.features_to_lag].copy()
-        to_lag.index = to_lag.index + self.time_lag
+        to_lag = X.copy()
+        to_lag.index += self.time_lag
         to_lag.columns = self.feature_marker + to_lag.columns
         X_transformed = pd.concat([X, to_lag], axis=1)
-        if self.drop_resulting_nan:
-            X_transformed = X_transformed.dropna()
-        return X_transformed
+        return X_transformed.loc[X.index]
 
 
 class WindowAggregate(BaseProcessing):
@@ -1645,13 +1650,6 @@ class WindowAggregate(BaseProcessing):
             - Both offsets must be parseable as pandas Timedelta objects
         The window includes all data points between [t + start_offset, t + stop_offset].
         Note: Future windows (stop_offset > 0) are not supported.
-
-    features_to_aggregate : str | list[str] | None, default=None
-        The features to create aggregated versions of. If None, all features in
-        the input DataFrame will be aggregated. Can be specified as:
-            - A single feature name (string)
-            - A list of feature names
-            - None (to aggregate all features)
 
     feature_marker : str | None, default=None
         The prefix to use for the new aggregated feature names. If None, the
@@ -1802,7 +1800,8 @@ class WindowAggregate(BaseProcessing):
         X_agg = getattr(rolling, self.agg_method)()
         X_agg.columns = self.new_columns_
 
-        return pd.concat([X, X_agg], axis=1)
+        # Re align axis. New timestamps are forbidden
+        return pd.concat([X, X_agg], axis=1).loc[X.index, :]
 
 
 class GaussianFilter1D(BaseProcessing):

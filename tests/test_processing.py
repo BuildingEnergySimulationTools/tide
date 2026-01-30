@@ -486,17 +486,20 @@ class TestCustomTransformers:
 
         ref = pd.DataFrame(
             {
-                "col0": [1.0],
-                "col1": [10.0],
-                "1:00:00_col0": [0.0],
-                "1:00:00_col1": [0.0],
+                "col0": [0.0, 1.0],
+                "col1": [0.0, 10.0],
+                "1:00:00_col0": [np.nan, 0.0],
+                "1:00:00_col1": [np.nan, 0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
+                ["2009-01-01 00:00:00", "2009-01-01 01:00:00"],
+                dtype="datetime64[ns, UTC]",
+                freq="h",
+                tz="UTC",
             ),
         )
 
-        lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
+        lager = AddTimeLag(time_lag=dt.timedelta(hours=1))
         res = lager.fit_transform(df)
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(lager, res)
