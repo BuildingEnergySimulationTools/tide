@@ -2518,7 +2518,41 @@ class ExpressionCombine(BaseProcessing):
             n_groups = non_one_counts[0]
 
         column_groups = []
-        result_columns = []
+        # result_columns = []
+
+
+        # Get default bloc and sub blocs.
+        n_tags = get_tags_max_level(X.columns)
+        res_name_list = self.result_column_name.split("__")
+
+        defaults = [
+            "DIMENSIONLESS",
+            "%auto_bloc%",
+            "%auto_sub_bloc%",
+        ]
+
+        res_name_list += defaults[len(res_name_list) - 1:][:n_tags]
+
+        default_blocs =[[[], []] for _ in range(n_groups)]
+        for var, cols in resolved.items():
+            for i in range(n_groups):
+                try :
+                    b_sub_b = resolved[var][i].split('__')[2:]
+                    for j in range(len(b_sub_b)):
+                        default_blocs[i][j].append(b_sub_b[j])
+                except:
+                    pass
+
+        for n in range(n_groups):
+            for i in range(len(default_blocs[n])):
+                default_blocs[n][i] = next(iter(dict.fromkeys(default_blocs[n][i])))
+
+        final_names = [[] for _ in range(n_groups)]
+        for n in range(n_groups):
+            final_names[n] = res_name_list[:n_tags + 1]
+            for j in range(2, n_tags+ 1 ):
+                if final_names[n][j] in ["%auto_bloc%", "%auto_sub_bloc%"]:
+                    final_names[n][j] = default_blocs[n][j - 2]
 
         for i in range(n_groups):
             group = {}
@@ -2528,19 +2562,20 @@ class ExpressionCombine(BaseProcessing):
             column_groups.append(group)
 
             # Extract sub-bloc suffix from any multi-column variable
-            suffix = ""
-            for var, cols in resolved.items():
-                col_name = cols[i]
-                tag_pattern = self.columns_dict[var]
-                parts = col_name.split("__")
-                pattern_parts = tag_pattern.split("__")
-                if len(parts) > len(pattern_parts):
-                    suffix = "__" + "__".join(parts[len(pattern_parts) :])
-                break
 
-            result_columns.append(self.result_column_name + suffix)
+            # suffix = ""
+            # for var, cols in resolved.items():
+            #     col_name = cols[i]
+            #     parts = col_name.split("__")
+            #     tag_pattern = self.columns_dict[var]
+            #     pattern_parts = tag_pattern.split("__")
+            #     if len(parts) > len(pattern_parts):
+            #         suffix = "__" + "__".join(parts[len(pattern_parts) :])
+            #     break
+            #
+            # result_columns.append(self.result_column_name + suffix)
 
-        return column_groups, result_columns
+        return column_groups, ["__".join(n) for n in final_names]
 
     def _fit_implementation(self, X, y=None):
         """Fit the transformer by resolving column groups."""

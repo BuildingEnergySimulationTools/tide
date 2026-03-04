@@ -832,40 +832,49 @@ class TestCustomTransformers:
     def test_combiner(self):
         test_df = pd.DataFrame(
             {
-                "Tin__°C__building__room_1": [10.0, 20.0, 30.0],
-                "Tin__°C__building__room_2": [20.0, 40.0, 60.0],
+                "Tin__°C__building_1__room_1": [10.0, 20.0, 30.0],
+                "Tin__°C__building_1__room_2": [20.0, 40.0, 60.0],
+                "Humidity__%HR__building_1__room_1": [10, 15, 13],
+                "Humidity__%HR__building_1__room_2": [20, 30, 50],
+                "light__DIMENSIONLESS__building_1__room_1": [100, 200, 300],
+                "pump_mass_flwr__m3/h__building_1__hvac": [300, 500, 600],
+                "Tin__°C__building_2__room_1": [10.0, 20.0, 30.0],
+                "Tin__°C__building_2__room_2": [20.0, 40.0, 60.0],
+                "Humidity__%HR__building_2__room_1": [10, 15, 13],
+                "Humidity__%HR__building_2__room_2": [20, 30, 50],
+                "light__DIMENSIONLESS__building_2__room_1": [100, 200, 300],
+                "pump_mass_flwr__m3/h__building_2__hvac": [300, 500, 600],
                 "Text__°C__outdoor__meteo": [-1.0, 5.0, 4.0],
                 "radiation__W/m2__outdoor__meteo": [50, 100, 400],
-                "Humidity__%HR__building__room_1": [10, 15, 13],
-                "Humidity__%HR__building__room_2": [20, 30, 50],
                 "Humidity__%HR__outdoor__meteo": [10, 15, 13],
-                "light__DIMENSIONLESS__building__room_1": [100, 200, 300],
-                "mass_flwr__m3/h__hvac__pump": [300, 500, 600],
             },
             index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
+        from tide.plumbing import Plumber
+        plumber = Plumber(test_df)
+
         combiner = ExpressionCombine(
             columns_dict={
-                "T1": "Tin__°C__building__room_1",
+                "T1": "Tin__°C__building_1__room_1",
                 "T2": "Text__°C__outdoor__meteo",
-                "m": "mass_flwr__m3/h__hvac__pump",
+                "m": "pump_mass_flwr__m3/h__building_1__hvac",
             },
             expression="(T1 - T2) * m * 1004 * 1.204",
-            result_column_name="loss_ventilation__J__building__room_1",
+            result_column_name="loss_ventilation__J__%auto_bloc%__room_1",
         )
 
         res = combiner.fit_transform(test_df.copy())
         check_feature_names_out(combiner, res)
         np.testing.assert_almost_equal(
-            res["loss_ventilation__J__building__room_1"],
+            res["loss_ventilation__J__building_1__room_1"],
             [3989092.8, 9066120.0, 18857529.6],
             decimal=1,
         )
 
         combiner.set_params(drop_columns=True)
         res = combiner.fit_transform(test_df.copy())
-        assert res.shape == (3, 7)
+        assert res.shape == (3, 13)
         check_feature_names_out(combiner, res)
 
         combiner_cond = ExpressionCombine(
@@ -873,37 +882,37 @@ class TestCustomTransformers:
                 "T1": "Text__°C__outdoor__meteo",
             },
             expression="(T1 > 10) * 1",
-            result_column_name="where_test_01__meteo__outdoor",
+            result_column_name="where_test_01__bool",
         )
 
         res = combiner_cond.fit_transform(test_df.copy())
         check_feature_names_out(combiner_cond, res)
         np.testing.assert_almost_equal(
-            res["where_test_01__meteo__outdoor"],
+            res["where_test_01__bool__outdoor__meteo"],
             [0, 0, 0],
             decimal=1,
         )
 
         combiner_broadcast = ExpressionCombine(
             columns_dict={
-                "T_in": "Tin__°C__building",
-                "T_ext": "Text__°C",
-                "m": "mass_flwr__m3/h__hvac__pump",
+                "T_in": "Tin__room_1",
+                "T_ext": "Text",
+                "m": "pump_mass_flwr",
             },
             expression="(T_in - T_ext) * m * 1004 * 1.204",
-            result_column_name="loss_ventilation__J__building",
+            result_column_name="loss_ventilation__J__%auto_bloc%__room_1",
         )
 
         res = combiner_broadcast.fit_transform(test_df.copy())
         np.testing.assert_almost_equal(
-            res["loss_ventilation__J__building__room_1"],
+            res["loss_ventilation__J__building_1__room_1"],
             [3989092.8, 9066120.0, 18857529.6],
             decimal=1,
         )
 
         np.testing.assert_almost_equal(
-            res["loss_ventilation__J__building__room_2"],
-            [7615540.8, 21154280.0, 40616217.6],
+            res["loss_ventilation__J__building_2__room_1"],
+            [3989092.8, 9066120.0, 18857529.6],
             decimal=1,
         )
 
