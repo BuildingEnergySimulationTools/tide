@@ -50,6 +50,124 @@ OIKOLAB_DEFAULT_MAP = {
     "total_precipitation": "total_precipitation__mm__outdoor__meteo",
 }
 
+AUTO_BLOC = "%auto_bloc%"
+AUTO_SUB_BLOC = "%auto_sub_bloc%"
+DEFAULT_UNIT = "DIMENSIONLESS"
+
+
+def _parse_result_name_template(
+    result_column_name: str, n_tag_levels: int
+) -> list[str]:
+    """Parse the result column name template and pad to n_tag_levels + 1 parts.
+
+    The template follows the TIDE convention: name[__unit[__bloc[__sub_bloc]]].
+    Missing parts are filled with defaults:
+      - unit  → DIMENSIONLESS
+      - bloc  → %auto_bloc%
+      - sub_bloc → %auto_sub_bloc%
+
+    Parameters
+    ----------
+    result_column_name : str
+        Template string such as "loss__J__%auto_bloc%__room_1".
+    n_tag_levels : int
+        Maximum number of tag levels (beyond name) present in the source DataFrame.
+        Determines how many parts the output column name should have.
+
+    Returns
+    -------
+    list[str]
+        Parts list of length n_tag_levels + 1, e.g. ["loss", "J", "building_1", "room_1"].
+    """
+    defaults = [DEFAULT_UNIT, AUTO_BLOC, AUTO_SUB_BLOC]
+    parts = result_column_name.split("__")
+
+    # Pad up to n_tag_levels + 1 parts (name + up to 3 tags)
+    max_parts = n_tag_levels + 1
+    while len(parts) < max_parts:
+        parts.append(defaults[len(parts) - 1])
+
+    return parts[:max_parts]
+
+
+def _extract_bloc_info(column_name: str) -> tuple[str | None, str | None]:
+    """Extract bloc and sub_bloc from a TIDE column name.
+
+    Parameters
+    ----------
+    column_name : str
+        A column name like "Tin__°C__building_1__room_1".
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        (bloc, sub_bloc), either of which may be None if not present.
+    """
+    parts = column_name.split("__")
+    bloc = parts[2] if len(parts) > 2 else None
+    sub_bloc = parts[3] if len(parts) > 3 else None
+    return bloc, sub_bloc
+
+
+def _infer_blocs_for_group(group: dict[str, str]) -> tuple[str | None, str | None]:
+    """Infer the dominant bloc/sub_bloc for a group of variable→column mappings.
+
+    Uses the first non-None value seen across all columns in the group,
+    preserving insertion order (priority to first variable declared).
+
+    Parameters
+    ----------
+    group : dict[str, str]
+        Mapping of variable name → actual column name for one group.
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        (bloc, sub_bloc) inferred for this group.
+    """
+    inferred_bloc, inferred_sub_bloc = None, None
+    for col in group.values():
+        bloc, sub_bloc = _extract_bloc_info(col)
+        if inferred_bloc is None and bloc is not None:
+            inferred_bloc = bloc
+        if inferred_sub_bloc is None and sub_bloc is not None:
+            inferred_sub_bloc = sub_bloc
+        if inferred_bloc and inferred_sub_bloc:
+            break
+    return inferred_bloc, inferred_sub_bloc
+
+
+def _build_result_column_name(
+    template_parts: list[str],
+    inferred_bloc: str | None,
+    inferred_sub_bloc: str | None,
+) -> str:
+    """Resolve auto-placeholders in the template and return the final column name.
+
+    Parameters
+    ----------
+    template_parts : list[str]
+        Parts from _parse_result_name_template, may contain %auto_bloc% / %auto_sub_bloc%.
+    inferred_bloc : str | None
+        Bloc inferred from the source columns for this group.
+    inferred_sub_bloc : str | None
+        Sub-bloc inferred from the source columns for this group.
+
+    Returns
+    -------
+    str
+        Final column name, e.g. "loss__J__building_1__room_1".
+    """
+    resolved = []
+    for i, part in enumerate(template_parts):
+        if part == AUTO_BLOC:
+            resolved.append(inferred_bloc or AUTO_BLOC)
+        elif part == AUTO_SUB_BLOC:
+            resolved.append(inferred_sub_bloc or AUTO_SUB_BLOC)
+        else:
+            resolved.append(part)
+    return "__".join(resolved)
+
 
 class Identity(BaseProcessing):
     """A transformer that returns input data unchanged.
@@ -2341,133 +2459,150 @@ class FillGapsAR(BaseFiller, BaseProcessing):
 class ExpressionCombine(BaseProcessing):
     """A transformer that combines DataFrame columns using a mathematical expression.
 
-    This transformer evaluates a mathematical expression using specified columns
-    from a DataFrame, creating new columns with the results.
-    It supports broadcasting: when a tag selector matches multiple columns,
-    the expression is applied to each matching group. Selectors matching a
-    single column are broadcast across all groups.
+    Evaluates a mathematical expression over specified columns from a DataFrame
+    and stores the result in one or more new columns following the TIDE naming
+    convention (``name__unit__bloc__sub_bloc``).
+
+    Supports **broadcasting**: when a tag pattern matches multiple columns, the
+    expression is evaluated once per group. Patterns matching a single column are
+    reused (broadcast) across all groups.
 
     Parameters
     ----------
     columns_dict : dict[str, str]
-        Dictionary mapping expression variables to TIDE-style column tag patterns.
-        Keys are the variable names used in the expression, and values are the
-        tag patterns to match columns (e.g., "Tin__°C__building").
+        Mapping of expression variable names to TIDE-style tag patterns.
+        Keys are the variable names used in ``expression``; values are tag
+        patterns passed to ``tide_request`` to select matching columns
+        (e.g. ``"Tin__°C__building"``).
 
     expression : str
-        Mathematical expression to evaluate, using variables defined in columns_dict.
-        The expression must be a valid Python expression compatible with pandas.eval().
-        Supports standard mathematical operators and numpy functions.
+        Mathematical expression to evaluate, referencing variables defined in
+        ``columns_dict``. Must be a valid expression for ``pandas.eval()``.
+        Standard arithmetic operators and NumPy functions are supported.
 
     result_column_name : str
-        Base name for result columns following TIDE naming convention.
-        When multiple column groups are found, the sub-bloc suffix from matched
-        columns (e.g., "__room_1", "__room_2") is automatically appended.
+        Template for the output column name(s), following the TIDE convention
+        ``name__unit__bloc__sub_bloc``.
+
+        - The minimum required part is the **name** (e.g. ``"Q_vent"``).
+        - Missing parts are filled with defaults:
+          ``unit`` → ``"DIMENSIONLESS"``,
+          ``bloc`` → ``"%auto_bloc%"``,
+          ``sub_bloc`` → ``"%auto_sub_bloc%"``.
+        - ``%auto_bloc%`` and ``%auto_sub_bloc%`` are resolved at fit time from
+          the source columns of each group (first non-None value found).
+
+        Examples of valid templates::
+
+            "loss_ventilation"  # name only
+
+            "loss_ventilation__J"  # name + unit
+            "loss_ventilation__J__%auto_bloc%"  # auto bloc
+            "loss_ventilation__J__%auto_bloc%__room_1"  # auto bloc, fixed sub-bloc
+            "loss_ventilation__J__building_1__room_1"  # fully explicit
 
     drop_columns : bool, default=False
-        Whether to drop the source columns used in the expression after computation.
-        If True, only the newly created result columns and other unused columns are kept.
+        If ``True``, the source columns referenced in ``columns_dict`` are
+        dropped from the output. Columns not used in the expression are kept.
 
     Attributes
     ----------
-    column_groups_ : list[dict]
-        List of dictionaries mapping variable names to actual column names for each group.
-        Created during fit().
+    column_groups_ : list[dict[str, str]]
+        One dict per group, mapping variable names to the actual column names
+        selected for that group. Set during ``fit()``.
 
     result_columns_ : list[str]
-        List of result column names with appropriate suffixes. Created during fit().
+        Final output column names (one per group), with all placeholders
+        resolved. Set during ``fit()``.
 
     required_columns : list[str]
-        List of all source columns used in the expression. Updated during fit().
+        Union of all source columns across all groups. Updated during ``fit()``.
 
     feature_names_out_ : list[str]
-        List of all column names in the transformed DataFrame.
+        Ordered list of all column names present in the transformed DataFrame.
 
     Notes
     -----
-    Broadcasting Rules:
-    - If all tag patterns match exactly one column, a single result column is created.
-    - If some patterns match multiple columns, all multi-column patterns must match
-      the same number of columns.
-    - Single-column matches are broadcast (reused) across all groups.
-    - The sub-bloc suffix is extracted from the first multi-column variable found.
+    **Broadcasting rules**
 
-    Column Naming:
-    - Result columns follow the pattern: name__unit__bloc__sub-bloc
-    - The sub-bloc suffix is extracted by comparing matched column names with
-      their tag patterns.
-    - If no multi-column variables exist, no suffix is added.
+    - If every pattern matches exactly one column → one group, one result column.
+    - If some patterns match *N* > 1 columns, all multi-match patterns must
+      resolve to the same *N*. Single-match patterns are broadcast across groups.
+    - Patterns resolving to different counts > 1 raise a ``ValueError``.
+
+    **Bloc inference for** ``%auto_bloc%`` / ``%auto_sub_bloc%``
+
+    For each group the bloc and sub_bloc are inferred from the source columns of
+    that group: the first non-``None`` value found (in ``columns_dict``
+    declaration order) is used. Variables that are broadcast (single match) also
+    contribute to inference, so declare the most representative variable first if
+    ordering matters.
+
+    **Column name length**
+
+    The number of parts in the result column name is capped at
+    ``get_tags_max_level(X.columns) + 1`` to stay consistent with the depth of
+    the source DataFrame.
 
     Raises
     ------
     ValueError
-        - If a tag pattern matches no columns in the DataFrame.
-        - If tag patterns resolve to incompatible column counts (multiple patterns
-          match different numbers of columns, none being 1).
-        - If result_column_name (with suffix) already exists in the output DataFrame.
+        - If a tag pattern matches no columns.
+        - If multi-match patterns resolve to different counts.
+        - If a resolved result column name already exists in the DataFrame.
 
     Examples
     --------
-    Basic usage with broadcasting:
+    **Broadcasting across multiple rooms**
 
-    >>> import pandas as pd
-    >>> df = pd.DataFrame(
-    ...     {
-    ...         "Tin__°C__building__room_1": [20, 21, 22],
-    ...         "Tin__°C__building__room_2": [25, 26, 27],
-    ...         "Text__°C__outdoor__meteo": [10, 11, 12],
-    ...         "mass_flwr__kg/s__hvac__pump": [0.1, 0.2, 0.3],
-    ...     }
-    ... )
-    >>>
-    >>> # Calculate ventilation heat loss for each room
-    >>> # Text and mass_flwr are broadcast to both rooms
+    ``Text`` and ``pump_mass_flwr`` each match a single column and are broadcast
+    to both rooms; ``Tin`` matches two columns, producing two result columns:
+
     >>> combiner = ExpressionCombine(
     ...     columns_dict={
     ...         "Tin": "Tin__°C__building",
-    ...         "Text": "Text__°C__outdoor__meteo",
-    ...         "mdot": "mass_flwr__kg/s__hvac__pump",
+    ...         "Text": "Text__°C__outdoor",
+    ...         "mdot": "mass_flwr__kg/s__hvac",
     ...     },
-    ...     expression="(Tin - Text) * mdot * 1004",  # Q = ΔT × ṁ × cp
-    ...     result_column_name="Q_vent__W__building",
+    ...     expression="(Tin - Text) * mdot * 1004",
+    ...     result_column_name="Q_vent__W__%auto_bloc%",
     ... )
-    >>>
     >>> result = combiner.fit_transform(df)
-    >>> # Creates: Q_vent__W__building__room_1 and Q_vent__W__building__room_2
+    >>> # Creates: Q_vent__W__building
 
-    Using drop_columns to keep only results:
+    **Fully explicit output name**
 
-    >>> combiner_clean = ExpressionCombine(
+    >>> combiner = ExpressionCombine(
+    ...     columns_dict={"P": "P__W__hvac", "t": "t__s__hvac"},
+    ...     expression="P * t",
+    ...     result_column_name="E__J__hvac",
+    ... )
+    >>> result = combiner.fit_transform(df)
+    >>> # Creates: E__J__hvac
+
+    **Name-only template (all tags inferred)**
+
+    >>> combiner = ExpressionCombine(
+    ...     columns_dict={"T": "Tin__°C__building__room_1"},
+    ...     expression="T + 273.15",
+    ...     result_column_name="T_kelvin",
+    ... )
+    >>> result = combiner.fit_transform(df)
+    >>> # Creates: T_kelvin__DIMENSIONLESS__building__room_1
+
+    **Dropping source columns**
+
+    >>> combiner = ExpressionCombine(
     ...     columns_dict={
     ...         "Tin": "Tin__°C__building",
     ...         "Text": "Text__°C__outdoor__meteo",
     ...     },
     ...     expression="Tin - Text",
-    ...     result_column_name="deltaT__K__building",
+    ...     result_column_name="deltaT__K",
     ...     drop_columns=True,
     ... )
-    >>>
-    >>> result = combiner_clean.fit_transform(df)
-    >>> # Only deltaT__K__building__room_1, deltaT__K__building__room_2,
-    >>> # and mass_flwr__kg/s__hvac__pump remain
-
-    Single column operation (no broadcasting):
-
-    >>> df_simple = pd.DataFrame(
-    ...     {
-    ...         "P__W__hvac": [100, 200, 300],
-    ...         "t__s__hvac": [3600, 3600, 3600],
-    ...     }
-    ... )
-    >>>
-    >>> energy_calc = ExpressionCombine(
-    ...     columns_dict={"P": "P__W__hvac", "t": "t__s__hvac"},
-    ...     expression="P * t",
-    ...     result_column_name="E__J__hvac",
-    ... )
-    >>>
-    >>> result = energy_calc.fit_transform(df_simple)
-    >>> # Creates single column: E__J__hvac
+    >>> result = combiner.fit_transform(df)
+    >>> # Tin and Text columns are removed; deltaT columns are added
     """
 
     def __init__(
@@ -2490,92 +2625,55 @@ class ExpressionCombine(BaseProcessing):
         Returns
         -------
         column_groups : list[dict]
-            List of dicts mapping variable names to actual column names for each group.
+            List of dicts mapping variable names → actual column names, one per group.
         result_columns : list[str]
-            List of result column names with appropriate suffixes.
+            Final column names for each group, with placeholders resolved.
         """
-        resolved = {}
+        # --- 1. Resolve each variable's tag pattern to matched columns ---
+        resolved: dict[str, list[str]] = {}
         for var, tag_pattern in self.columns_dict.items():
-            matched_cols = tide_request(X.columns, tag_pattern)
-            if not matched_cols:
+            matched = tide_request(X.columns, tag_pattern)
+            if not matched:
                 raise ValueError(
                     f"Tag pattern '{tag_pattern}' for variable '{var}' "
-                    f"matched no columns in DataFrame"
+                    f"matched no columns in DataFrame."
                 )
-            resolved[var] = matched_cols
+            resolved[var] = matched
 
+        # --- 2. Validate broadcasting: all counts must be 1 or the same N ---
         counts = {var: len(cols) for var, cols in resolved.items()}
-        non_one_counts = [c for c in counts.values() if c > 1]
+        multi_counts = {c for c in counts.values() if c > 1}
 
-        if not non_one_counts:
-            n_groups = 1
-        else:
-            if len(set(non_one_counts)) > 1:
-                raise ValueError(
-                    f"Incompatible column counts for broadcasting: {counts}. "
-                    f"All counts must be 1 or equal to each other."
-                )
-            n_groups = non_one_counts[0]
+        if len(multi_counts) > 1:
+            raise ValueError(
+                f"Incompatible column counts for broadcasting: {counts}. "
+                f"All counts must be 1 or equal to each other."
+            )
 
-        column_groups = []
-        # result_columns = []
+        n_groups = multi_counts.pop() if multi_counts else 1
 
-
-        # Get default bloc and sub blocs.
-        n_tags = get_tags_max_level(X.columns)
-        res_name_list = self.result_column_name.split("__")
-
-        defaults = [
-            "DIMENSIONLESS",
-            "%auto_bloc%",
-            "%auto_sub_bloc%",
+        # --- 3. Build one group dict per group index ---
+        column_groups: list[dict[str, str]] = [
+            {
+                var: cols[0] if len(cols) == 1 else cols[i]
+                for var, cols in resolved.items()
+            }
+            for i in range(n_groups)
         ]
 
-        res_name_list += defaults[len(res_name_list) - 1:][:n_tags]
+        # --- 4. Parse the result name template once ---
+        n_tag_levels = get_tags_max_level(X.columns)
+        template_parts = _parse_result_name_template(
+            self.result_column_name, n_tag_levels
+        )
 
-        default_blocs =[[[], []] for _ in range(n_groups)]
-        for var, cols in resolved.items():
-            for i in range(n_groups):
-                try :
-                    b_sub_b = resolved[var][i].split('__')[2:]
-                    for j in range(len(b_sub_b)):
-                        default_blocs[i][j].append(b_sub_b[j])
-                except:
-                    pass
+        # --- 5. Build one result column name per group ---
+        result_columns: list[str] = [
+            _build_result_column_name(template_parts, *_infer_blocs_for_group(group))
+            for group in column_groups
+        ]
 
-        for n in range(n_groups):
-            for i in range(len(default_blocs[n])):
-                default_blocs[n][i] = next(iter(dict.fromkeys(default_blocs[n][i])))
-
-        final_names = [[] for _ in range(n_groups)]
-        for n in range(n_groups):
-            final_names[n] = res_name_list[:n_tags + 1]
-            for j in range(2, n_tags+ 1 ):
-                if final_names[n][j] in ["%auto_bloc%", "%auto_sub_bloc%"]:
-                    final_names[n][j] = default_blocs[n][j - 2]
-
-        for i in range(n_groups):
-            group = {}
-            for var, cols in resolved.items():
-                # Broadcast single columns across all groups
-                group[var] = cols[0] if len(cols) == 1 else cols[i]
-            column_groups.append(group)
-
-            # Extract sub-bloc suffix from any multi-column variable
-
-            # suffix = ""
-            # for var, cols in resolved.items():
-            #     col_name = cols[i]
-            #     parts = col_name.split("__")
-            #     tag_pattern = self.columns_dict[var]
-            #     pattern_parts = tag_pattern.split("__")
-            #     if len(parts) > len(pattern_parts):
-            #         suffix = "__" + "__".join(parts[len(pattern_parts) :])
-            #     break
-            #
-            # result_columns.append(self.result_column_name + suffix)
-
-        return column_groups, ["__".join(n) for n in final_names]
+        return column_groups, result_columns
 
     def _fit_implementation(self, X, y=None):
         """Fit the transformer by resolving column groups."""

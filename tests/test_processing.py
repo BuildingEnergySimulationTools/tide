@@ -830,6 +830,34 @@ class TestCustomTransformers:
         )
 
     def test_combiner(self):
+        df = pd.DataFrame(
+            {
+                "Tin__°C__building": np.random.randn(10),
+                "Text__°C__outdoor": np.random.randn(10),
+                "mass_flwr__kg/s__hvac": np.random.randn(10),
+            },
+            index=pd.date_range("2009", freq="h", periods=10, tz="UTC"),
+        )
+
+        combiner = ExpressionCombine(
+            columns_dict={
+                "Tin": "Tin__°C__building",
+                "Text": "Text__°C__outdoor",
+                "mdot": "mass_flwr__kg/s__hvac",
+            },
+            expression="(Tin - Text) * mdot * 1004",
+            result_column_name="Q_vent__W__%auto_bloc%",
+        )
+
+        combiner.fit_transform(df)
+
+        assert combiner.get_feature_names_out() == [
+            "Tin__°C__building",
+            "Text__°C__outdoor",
+            "mass_flwr__kg/s__hvac",
+            "Q_vent__W__building",
+        ]
+
         test_df = pd.DataFrame(
             {
                 "Tin__°C__building_1__room_1": [10.0, 20.0, 30.0],
@@ -852,6 +880,7 @@ class TestCustomTransformers:
         )
 
         from tide.plumbing import Plumber
+
         plumber = Plumber(test_df)
 
         combiner = ExpressionCombine(
