@@ -6,6 +6,7 @@ import datetime as dt
 from bigtree import dict_to_tree, levelordergroup_iter
 from bigtree.node import node
 from typing import TypeVar
+from functools import lru_cache
 
 T = TypeVar("T", bound=node.Node)
 
@@ -33,6 +34,19 @@ TREE_LEVEL_NAME_MAP = {
     2: {"name": 1},
 }
 
+@lru_cache(maxsize=32)
+def _cached_enriched_columns(columns_tuple: tuple[str, ...]):
+    max_level = get_tags_max_level(columns_tuple)
+
+    enriched_map = {
+        col_name_tag_enrichment(col, max_level): col for col in columns_tuple
+    }
+
+    split_tags = {
+        enriched: enriched.split("__") for enriched in enriched_map
+    }
+
+    return enriched_map, split_tags
 
 def get_tree_depth_from_level(tree_max_depth: int, level: int | str):
     level = LEVEL_NAME_MAP[level] if isinstance(level, int) else level
@@ -213,12 +227,8 @@ def tide_request(
             f"request must be str, list[str], pd.Index or None, got {type(request)}"
         )
 
-    max_level = get_tags_max_level(data_columns)
-
-    # Enrich columns once
-    enriched_map = {
-        col_name_tag_enrichment(col, max_level): col for col in data_columns
-    }
+    columns_tuple = tuple(data_columns)
+    enriched_map, split_tags = _cached_enriched_columns(columns_tuple)
 
     selected = []
 
@@ -233,9 +243,8 @@ def tide_request(
                 )
 
             for enriched_name, original in enriched_map.items():
-                tags = enriched_name.split("__")
+                tags = split_tags[enriched_name]
 
-                # Exact per-tag match
                 if all(tag in tags for tag in group_tags):
                     selected.append(original)
 
