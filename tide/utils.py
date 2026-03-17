@@ -34,6 +34,7 @@ TREE_LEVEL_NAME_MAP = {
     2: {"name": 1},
 }
 
+
 @lru_cache(maxsize=32)
 def _cached_enriched_columns(columns_tuple: tuple[str, ...]):
     max_level = get_tags_max_level(columns_tuple)
@@ -42,11 +43,10 @@ def _cached_enriched_columns(columns_tuple: tuple[str, ...]):
         col_name_tag_enrichment(col, max_level): col for col in columns_tuple
     }
 
-    split_tags = {
-        enriched: enriched.split("__") for enriched in enriched_map
-    }
+    split_tags = {enriched: enriched.split("__") for enriched in enriched_map}
 
     return enriched_map, split_tags
+
 
 @lru_cache(maxsize=32)
 def _build_tag_index(columns_tuple: tuple[str, ...]):
@@ -62,6 +62,7 @@ def _build_tag_index(columns_tuple: tuple[str, ...]):
             tag_index.setdefault(tag, set()).add(col)
 
     return tag_index, order
+
 
 def get_tree_depth_from_level(tree_max_depth: int, level: int | str):
     level = LEVEL_NAME_MAP[level] if isinstance(level, int) else level
@@ -352,64 +353,115 @@ def _get_series_bloc(
     lower_threshold_inclusive: bool = True,
     upper_threshold_inclusive: bool = True,
 ):
-    data = check_and_return_dt_index_df(date_series).squeeze()
-    freq = get_idx_freq_delta_or_min_time_interval(data.index)
-    # If data index has no frequency, a frequency based on minimum
-    # timedelta is set.
-    df = data.asfreq(freq)
+    """
+    Identifies groups of consecutive valid data or NaN values in a Series.
 
-    lower_td_threshold = (
+    Parameters
+    ----------
+    date_series : pd.Series
+        Input time series with a DatetimeIndex.
+    is_null : bool, default False
+        If True, identifies groups of NaN values (gaps).
+        If False, identifies groups of valid data.
+    select_inner : bool, default True
+        If True, returns blocks whose duration is within [lower, upper].
+        If False, returns blocks whose duration is outside [lower, upper].
+    lower_td_threshold : str or dt.timedelta, optional
+        Minimum duration threshold.
+    upper_td_threshold : str or dt.timedelta, optional
+        Maximum duration threshold.
+    lower_threshold_inclusive : bool, default True
+        Whether the lower threshold is inclusive.
+    upper_threshold_inclusive : bool, default True
+        Whether the upper threshold is inclusive.
+
+    Returns
+    -------
+    list[pd.DatetimeIndex]
+        A list of DatetimeIndex objects, each representing a block.
+    """
+    data = check_and_return_dt_index_df(date_series).squeeze()
+    if data.empty:
+        return []
+
+    freq = get_idx_freq_delta_or_min_time_interval(data.index)
+
+    if not data.index.freq:
+        # Reindexing can be slow, but it ensures we have a regular grid for split points.
+        # However, the original code used asfreq(freq), let's see if we can do better.
+        data = data.asfreq(freq)
+
+    if data.dtype == bool:
+        mask = ~data if is_null else data
+    else:
+        mask = data.isnull() if is_null else data.notnull()
+
+    if not mask.any():
+        return []
+
+    # Identify blocks of consecutive True values in the mask
+    # A block starts when mask is True and (previous is False OR it's the first element)
+    # Using shift() to find where the value changes
+    block_id = (mask != mask.shift()).cumsum()
+    # We only care about blocks where mask is True
+    true_blocks = block_id[mask]
+
+    if true_blocks.empty:
+        return []
+
+    # Group by block_id to get consecutive indices
+    # This is much faster than np.split on large arrays
+    groups = true_blocks.groupby(true_blocks)
+
+    # Calculate durations for all groups at once
+    durations = groups.apply(lambda x: x.index[-1] - x.index[0] + freq).values
+    durations = pd.to_timedelta(durations)
+
+    lower_td = (
         pd.Timedelta(lower_td_threshold)
         if isinstance(lower_td_threshold, str)
         else lower_td_threshold
     )
-    upper_td_threshold = (
+    upper_td = (
         pd.Timedelta(upper_td_threshold)
         if isinstance(upper_td_threshold, str)
         else upper_td_threshold
     )
 
-    if not df.dtype == bool:
-        filt = df.isnull() if is_null else ~df.isnull()
+    # If no thresholds are applied, we keep everything
+    if lower_td is None and upper_td is None:
+        keep_mask = np.ones(len(durations), dtype=bool)
     else:
-        filt = ~df if is_null else df
+        # Left bound
+        if lower_td is not None:
+            lower_mask = _lower_bound(
+                durations, lower_td, lower_threshold_inclusive, select_inner
+            )
+        else:
+            lower_mask = np.ones(len(durations), dtype=bool)
 
-    if ~np.any(filt):
-        return []
+        # Right bound
+        if upper_td is not None:
+            upper_mask = _upper_bound(
+                durations, upper_td, upper_threshold_inclusive, select_inner
+            )
+        else:
+            upper_mask = np.ones(len(durations), dtype=bool)
 
-    idx = df.index[filt]
-    time_diff = idx.to_series().diff()
-    split_points = np.where(time_diff != pd.Timedelta(df.index.freq))[0][1:]
-    consecutive_indices = np.split(idx, split_points)
-    durations = np.array([idx[-1] - idx[0] + freq for idx in consecutive_indices])
+        if upper_td is None and lower_td is not None:
+            upper_mask = lower_mask
 
-    lower_mask = upper_mask = np.ones_like(durations, dtype=bool)
+        if lower_td is None and upper_td is not None:
+            lower_mask = upper_mask
 
-    # Left bound
-    if lower_td_threshold is not None:
-        lower_mask = _lower_bound(
-            durations, lower_td_threshold, lower_threshold_inclusive, select_inner
-        )
+        keep_mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
 
-    # Right bound
-    if upper_td_threshold is not None:
-        upper_mask = _upper_bound(
-            durations, upper_td_threshold, upper_threshold_inclusive, select_inner
-        )
+    result = []
+    for i, (group_id, group_idx) in enumerate(groups):
+        if keep_mask[i]:
+            result.append(pd.DatetimeIndex(group_idx.index, freq=freq))
 
-    if upper_td_threshold is None and lower_td_threshold is not None:
-        upper_mask = lower_mask
-
-    if lower_td_threshold is None and upper_td_threshold is not None:
-        lower_mask = upper_mask
-
-    mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
-
-    return [
-        pd.DatetimeIndex(indices, freq=freq)
-        for indices, keep in zip(consecutive_indices, mask)
-        if keep
-    ]
+    return result
 
 
 def get_blocks_lte_and_gte(
@@ -420,32 +472,31 @@ def get_blocks_lte_and_gte(
     return_combination: bool = False,
 ):
     """
-    Get blocks of data ore gaps (nan) based on duration thresholds.
+    Get blocks of data or gaps (NaN) based on duration thresholds.
 
-    Returns them in a dictionary as list of DateTimeIndex. The keys values are
-    data columns (or name if data is a Series).
-
-
-    Parameters:
-    -----------
+    Parameters
+    ----------
     data : pd.Series or pd.DataFrame
         The input data to be processed.
-    lte : str or datetime.timedelta, optional
-        The upper time threshold. Can be a string (e.g., '1h') or a timedelta object.
-    gte : str or datetime.timedelta, optional
-        The lower time threshold. Can be a string (e.g., '30min') or a timedelta object.
+    lte : str or dt.timedelta, optional
+        The lower time threshold (interpreted as minimum duration if lte < gte).
+    gte : str or dt.timedelta, optional
+        The upper time threshold (interpreted as maximum duration if lte < gte).
     is_null : bool, default False
         Whether to select blocks where the data is null.
+    return_combination : bool, default False
+        If True, a combination column is created that checks for NaNs across all columns.
 
-    Notes:
-    ------
-    - If both `lte` and `gte` are provided, and `lte` is smaller than `gte`, they
-    will be swapped. The function determines whether to select data within or outside
-    the boundaries based on the order of thresholds.
-    return_combination : bool, optional
-        If True (default), a combination column is created that checks for NaNs
-        across all columns in the DataFrame. Gaps in this combination column represent
-        rows where NaNs are present in any of the columns.
+    Returns
+    -------
+    dict[str, list[pd.DatetimeIndex]]
+        Dictionary where keys are column names and values are lists of DatetimeIndex.
+
+    Notes
+    -----
+    If both `lte` and `gte` are provided, and `lte` is larger than `gte`, they
+    will be swapped and `select_inner` will be set to True (selecting between thresholds).
+    Otherwise, it selects outside the range.
     """
 
     lower_th, upper_th = lte, gte
@@ -522,59 +573,33 @@ def get_data_blocks(
     return_combination: bool = True,
 ):
     """
-    Identifies groups of valid data if is_null = False, or groups of nan if
-    is_null = True (gaps in measurements).
-
-    The groups can be filtered using lower_dt_threshold or higher_dt_threshold.
-    Their values can be included or not in the selection (lower_threshold_inclusive,
-    upper_threshold_inclusive).
-
-    Selection can be made inside the boundaries or outside using selec_inner
-
-    Returns them in a dictionary as list of DateTimeIndex. The keys values are
-    data columns (or name if data is a Series).
-
-    The argument return_combination indicates if an additional key must be set to the
-    dictionary to account for all data presence.
+    Identifies groups of valid data or NaN values (gaps).
 
     Parameters
     ----------
     data : pd.Series or pd.DataFrame
-        The input time series data with a DateTime index. NaN values are
-        considered gaps.
-    is_null : Bool, default False
-        Whether to return groups with valid data, or groups of Nan values
-        (is_null = True)
+        The input time series data with a DateTime index.
+    is_null : bool, default False
+        Whether to return groups of valid data (False) or groups of NaN values (True).
     cols : str or list[str], optional
         Columns to analyze. If None, uses all columns.
+    lower_td_threshold : str or dt.timedelta, optional
+        Minimum duration of a period.
+    upper_td_threshold : str or dt.timedelta, optional
+        Maximum duration of a period.
     select_inner : bool, default True
-        If True, select groups within thresholds. If False, select groups outside thresholds.
-    lower_td_threshold : str or timedelta, optional
-        The minimum duration of a period for it to be considered valid.
-        Can be passed as a string (e.g., '1d' for one day) or a `timedelta`.
-        If None, no threshold is applied, NaN values are considered gaps.
-    upper_td_threshold : str or timedelta, optional
-        The maximum duration of a period for it to be considered valid.
-        Can be passed as a string (e.g., '1d' for one day) or a `timedelta`.
-        If None, no threshold is applied, NaN values are considered gaps.
-    lower_threshold_inclusive : bool, optional
-        Include the gaps of exactly lower_td_threshold duration
-    upper_threshold_inclusive : bool, optional
-        Include the gaps of exactly upper_td_threshold duration
-    return_combination : bool, optional
-        If True (default), a combination column is created that checks for NaNs
-        across all columns in the DataFrame. Gaps in this combination column represent
-        rows where NaNs are present in any of the columns.
+        If True, select groups within thresholds. If False, select groups outside.
+    lower_threshold_inclusive : bool, default True
+        Include gaps of exactly lower_td_threshold duration.
+    upper_threshold_inclusive : bool, default True
+        Include gaps of exactly upper_td_threshold duration.
+    return_combination : bool, default True
+        Whether to include a "combination" key checking NaNs across all columns.
 
     Returns
     -------
     dict[str, list[pd.DatetimeIndex]]
-        A dictionary where the keys are the column names (or "combination" if
-        `return_combination` is True) and the values are lists of `DatetimeIndex`
-        objects.
-        Each `DatetimeIndex` represents a group of one or several consecutive
-        timestamps where the values in the corresponding column were NaN and
-        exceeded the gap threshold.
+        Dictionary with column names as keys and lists of DatetimeIndex as values.
     """
     data = check_and_return_dt_index_df(data)
     cols = ensure_list(cols) or list(data.columns)
@@ -594,8 +619,15 @@ def get_data_blocks(
     }
 
     if return_combination:
+        # For 'combination', we check if ANY column is null (for gaps) or ALL are not null (for valid)
+        # However, the original code used ~data.isnull().any(axis=1) then is_null.
+        # If is_null=True, it finds gaps in ~data.isnull().any(axis=1), which means
+        # rows where at least one column is NaN.
+        # If is_null=False, it finds valid blocks in ~data.isnull().any(axis=1),
+        # which means rows where NO column is NaN.
+        comb_series = ~data.isnull().any(axis=1)
         idx_dict["combination"] = _get_series_bloc(
-            ~data.isnull().any(axis=1),
+            comb_series,
             is_null,
             select_inner,
             lower_td_threshold,
@@ -608,6 +640,19 @@ def get_data_blocks(
 
 
 def get_idx_freq_delta_or_min_time_interval(dt_idx: pd.DatetimeIndex):
+    """
+    Infers the frequency of a DatetimeIndex or calculates the minimum time interval.
+
+    Parameters
+    ----------
+    dt_idx : pd.DatetimeIndex
+        The index to analyze.
+
+    Returns
+    -------
+    pd.Timedelta
+        The inferred frequency or minimum interval.
+    """
     freq = dt_idx.inferred_freq
     if freq:
         freq = pd.to_timedelta("1" + freq) if freq.isalpha() else pd.to_timedelta(freq)
