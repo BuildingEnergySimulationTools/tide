@@ -879,10 +879,6 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=3, tz="UTC"),
         )
 
-        from tide.plumbing import Plumber
-
-        plumber = Plumber(test_df)
-
         combiner = ExpressionCombine(
             columns_dict={
                 "T1": "Tin__°C__building_1__room_1",
