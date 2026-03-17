@@ -196,6 +196,17 @@ class BaseSTL(BaseEstimator):
 
 
 class BaseFiller:
+    """
+    Base class for filling gaps in time series data based on their duration.
+
+    Parameters
+    ----------
+    gaps_lte : str or pd.Timedelta or dt.timedelta, optional
+        Gaps with duration less than or equal to this threshold will be targeted.
+    gaps_gte : str or pd.Timedelta or dt.timedelta, optional
+        Gaps with duration greater than or equal to this threshold will be targeted.
+    """
+
     def __init__(
         self,
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
@@ -205,6 +216,19 @@ class BaseFiller:
         self.gaps_gte = gaps_gte
 
     def get_gaps_dict_to_fill(self, X: pd.Series | pd.DataFrame):
+        """
+        Returns a dictionary of gaps matching the duration criteria.
+
+        Parameters
+        ----------
+        X : pd.Series or pd.DataFrame
+            The input data.
+
+        Returns
+        -------
+        dict[str, list[pd.DatetimeIndex]]
+            Dictionary of identified gaps.
+        """
         return get_blocks_lte_and_gte(
             X,
             is_null=True,
@@ -213,6 +237,19 @@ class BaseFiller:
         )
 
     def get_gaps_mask(self, X: pd.Series | pd.DataFrame):
+        """
+        Returns a boolean mask DataFrame for gaps matching the criteria.
+
+        Parameters
+        ----------
+        X : pd.Series or pd.DataFrame
+            The input data.
+
+        Returns
+        -------
+        pd.DataFrame
+            Boolean mask of targeted gaps.
+        """
         return get_blocks_mask_lte_and_gte(
             X,
             is_null=True,
