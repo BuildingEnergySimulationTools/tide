@@ -413,6 +413,10 @@ def _get_series_bloc(
     # This is much faster than np.split on large arrays
     groups = true_blocks.groupby(true_blocks)
 
+    # Calculate durations for all groups at once
+    durations = groups.apply(lambda x: x.index[-1] - x.index[0] + freq).values
+    durations = pd.to_timedelta(durations)
+
     lower_td = (
         pd.Timedelta(lower_td_threshold)
         if isinstance(lower_td_threshold, str)
@@ -424,41 +428,38 @@ def _get_series_bloc(
         else upper_td_threshold
     )
 
-    result = []
-    for _, group_idx in groups:
-        idx = group_idx.index
-        # Duration is (end - start + freq)
-        duration = idx[-1] - idx[0] + freq
-
-        keep = True
+    # If no thresholds are applied, we keep everything
+    if lower_td is None and upper_td is None:
+        keep_mask = np.ones(len(durations), dtype=bool)
+    else:
+        # Left bound
         if lower_td is not None:
-            if lower_threshold_inclusive:
-                lower_ok = duration >= lower_td
-            else:
-                lower_ok = duration > lower_td
+            lower_mask = _lower_bound(
+                durations, lower_td, lower_threshold_inclusive, select_inner
+            )
         else:
-            lower_ok = True
+            lower_mask = np.ones(len(durations), dtype=bool)
 
+        # Right bound
         if upper_td is not None:
-            if upper_threshold_inclusive:
-                upper_ok = duration <= upper_td
-            else:
-                upper_ok = duration < upper_td
+            upper_mask = _upper_bound(
+                durations, upper_td, upper_threshold_inclusive, select_inner
+            )
         else:
-            upper_ok = True
+            upper_mask = np.ones(len(durations), dtype=bool)
 
-        if select_inner:
-            keep = lower_ok and upper_ok
-        else:
-            if lower_td is not None and upper_td is not None:
-                keep = not (lower_ok and upper_ok)
-            elif lower_td is not None:
-                keep = lower_ok
-            elif upper_td is not None:
-                keep = upper_ok
+        if upper_td is None and lower_td is not None:
+            upper_mask = lower_mask
 
-        if keep:
-            result.append(pd.DatetimeIndex(idx, freq=freq))
+        if lower_td is None and upper_td is not None:
+            lower_mask = upper_mask
+
+        keep_mask = lower_mask & upper_mask if select_inner else lower_mask | upper_mask
+
+    result = []
+    for i, (group_id, group_idx) in enumerate(groups):
+        if keep_mask[i]:
+            result.append(pd.DatetimeIndex(group_idx.index, freq=freq))
 
     return result
 
