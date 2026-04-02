@@ -1117,13 +1117,34 @@ class TestCustomTransformers:
 
     def test_replace_tag(self):
         df = pd.DataFrame(
-            {"energy_1__Wh": [1.0, 2.0], "energy_2__Whr__bloc": [3.0, 4.0]},
+            {
+                "energy_1__Wh": [1.0, 2.0],
+                "energy_2__Whr__bloc": [3.0, 4.0],
+                "V3V__bool__ecs": [5.0, 6.0],
+                "P__bool__ecs": [7.0, 8.0],
+            },
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
 
         rep = ReplaceTag({"Whr": "Wh"})
-        res = rep.fit_transform(df)
+        res = rep.fit_transform(df.copy())
+        assert "energy_2__Wh__bloc" in res.columns
         check_feature_names_out(rep, res)
+
+        # Test multi-component replacement
+        rep2 = ReplaceTag({"P__bool": "Cycle_P__n_cycle"})
+        res2 = rep2.fit_transform(df.copy())
+        assert "Cycle_P__n_cycle__ecs" in res2.columns
+        assert "V3V__bool__ecs" in res2.columns  # Should remain unchanged
+        check_feature_names_out(rep2, res2)
+
+        # Test both at the same time
+        rep3 = ReplaceTag({"Whr": "Wh", "P__bool": "Cycle_P__n_cycle"})
+        res3 = rep3.fit_transform(df.copy())
+        assert "energy_2__Wh__bloc" in res3.columns
+        assert "Cycle_P__n_cycle__ecs" in res3.columns
+        assert "V3V__bool__ecs" in res3.columns
+        check_feature_names_out(rep3, res3)
 
     def test_add_fourier_pairs(self):
         test_df = pd.DataFrame(
