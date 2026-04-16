@@ -1139,6 +1139,7 @@ class TestCustomTransformers:
                 "energy_2__Whr__bloc": [3.0, 4.0],
                 "V3V__bool__ecs": [5.0, 6.0],
                 "P__bool__ecs": [7.0, 8.0],
+                "P__W__chauff": [7.0, 8.0],
             },
             index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
         )
@@ -1153,6 +1154,13 @@ class TestCustomTransformers:
         res2 = rep2.fit_transform(df.copy())
         assert "Cycle_P__n_cycle__ecs" in res2.columns
         assert "V3V__bool__ecs" in res2.columns  # Should remain unchanged
+        check_feature_names_out(rep2, res2)
+
+        # Test multi-component replacement 2
+        rep2 = ReplaceTag({"P__chauff": "P__fleet"})
+        res2 = rep2.fit_transform(df.copy())
+        assert "P__W__fleet" in res2.columns
+        assert "P__bool__ecs" in res2.columns  # Should remain unchanged
         check_feature_names_out(rep2, res2)
 
         # Test both at the same time

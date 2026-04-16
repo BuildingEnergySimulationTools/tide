@@ -3535,11 +3535,15 @@ class ReplaceTag(BaseProcessing):
     Notes
     -----
     - Tide tags follow the format "name__unit__block__sub_block"
-    - The transformer preserves the order of tag components
+    - The transformer identifies components to replace regardless of their order
+      or position in the tag.
     - Components not specified in tag_map remain unchanged
     - If tag_map is None, the DataFrame is returned unchanged
     - Multi-component replacements (like "P__bool" -> "Cycle_P__n_cycle") are
-      performed while maintaining the remaining tag components.
+      performed while maintaining the remaining tag components. If the number
+      of components to replace matches the number of replacements, they are
+      substituted in their original positions. Otherwise, the first component
+      found is replaced by all new components, and others are removed.
 
     Returns
     -------
@@ -3554,41 +3558,74 @@ class ReplaceTag(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.fit_check_features(X)
-        self.feature_names_out_ = []
 
         if self.tag_map is None:
             self.feature_names_out_ = self.feature_names_in_
             return
 
-        for col in self.feature_names_in_:
-            parts = col.split("__")
-            updated_col = col
-
-            # Sort tag_map keys by number of components (descending) to match
-            # the longest possible segments
-            sorted_keys = sorted(
-                self.tag_map.keys(), key=lambda x: len(x.split("__")), reverse=True
+        # Trier par nombre de composants décroissant pour matcher les plus longs en premier
+        sorted_map = dict(
+            sorted(
+                self.tag_map.items(),
+                key=lambda item: len(item[0].split("__")),
+                reverse=True,
             )
+        )
 
-            for key in sorted_keys:
-                key_parts = key.split("__")
-                key_len = len(key_parts)
+        self.feature_names_out_ = [
+            self._replace_col(col, sorted_map) for col in self.feature_names_in_
+        ]
 
-                # We look for the sequence of components in the tag
-                for i in range(len(parts) - key_len + 1):
-                    if parts[i : i + key_len] == key_parts:
-                        # Replace this segment
-                        new_parts = (
-                            parts[:i]
-                            + self.tag_map[key].split("__")
-                            + parts[i + key_len :]
-                        )
-                        updated_col = "__".join(new_parts)
-                        # Re-split for the next possible key replacement in this tag
-                        parts = updated_col.split("__")
-                        break  # Only one replacement per tag for a specific key for simplicity
+    def _replace_col(self, col: str, sorted_map: dict[str, str]) -> str:
+        parts = col.split("__")
 
-            self.feature_names_out_.append(updated_col)
+        for key, value in sorted_map.items():
+            key_parts = key.split("__")
+            val_parts = value.split("__")
+
+            # Trouver les indices des composants du key dans parts
+            indices = self._find_indices(parts, key_parts)
+            if indices is None:
+                continue
+
+            if len(key_parts) == len(val_parts):
+                # Substitution 1-pour-1 en place
+                for idx, vp in zip(indices, val_parts):
+                    parts[idx] = vp
+            else:
+                # Tout mettre au premier indice, supprimer les autres
+                first, *rest = sorted(indices)
+                parts[first] = None  # placeholder
+                for idx in rest:
+                    parts[idx] = None
+
+                # Reconstruire en remplaçant le placeholder par val_parts
+                new_parts = []
+                for p in parts:
+                    if p is None and val_parts:
+                        new_parts.extend(val_parts)
+                        val_parts = []  # n'insérer qu'une fois
+                    elif p is not None:
+                        new_parts.append(p)
+                parts = new_parts
+
+        return "__".join(parts)
+
+    def _find_indices(self, parts: list[str], key_parts: list[str]) -> list[int] | None:
+        """Retourne les indices de key_parts dans parts, ou None si introuvable."""
+        indices = []
+        available = list(range(len(parts)))  # indices non encore utilisés
+
+        for kp in key_parts:
+            for i in available:
+                if parts[i] == kp:
+                    indices.append(i)
+                    available.remove(i)
+                    break
+            else:
+                return None  # kp introuvable
+
+        return indices
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
