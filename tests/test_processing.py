@@ -475,6 +475,23 @@ class TestCustomTransformers:
         )
         check_feature_names_out(column_resampler, res)
 
+    def test_resampler_function_map(self):
+        # Test if FUNCTION_MAP (e.g., 'time_integrate') is used correctly
+        df = pd.DataFrame(
+            {"val": [10.0, 20.0, 30.0, 40.0]},
+            index=pd.date_range("2009-01-01", freq="1h", periods=4, tz="UTC"),
+        )
+        # 1st bin (00:00, 01:00): (10+20)/2 * 3600 = 15 * 3600 = 54000
+        # 2nd bin (02:00, 03:00): (30+40)/2 * 3600 = 35 * 3600 = 126000
+        ref = pd.DataFrame(
+            {"val": [54000.0, 126000.0]},
+            index=pd.date_range("2009-01-01", freq="2h", periods=2, tz="UTC"),
+        )
+        resampler = Resample(rule="2h", method="time_integrate")
+        res = resampler.fit_transform(df)
+        pd.testing.assert_frame_equal(ref, res)
+        check_feature_names_out(resampler, res)
+
     def test_pd_add_time_lag(self):
         df = pd.DataFrame(
             {

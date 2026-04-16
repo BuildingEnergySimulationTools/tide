@@ -30,7 +30,7 @@ FUNCTION_MAP = {
     "average": np.average,
     "sum": np.sum,
     "dot": np.dot,
-    "integrate": time_integrate,
+    "time_integrate": time_integrate,
 }
 
 MODEL_MAP = {"STL": SkSTLForecast, "Prophet": SkProphet}
@@ -1503,6 +1503,7 @@ class Resample(BaseProcessing):
         The default aggregation method to use for resampling.
         Can be:
             - String: 'mean', 'sum', 'min', 'max', 'std', etc.
+            - Custom string from FUNCTION_MAP: 'time_integrate', 'average', etc.
             - Callable: Any function that can be used with pandas' resample
 
     tide_format_methods : dict[str, str | Callable], optional (default=None)
@@ -1606,6 +1607,12 @@ class Resample(BaseProcessing):
 
         results = []
         for method, cols in method_to_cols.items():
+            if (
+                isinstance(method, str)
+                and method in FUNCTION_MAP
+                and method not in ["mean", "sum", "min", "max", "std"]
+            ):
+                method = FUNCTION_MAP[method]
             res = X[cols].resample(self.rule).agg(method)
             results.append(res)
 
