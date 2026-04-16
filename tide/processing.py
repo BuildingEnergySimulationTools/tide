@@ -3481,19 +3481,19 @@ class KeepColumns(BaseProcessing):
 
 
 class ReplaceTag(BaseProcessing):
-    """A transformer that replaces components of Tide tag names with new values.
+    """A transformer that replaces components or full Tide tag names with new values.
 
     This transformer allows you to selectively replace parts of Tide tag names
-    (components separated by "__") with new values. It is particularly useful
-    for standardizing tag names, updating units, or changing block/sub-block
-    names across multiple columns.
+    (components separated by "__") or full tags with new values. It is
+    particularly useful for standardizing tag names, updating units, or
+    changing block/sub-block names across multiple columns.
 
     Parameters
     ----------
     tag_map : dict[str, str], optional (default=None)
-        A dictionary mapping old tag components to new values.
-        Keys are the components to replace, values are their replacements.
-        Example: {'°C': 'K', 'room1': 'room2'}
+        A dictionary mapping old tag components or full tags to new values.
+        Keys are the components/tags to replace, values are their replacements.
+        Example: {'°C': 'K', 'room1': 'room2', 'P__bool': 'Cycle_P__n_cycle'}
         If None, no replacements are made and the DataFrame is returned unchanged.
 
     Attributes
@@ -3515,22 +3515,22 @@ class ReplaceTag(BaseProcessing):
     ...         "temp__°C__room1__north": [20, 21, 22],
     ...         "humid__%__room1__north": [45, 50, 55],
     ...         "press__Pa__room1__north": [1000, 1010, 1020],
+    ...         "P__bool__ecs": [0, 1, 0],
     ...     },
     ...     index=dates,
     ... )
-    >>> # Replace room1 with room2 and °C with K
+    >>> # Replace room1 with room2 and P__bool with Cycle_P__n_cycle
     >>> replacer = ReplaceTag(
     ...     tag_map={
     ...         "room1": "room2",
-    ...         "°C": "K",  # It is dumb, just for the exemple
+    ...         "P__bool": "Cycle_P__n_cycle",
     ...     }
     ... )
     >>> result = replacer.fit_transform(df)
-    >>> print(result)
-                           temp__K__room2__north  humid__%__room2__north  press__Pa__room2__north
-    2024-01-01 00:00:00+00:00              20.0                     0.45                   1000.0
-    2024-01-01 00:01:00+00:00              21.0                     0.50                   1010.0
-    2024-01-01 00:02:00+00:00              22.0                     0.55                   1020.0
+    >>> print(result.columns)
+    Index(['temp__°C__room2__north', 'humid__%__room2__north',
+           'press__Pa__room2__north', 'Cycle_P__n_cycle__ecs'],
+          dtype='object')
 
     Notes
     -----
@@ -3538,6 +3538,8 @@ class ReplaceTag(BaseProcessing):
     - The transformer preserves the order of tag components
     - Components not specified in tag_map remain unchanged
     - If tag_map is None, the DataFrame is returned unchanged
+    - Multi-component replacements (like "P__bool" -> "Cycle_P__n_cycle") are
+      performed while maintaining the remaining tag components.
 
     Returns
     -------
@@ -3553,10 +3555,40 @@ class ReplaceTag(BaseProcessing):
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.fit_check_features(X)
         self.feature_names_out_ = []
+
+        if self.tag_map is None:
+            self.feature_names_out_ = self.feature_names_in_
+            return
+
         for col in self.feature_names_in_:
             parts = col.split("__")
-            updated_parts = [self.tag_map.get(part, part) for part in parts]
-            self.feature_names_out_.append("__".join(updated_parts))
+            updated_col = col
+
+            # Sort tag_map keys by number of components (descending) to match
+            # the longest possible segments
+            sorted_keys = sorted(
+                self.tag_map.keys(), key=lambda x: len(x.split("__")), reverse=True
+            )
+
+            for key in sorted_keys:
+                key_parts = key.split("__")
+                key_len = len(key_parts)
+
+                # We look for the sequence of components in the tag
+                for i in range(len(parts) - key_len + 1):
+                    if parts[i : i + key_len] == key_parts:
+                        # Replace this segment
+                        new_parts = (
+                            parts[:i]
+                            + self.tag_map[key].split("__")
+                            + parts[i + key_len :]
+                        )
+                        updated_col = "__".join(new_parts)
+                        # Re-split for the next possible key replacement in this tag
+                        parts = updated_col.split("__")
+                        break  # Only one replacement per tag for a specific key for simplicity
+
+            self.feature_names_out_.append(updated_col)
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
