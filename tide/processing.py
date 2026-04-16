@@ -3535,11 +3535,15 @@ class ReplaceTag(BaseProcessing):
     Notes
     -----
     - Tide tags follow the format "name__unit__block__sub_block"
-    - The transformer preserves the order of tag components
+    - The transformer identifies components to replace regardless of their order
+      or position in the tag.
     - Components not specified in tag_map remain unchanged
     - If tag_map is None, the DataFrame is returned unchanged
     - Multi-component replacements (like "P__bool" -> "Cycle_P__n_cycle") are
-      performed while maintaining the remaining tag components.
+      performed while maintaining the remaining tag components. If the number
+      of components to replace matches the number of replacements, they are
+      substituted in their original positions. Otherwise, the first component
+      found is replaced by all new components, and others are removed.
 
     Returns
     -------
@@ -3562,7 +3566,7 @@ class ReplaceTag(BaseProcessing):
 
         for col in self.feature_names_in_:
             parts = col.split("__")
-            updated_col = col
+            updated_col_parts = parts[:]
 
             # Sort tag_map keys by number of components (descending) to match
             # the longest possible segments
@@ -3572,23 +3576,74 @@ class ReplaceTag(BaseProcessing):
 
             for key in sorted_keys:
                 key_parts = key.split("__")
-                key_len = len(key_parts)
+                replacement_parts = self.tag_map[key].split("__")
 
-                # We look for the sequence of components in the tag
-                for i in range(len(parts) - key_len + 1):
-                    if parts[i : i + key_len] == key_parts:
-                        # Replace this segment
-                        new_parts = (
-                            parts[:i]
-                            + self.tag_map[key].split("__")
-                            + parts[i + key_len :]
-                        )
-                        updated_col = "__".join(new_parts)
-                        # Re-split for the next possible key replacement in this tag
-                        parts = updated_col.split("__")
-                        break  # Only one replacement per tag for a specific key for simplicity
+                # Check if all components of the key are present in the current column parts
+                # We need to find if all key_parts exist in updated_col_parts
+                all_found = True
+                indices_to_replace = []
+                temp_parts = updated_col_parts[:]
+                
+                for kp in key_parts:
+                    if kp in temp_parts:
+                        idx = temp_parts.index(kp)
+                        indices_to_replace.append(idx)
+                        # Mark as used so we don't pick the same index twice for different key parts
+                        temp_parts[idx] = None 
+                    else:
+                        all_found = False
+                        break
 
-            self.feature_names_out_.append(updated_col)
+                if all_found:
+                    # We found all parts of the key in the column
+                    # We create a new list of parts, replacing the components found
+                    new_parts = []
+                    
+                    # We want to replace the components in their original positions if possible.
+                    # But the user said they can be anywhere.
+                    # If key was P__chauff and col was P__W__chauff.
+                    # indices_to_replace = [0, 2]
+                    # kp_to_idx = {'P': 0, 'chauff': 2}
+                    # replacement_parts = ['P', 'fleet']
+                    # We want new_parts[0] = 'P', new_parts[1] = 'W', new_parts[2] = 'fleet'
+                    
+                    # Map each key part to its index in updated_col_parts
+                    kp_to_idx = {}
+                    temp_parts = updated_col_parts[:]
+                    for kp in key_parts:
+                        idx = temp_parts.index(kp)
+                        kp_to_idx[kp] = idx
+                        temp_parts[idx] = None
+                    
+                    # Map each index to what it should be replaced with
+                    idx_to_replacement = {}
+                    # If we have same number of parts, it's easy: 1-to-1 mapping
+                    if len(key_parts) == len(replacement_parts):
+                        for kp, rp in zip(key_parts, replacement_parts):
+                            idx_to_replacement[kp_to_idx[kp]] = rp
+                    else:
+                        # If different number of parts, we put all of them at the first index
+                        # and remove others.
+                        first_idx = min(kp_to_idx.values())
+                        idx_to_replacement[first_idx] = replacement_parts # this is a list
+                        for idx in kp_to_idx.values():
+                            if idx != first_idx:
+                                idx_to_replacement[idx] = None # Mark for removal
+                    
+                    for idx, val in enumerate(updated_col_parts):
+                        if idx in idx_to_replacement:
+                            repl = idx_to_replacement[idx]
+                            if repl is None:
+                                continue
+                            if isinstance(repl, list):
+                                new_parts.extend(repl)
+                            else:
+                                new_parts.append(repl)
+                        else:
+                            new_parts.append(val)
+                    updated_col_parts = new_parts
+            
+            self.feature_names_out_.append("__".join(updated_col_parts))
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
