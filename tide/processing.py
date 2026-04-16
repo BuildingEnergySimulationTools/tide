@@ -3558,92 +3558,74 @@ class ReplaceTag(BaseProcessing):
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         self.fit_check_features(X)
-        self.feature_names_out_ = []
 
         if self.tag_map is None:
             self.feature_names_out_ = self.feature_names_in_
             return
 
-        for col in self.feature_names_in_:
-            parts = col.split("__")
-            updated_col_parts = parts[:]
-
-            # Sort tag_map keys by number of components (descending) to match
-            # the longest possible segments
-            sorted_keys = sorted(
-                self.tag_map.keys(), key=lambda x: len(x.split("__")), reverse=True
+        # Trier par nombre de composants décroissant pour matcher les plus longs en premier
+        sorted_map = dict(
+            sorted(
+                self.tag_map.items(),
+                key=lambda item: len(item[0].split("__")),
+                reverse=True,
             )
+        )
 
-            for key in sorted_keys:
-                key_parts = key.split("__")
-                replacement_parts = self.tag_map[key].split("__")
+        self.feature_names_out_ = [
+            self._replace_col(col, sorted_map) for col in self.feature_names_in_
+        ]
 
-                # Check if all components of the key are present in the current column parts
-                # We need to find if all key_parts exist in updated_col_parts
-                all_found = True
-                indices_to_replace = []
-                temp_parts = updated_col_parts[:]
-                
-                for kp in key_parts:
-                    if kp in temp_parts:
-                        idx = temp_parts.index(kp)
-                        indices_to_replace.append(idx)
-                        # Mark as used so we don't pick the same index twice for different key parts
-                        temp_parts[idx] = None 
-                    else:
-                        all_found = False
-                        break
+    def _replace_col(self, col: str, sorted_map: dict[str, str]) -> str:
+        parts = col.split("__")
 
-                if all_found:
-                    # We found all parts of the key in the column
-                    # We create a new list of parts, replacing the components found
-                    new_parts = []
-                    
-                    # We want to replace the components in their original positions if possible.
-                    # But the user said they can be anywhere.
-                    # If key was P__chauff and col was P__W__chauff.
-                    # indices_to_replace = [0, 2]
-                    # kp_to_idx = {'P': 0, 'chauff': 2}
-                    # replacement_parts = ['P', 'fleet']
-                    # We want new_parts[0] = 'P', new_parts[1] = 'W', new_parts[2] = 'fleet'
-                    
-                    # Map each key part to its index in updated_col_parts
-                    kp_to_idx = {}
-                    temp_parts = updated_col_parts[:]
-                    for kp in key_parts:
-                        idx = temp_parts.index(kp)
-                        kp_to_idx[kp] = idx
-                        temp_parts[idx] = None
-                    
-                    # Map each index to what it should be replaced with
-                    idx_to_replacement = {}
-                    # If we have same number of parts, it's easy: 1-to-1 mapping
-                    if len(key_parts) == len(replacement_parts):
-                        for kp, rp in zip(key_parts, replacement_parts):
-                            idx_to_replacement[kp_to_idx[kp]] = rp
-                    else:
-                        # If different number of parts, we put all of them at the first index
-                        # and remove others.
-                        first_idx = min(kp_to_idx.values())
-                        idx_to_replacement[first_idx] = replacement_parts # this is a list
-                        for idx in kp_to_idx.values():
-                            if idx != first_idx:
-                                idx_to_replacement[idx] = None # Mark for removal
-                    
-                    for idx, val in enumerate(updated_col_parts):
-                        if idx in idx_to_replacement:
-                            repl = idx_to_replacement[idx]
-                            if repl is None:
-                                continue
-                            if isinstance(repl, list):
-                                new_parts.extend(repl)
-                            else:
-                                new_parts.append(repl)
-                        else:
-                            new_parts.append(val)
-                    updated_col_parts = new_parts
-            
-            self.feature_names_out_.append("__".join(updated_col_parts))
+        for key, value in sorted_map.items():
+            key_parts = key.split("__")
+            val_parts = value.split("__")
+
+            # Trouver les indices des composants du key dans parts
+            indices = self._find_indices(parts, key_parts)
+            if indices is None:
+                continue
+
+            if len(key_parts) == len(val_parts):
+                # Substitution 1-pour-1 en place
+                for idx, vp in zip(indices, val_parts):
+                    parts[idx] = vp
+            else:
+                # Tout mettre au premier indice, supprimer les autres
+                first, *rest = sorted(indices)
+                parts[first] = None  # placeholder
+                for idx in rest:
+                    parts[idx] = None
+
+                # Reconstruire en remplaçant le placeholder par val_parts
+                new_parts = []
+                for p in parts:
+                    if p is None and val_parts:
+                        new_parts.extend(val_parts)
+                        val_parts = []  # n'insérer qu'une fois
+                    elif p is not None:
+                        new_parts.append(p)
+                parts = new_parts
+
+        return "__".join(parts)
+
+    def _find_indices(self, parts: list[str], key_parts: list[str]) -> list[int] | None:
+        """Retourne les indices de key_parts dans parts, ou None si introuvable."""
+        indices = []
+        available = list(range(len(parts)))  # indices non encore utilisés
+
+        for kp in key_parts:
+            for i in available:
+                if parts[i] == kp:
+                    indices.append(i)
+                    available.remove(i)
+                    break
+            else:
+                return None  # kp introuvable
+
+        return indices
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
