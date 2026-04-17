@@ -89,7 +89,7 @@ def get_oikolab_df(
     if not r.status_code == 200:
         raise ValueError(f"Invalid request. Code:{r.status_code}")
 
-    df = pd.read_csv(r.url, parse_dates=True, index_col=0)
+    df = pd.read_csv(StringIO(r.text), parse_dates=True, index_col=0)
     df.index = df.index.tz_localize("UTC")
     df.index.freq = df.index.inferred_freq
     return df.rename(columns={OIKOLAB_PARAM_MAP[par]: par for par in param})
