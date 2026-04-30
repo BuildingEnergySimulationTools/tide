@@ -674,6 +674,7 @@ class Plumber:
         axis_space: float = 0.03,
         y_title_standoff: int | float = 5,
         verbose: bool = False,
+        use_resampler: bool = False,
     ):
         """Create an interactive time series plot.
 
@@ -782,15 +783,30 @@ class Plumber:
         verbose : bool, default False
             Whether to print information about pipeline steps during processing
 
+        use_resampler : bool, default False
+            Whether to use plotly-resampler for dynamic data aggregation.
+            Requires the optional dependency ``plotly-resampler``
+            (``pip install python-tide[resampler]``).
+            When enabled, the figure dynamically resamples data on zoom/pan,
+            making it practical for large datasets (e.g. 1-minute resolution over a year).
+            Dynamic resampling requires a live Python server to respond to zoom events —
+            it does **not** work with a static ``fig.show()`` call.
+            In a Jupyter environment (with an active kernel), returns a
+            ``FigureWidgetResampler`` — display the figure by evaluating ``fig`` in a cell
+            (do **not** call ``fig.show()``).
+            In a non-Jupyter environment, returns a ``FigureResampler``; call
+            ``fig.show_dash()`` to launch the interactive Dash server.
+
         Returns
         -------
-        go.Figure
+        go.Figure or FigureResampler or FigureWidgetResampler
             A plotly Figure object containing the plot with:
             - Multiple y-axes if y_axis_level is specified
             - Interactive features (zoom, pan, hover information)
             - Legend with all series
             - Optional gap highlighting
             - Customizable styling
+            - Dynamic resampling on zoom/pan if use_resampler=True
 
         Examples
         --------
@@ -828,6 +844,13 @@ class Plumber:
         ...     title="Raw vs Processed Data",
         ... )
         >>> fig.show()
+        >>> # Use dynamic resampling for large datasets (e.g. 1-min data over 1 year)
+        >>> # In a Jupyter notebook:
+        >>> fig = plumber.plot(use_resampler=True)
+        >>> fig  # displays as an interactive widget with on-the-fly resampling
+        >>> # Outside Jupyter:
+        >>> fig = plumber.plot(use_resampler=True)
+        >>> fig.show_dash()  # launches a local Dash server for interactive resampling
         """
         # A bit dirty. Here we assume that if you ask a selection
         # that is not found in original data columns, it is because it
@@ -867,13 +890,57 @@ class Plumber:
             for key in d:
                 scatter_config[key] = {**scatter_config.get(key, {}), **d[key]}
 
-        fig = go.Figure()
-        for col in data_1:
-            fig.add_scattergl(x=data_1.index, y=data_1[col], **scatter_config[col])
+        if use_resampler:
+            try:
+                from plotly_resampler import FigureResampler, FigureWidgetResampler
+            except ImportError:
+                raise ImportError(
+                    "plotly-resampler is required when use_resampler=True. "
+                    "Install it with: pip install python-tide[resampler]"
+                )
+            try:
+                ip = __import__("IPython").get_ipython()
+                in_jupyter = ip is not None and hasattr(ip, "kernel")
+            except (ImportError, AttributeError):
+                in_jupyter = False
 
-        if steps_2 is not None:
-            for col in data_2:
-                fig.add_scattergl(x=data_2.index, y=data_2[col], **scatter_config[col])
+            if not in_jupyter:
+                import warnings
+
+                warnings.warn(
+                    "Dynamic resampling requires a live Python server. "
+                    "Call fig.show_dash() on the returned figure to enable zoom-triggered resampling.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            fig = (
+                FigureWidgetResampler(go.Figure())
+                if in_jupyter
+                else FigureResampler(go.Figure())
+            )
+            for col in data_1:
+                fig.add_trace(
+                    go.Scattergl(**scatter_config[col]),
+                    hf_x=data_1.index,
+                    hf_y=data_1[col],
+                )
+            if steps_2 is not None:
+                for col in data_2:
+                    fig.add_trace(
+                        go.Scattergl(**scatter_config[col]),
+                        hf_x=data_2.index,
+                        hf_y=data_2[col],
+                    )
+        else:
+            fig = go.Figure()
+            for col in data_1:
+                fig.add_scattergl(x=data_1.index, y=data_1[col], **scatter_config[col])
+            if steps_2 is not None:
+                for col in data_2:
+                    fig.add_scattergl(
+                        x=data_2.index, y=data_2[col], **scatter_config[col]
+                    )
 
         yaxis_min_max = get_yaxis_min_max(
             pd.concat([data_1, data_2], axis=1), y_axis_level, y_tag_list
@@ -901,7 +968,10 @@ class Plumber:
             )
 
         for gap in gap_conf_list:
-            fig.add_scattergl(**gap)
+            if use_resampler:
+                fig.add_trace(go.Scattergl(**gap))
+            else:
+                fig.add_scattergl(**gap)
 
         layout_dict = {
             "legend": dict(

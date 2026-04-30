@@ -377,3 +377,31 @@ class TestPlotting:
         assert all(
             col in [trace.name for trace in fig.data] for col in gapped_data.columns
         )
+
+    def test_plot_with_resampler(self, gapped_data):
+        """Test plot with plotly-resampler returns a resampler figure."""
+        plotly_resampler = pytest.importorskip(
+            "plotly_resampler",
+            reason="plotly-resampler not installed, skipping resampler test",
+        )
+        plumber = Plumber(gapped_data)
+        fig = plumber.plot(use_resampler=True)
+
+        assert fig is not None
+        assert isinstance(
+            fig,
+            (plotly_resampler.FigureResampler, plotly_resampler.FigureWidgetResampler),
+        )
+        assert len(fig.data) > 0
+        assert all(
+            col in [trace.name for trace in fig.data] for col in gapped_data.columns
+        )
+
+    def test_plot_resampler_import_error(self, gapped_data, monkeypatch):
+        """Test that a clear ImportError is raised when plotly-resampler is missing."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "plotly_resampler", None)
+        plumber = Plumber(gapped_data)
+        with pytest.raises(ImportError, match="plotly-resampler"):
+            plumber.plot(use_resampler=True)
