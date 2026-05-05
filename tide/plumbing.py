@@ -1250,24 +1250,45 @@ class Plumber:
         selected_1 = set(data_1.columns)
         selected_2 = {c.replace("data_2->", "") for c in data_2.columns}
 
+        # --- Try to use FigureResampler for dynamic downsampling on zoom ---
+        try:
+            from plotly_resampler import FigureResampler as _FigureResampler
+            _use_resampler = True
+        except ImportError:
+            _use_resampler = False
+
         # --- Build figure with ALL traces (unselected ones hidden) ---
-        fig = go.Figure()
+        fig = _FigureResampler(go.Figure()) if _use_resampler else go.Figure()
         for col in all_data_1:
             is_vis = col in selected_1
-            fig.add_scattergl(
-                x=all_data_1.index, y=all_data_1[col],
-                visible=is_vis, showlegend=is_vis,
-                **scatter_config[col],
-            )
+            if _use_resampler:
+                fig.add_trace(
+                    go.Scattergl(visible=is_vis, showlegend=is_vis, **scatter_config[col]),
+                    hf_x=all_data_1.index,
+                    hf_y=all_data_1[col],
+                )
+            else:
+                fig.add_scattergl(
+                    x=all_data_1.index, y=all_data_1[col],
+                    visible=is_vis, showlegend=is_vis,
+                    **scatter_config[col],
+                )
         if steps_2 is not None:
             for col in all_data_2:
                 orig = col.replace("data_2->", "")
                 is_vis = orig in selected_2
-                fig.add_scattergl(
-                    x=all_data_2.index, y=all_data_2[col],
-                    visible=is_vis, showlegend=is_vis,
-                    **scatter_config[col],
-                )
+                if _use_resampler:
+                    fig.add_trace(
+                        go.Scattergl(visible=is_vis, showlegend=is_vis, **scatter_config[col]),
+                        hf_x=all_data_2.index,
+                        hf_y=all_data_2[col],
+                    )
+                else:
+                    fig.add_scattergl(
+                        x=all_data_2.index, y=all_data_2[col],
+                        visible=is_vis, showlegend=is_vis,
+                        **scatter_config[col],
+                    )
 
         # Gaps (only on initially visible data)
         yaxis_min_max = get_yaxis_min_max(
@@ -1294,7 +1315,10 @@ class Plumber:
                 data_2, gaps_2_lower_td, gaps_2_rgb, gaps_2_alpha
             )
         for gap in gap_conf_list:
-            fig.add_scattergl(**gap)
+            if _use_resampler:
+                fig.add_trace(go.Scattergl(**gap))
+            else:
+                fig.add_scattergl(**gap)
 
         # --- Initial layout based on initially visible columns ---
         init_visible = selected_1 | {
@@ -1359,49 +1383,50 @@ class Plumber:
         from dash import ALL, Input, Output, State, ctx
 
         app = Dash(__name__)
+        _layout_children = [
+            dcc.Store(id="metadata-store", data=metadata),
+            dcc.Graph(
+                id="main-graph",
+                figure=fig,
+                style={"flex": "1", "minWidth": "0"},
+                config={"responsive": True},
+            ),
+            html.Div(
+                style={
+                    "width": "1px",
+                    "backgroundColor": "#ddd",
+                    "flexShrink": "0",
+                }
+            ),
+            html.Div(
+                [
+                    html.Div(
+                        "Données disponibles",
+                        style={
+                            "padding": "10px 8px 6px",
+                            "fontWeight": "600",
+                            "borderBottom": "1px solid #eee",
+                            "fontSize": "0.9em",
+                            "color": "#333",
+                            "flexShrink": "0",
+                        },
+                    ),
+                    html.Div(
+                        sidebar,
+                        style={"overflowY": "auto", "flex": "1"},
+                    ),
+                ],
+                style={
+                    "width": "280px",
+                    "flexShrink": "0",
+                    "display": "flex",
+                    "flexDirection": "column",
+                    "background": "#f9f9f9",
+                },
+            ),
+        ]
         app.layout = html.Div(
-            [
-                dcc.Store(id="metadata-store", data=metadata),
-                dcc.Graph(
-                    id="main-graph",
-                    figure=fig,
-                    style={"flex": "1", "minWidth": "0"},
-                    config={"responsive": True},
-                ),
-                html.Div(
-                    style={
-                        "width": "1px",
-                        "backgroundColor": "#ddd",
-                        "flexShrink": "0",
-                    }
-                ),
-                html.Div(
-                    [
-                        html.Div(
-                            "Données disponibles",
-                            style={
-                                "padding": "10px 8px 6px",
-                                "fontWeight": "600",
-                                "borderBottom": "1px solid #eee",
-                                "fontSize": "0.9em",
-                                "color": "#333",
-                                "flexShrink": "0",
-                            },
-                        ),
-                        html.Div(
-                            sidebar,
-                            style={"overflowY": "auto", "flex": "1"},
-                        ),
-                    ],
-                    style={
-                        "width": "280px",
-                        "flexShrink": "0",
-                        "display": "flex",
-                        "flexDirection": "column",
-                        "background": "#f9f9f9",
-                    },
-                ),
-            ],
+            _layout_children,
             style={
                 "display": "flex",
                 "height": "100vh",
@@ -1493,6 +1518,9 @@ class Plumber:
                     trace["marker"] = marker
 
             return fig_dict
+
+        if _use_resampler:
+            fig.register_update_graph_callback(app, "main-graph")
 
         # --- Launch in background thread ---
         thread = threading.Thread(
