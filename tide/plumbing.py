@@ -1517,22 +1517,26 @@ class Plumber:
         )
 
         # --- Callbacks ---
+        # Both callbacks use Patch() to send only diffs to the browser so that
+        # FigureResampler's own callback (which outputs the full figure on zoom)
+        # never conflicts with our visibility / colour changes.
+        from dash import Patch
         from dash.exceptions import PreventUpdate
 
         @app.callback(
             Output("main-graph", "figure"),
             Input({"type": "col-check", "index": ALL}, "value"),
-            State("main-graph", "figure"),
             State("metadata-store", "data"),
             prevent_initial_call=True,
         )
-        def _update_visibility(check_values, fig_dict, meta):
+        def _update_visibility(check_values, meta):
             visible_cols = {v for vals in check_values for v in vals}
 
-            for trace in fig_dict["data"]:
-                is_vis = trace.get("name") in visible_cols
-                trace["visible"] = is_vis
-                trace["showlegend"] = is_vis
+            patched = Patch()
+            for i, col in enumerate(all_fig_cols):
+                is_vis = col in visible_cols
+                patched["data"][i]["visible"] = is_vis
+                patched["data"][i]["showlegend"] = is_vis
 
             col_ax_map = meta["col_ax_map"]
             _y_labels = meta["y_labels"]
@@ -1543,37 +1547,26 @@ class Plumber:
             active_right = [a for a in _all_axes[1:] if a in active_axes]
             x_right = 1.0 - _ax_space * len(active_right)
 
-            fig_dict["layout"].setdefault("xaxis", {})["domain"] = [0, x_right]
+            patched["layout"]["xaxis"]["domain"] = [0, x_right]
             _right_idx = 0
             for _ax in _all_axes:
                 yax_key = "yaxis" if _ax == "y" else f"yaxis{_ax[1:]}"
                 _is_active = _ax in active_axes
-                _base = fig_dict["layout"].get(yax_key, {})
-                if _ax == "y":
-                    fig_dict["layout"][yax_key] = {**_base, "visible": _is_active}
-                else:
-                    _pos = (
-                        x_right + _right_idx * _ax_space
-                        if _is_active
-                        else _base.get("position", 0)
-                    )
-                    fig_dict["layout"][yax_key] = {
-                        **_base,
-                        "visible": _is_active,
-                        "position": _pos,
-                    }
+                patched["layout"][yax_key]["visible"] = _is_active
+                if _ax != "y":
+                    _pos = x_right + _right_idx * _ax_space if _is_active else 0
+                    patched["layout"][yax_key]["position"] = _pos
                     if _is_active:
                         _right_idx += 1
 
-            return fig_dict
+            return patched
 
         @app.callback(
             Output("main-graph", "figure", allow_duplicate=True),
             Input({"type": "col-color", "index": ALL}, "value"),
-            State("main-graph", "figure"),
             prevent_initial_call=True,
         )
-        def _update_color(color_values, fig_dict):
+        def _update_color(color_values):
             col_name = ctx.triggered_id["index"] if ctx.triggered_id else None
             if not col_name:
                 raise PreventUpdate
@@ -1590,16 +1583,17 @@ class Plumber:
             if not new_color:
                 raise PreventUpdate
 
-            for trace in fig_dict["data"]:
-                if trace.get("name") == col_name:
-                    line = dict(trace.get("line") or {})
-                    line["color"] = new_color
-                    trace["line"] = line
-                    marker = dict(trace.get("marker") or {})
-                    marker["color"] = new_color
-                    trace["marker"] = marker
+            trace_idx = next(
+                (i for i, col in enumerate(all_fig_cols) if col == col_name),
+                None,
+            )
+            if trace_idx is None:
+                raise PreventUpdate
 
-            return fig_dict
+            patched = Patch()
+            patched["data"][trace_idx]["line"]["color"] = new_color
+            patched["data"][trace_idx]["marker"]["color"] = new_color
+            return patched
 
         if _use_resampler:
             fig.register_update_graph_callback(app, "main-graph")
