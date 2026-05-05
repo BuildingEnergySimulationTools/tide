@@ -1158,17 +1158,99 @@ class Plumber:
     ):
         """Launch an interactive Dash application for time series exploration.
 
-        Same parameters as :meth:`plot`, plus:
+        Provides the same visualisation options as :meth:`plot` with two
+        additions:
+
+        * A collapsible sidebar listing all available columns with per-series
+          visibility toggles and colour pickers.
+        * When ``plotly-resampler`` is installed, traces are dynamically
+          downsampled on zoom/pan so arbitrarily large datasets remain
+          responsive.
+
+        The server runs in a background daemon thread and the default browser
+        opens automatically. It stays alive as long as the Python process runs.
+        Calling this method multiple times on different ports is supported.
 
         Parameters
         ----------
+        select : str or pd.Index or list[str], optional
+            Columns pre-selected (visible) when the app opens. Accepts a tide
+            tag query string, an explicit list of column names, or a
+            ``pd.Index``. Defaults to all columns.
+        start : str or datetime or Timestamp, optional
+            Start of the displayed time range.
+        stop : str or datetime or Timestamp, optional
+            End of the displayed time range.
+        y_axis_level : str, optional
+            Tag level used to group columns onto separate y-axes
+            (``"unit"``, ``"bloc"``, etc.).
+        y_tag_list : list[str], optional
+            Explicit list of tag values for y-axis grouping, overrides
+            ``y_axis_level``.
+        steps : None or str or list[str] or slice, default slice(None)
+            Pipeline step(s) applied to the primary data before plotting.
+        data_mode : str, default "lines"
+            Plotly trace mode for the primary data (``"lines"``,
+            ``"markers"``, ``"lines+markers"``).
+        steps_2 : None or str or list[str] or slice, optional
+            Pipeline step(s) for the optional secondary dataset overlay.
+        data_2_mode : str, default "markers"
+            Plotly trace mode for the secondary data.
+        markers_opacity : float, default 0.8
+            Opacity of markers (0.0 – 1.0).
+        lines_width : float, default 2.0
+            Width of line traces in pixels.
+        title : str, optional
+            Figure title.
+        plot_gaps : bool, default False
+            Highlight gaps in the primary data.
+        gaps_lower_td : str or Timedelta or timedelta, optional
+            Minimum gap duration to highlight (e.g. ``"1h"``).
+        gaps_rgb : tuple[int, int, int], default (31, 73, 125)
+            RGB colour for primary-data gap rectangles.
+        gaps_alpha : float, default 0.5
+            Opacity for primary-data gap rectangles.
+        plot_gaps_2 : bool, default False
+            Highlight gaps in the secondary data.
+        gaps_2_lower_td : str or Timedelta or timedelta, optional
+            Minimum gap duration to highlight in the secondary data.
+        gaps_2_rgb : tuple[int, int, int], default (254, 160, 34)
+            RGB colour for secondary-data gap rectangles.
+        gaps_2_alpha : float, default 0.5
+            Opacity for secondary-data gap rectangles.
+        axis_space : float, default 0.03
+            Horizontal space reserved per additional right-side y-axis.
+        y_title_standoff : int or float, default 5
+            Distance between a y-axis title and the axis line (pixels).
+        verbose : bool, default False
+            Print pipeline processing information.
         port : int, default 8050
             TCP port for the Dash server.
 
-        Notes
-        -----
-        The app runs in a background daemon thread and opens automatically in
-        the default browser. It stays alive as long as the Python process runs.
+        Returns
+        -------
+        None
+            The method launches a Dash server as a side effect; it does not
+            return a figure object.
+
+        Examples
+        --------
+        >>> plumber.plot_dash()
+
+        >>> # Pre-select columns and separate axes by unit
+        >>> plumber.plot_dash(
+        ...     select=["temp__°C__zone1", "power__kW__hvac"],
+        ...     y_axis_level="unit",
+        ...     title="Zone 1 monitoring",
+        ... )
+
+        >>> # Compare raw vs processed data on port 8051
+        >>> plumber.plot_dash(
+        ...     steps=slice(None),
+        ...     steps_2=None,
+        ...     data_2_mode="markers",
+        ...     port=8051,
+        ... )
         """
         try:
             from dash import Dash, dcc, html
