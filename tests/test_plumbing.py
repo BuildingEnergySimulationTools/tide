@@ -487,10 +487,10 @@ class TestPlotDash:
             port=8051,
         )
 
-        input(
-            "\nApps running at http://localhost:8050 and http://localhost:8051\n"
-            "Press Enter to exit."
-        )
+        # input(
+        #     "\nApps running at http://localhost:8050 and http://localhost:8051\n"
+        #     "Press Enter to exit."
+        # )
 
     @pytest.mark.skipif(
         not os.environ.get("VISUAL_TESTS"),
@@ -504,14 +504,20 @@ class TestPlotDash:
         pytest.importorskip("dash", reason="dash not installed")
         pytest.importorskip("plotly_resampler", reason="plotly-resampler not installed")
 
-        import time
-
         n = 1_000_000
         x = np.arange(n)
         t = pd.date_range("2024-01-01", freq="1min", periods=n, tz="UTC")
 
-        temp = (20 + np.sin(x / 5_000) * 8 + np.random.default_rng(0).normal(0, 0.3, n))
-        power = (50 + np.sin(x / 8_000 + 1) * 20 + np.random.default_rng(1).normal(0, 1.5, n)) * x / n
+        temp = 20 + np.sin(x / 5_000) * 8 + np.random.default_rng(0).normal(0, 0.3, n)
+        power = (
+            (
+                50
+                + np.sin(x / 8_000 + 1) * 20
+                + np.random.default_rng(1).normal(0, 1.5, n)
+            )
+            * x
+            / n
+        )
 
         hf_data = pd.DataFrame(
             {
@@ -527,8 +533,8 @@ class TestPlotDash:
             port=8054,
         )
 
-        input(
-            "\nApp running at http://localhost:8054\n"
-            "Zoom in on the chart — the curve should sharpen dynamically.\n"
-            "Press Enter to exit."
-        )
+        # input(
+        #     "\nApp running at http://localhost:8054\n"
+        #     "Zoom in on the chart — the curve should sharpen dynamically.\n"
+        #     "Press Enter to exit."
+        # )

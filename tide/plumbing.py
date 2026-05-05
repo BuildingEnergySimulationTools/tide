@@ -1335,6 +1335,7 @@ class Plumber:
         # --- Try to use FigureResampler for dynamic downsampling on zoom ---
         try:
             from plotly_resampler import FigureResampler as _FigureResampler
+
             _use_resampler = True
         except ImportError:
             _use_resampler = False
@@ -1345,14 +1346,18 @@ class Plumber:
             is_vis = col in selected_1
             if _use_resampler:
                 fig.add_trace(
-                    go.Scattergl(visible=is_vis, showlegend=is_vis, **scatter_config[col]),
+                    go.Scattergl(
+                        visible=is_vis, showlegend=is_vis, **scatter_config[col]
+                    ),
                     hf_x=all_data_1.index,
                     hf_y=all_data_1[col],
                 )
             else:
                 fig.add_scattergl(
-                    x=all_data_1.index, y=all_data_1[col],
-                    visible=is_vis, showlegend=is_vis,
+                    x=all_data_1.index,
+                    y=all_data_1[col],
+                    visible=is_vis,
+                    showlegend=is_vis,
                     **scatter_config[col],
                 )
         if steps_2 is not None:
@@ -1361,14 +1366,18 @@ class Plumber:
                 is_vis = orig in selected_2
                 if _use_resampler:
                     fig.add_trace(
-                        go.Scattergl(visible=is_vis, showlegend=is_vis, **scatter_config[col]),
+                        go.Scattergl(
+                            visible=is_vis, showlegend=is_vis, **scatter_config[col]
+                        ),
                         hf_x=all_data_2.index,
                         hf_y=all_data_2[col],
                     )
                 else:
                     fig.add_scattergl(
-                        x=all_data_2.index, y=all_data_2[col],
-                        visible=is_vis, showlegend=is_vis,
+                        x=all_data_2.index,
+                        y=all_data_2[col],
+                        visible=is_vis,
+                        showlegend=is_vis,
                         **scatter_config[col],
                     )
 
@@ -1403,9 +1412,7 @@ class Plumber:
                 fig.add_scattergl(**gap)
 
         # --- Initial layout based on initially visible columns ---
-        init_visible = selected_1 | {
-            f"data_2->{c}" for c in selected_2
-        }
+        init_visible = selected_1 | {f"data_2->{c}" for c in selected_2}
         init_active_axes = {
             col_axes_map[c]["yaxis"] for c in init_visible if c in col_axes_map
         }
@@ -1572,8 +1579,11 @@ class Plumber:
                 raise PreventUpdate
 
             color_idx = next(
-                (i for i, inp in enumerate(ctx.inputs_list[0])
-                 if inp.get("id", {}).get("index") == col_name),
+                (
+                    i
+                    for i, inp in enumerate(ctx.inputs_list[0])
+                    if inp.get("id", {}).get("index") == col_name
+                ),
                 None,
             )
             if color_idx is None:
