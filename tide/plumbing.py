@@ -119,6 +119,133 @@ def get_pipeline_from_dict(
         return Pipeline(steps_list, verbose=verbose)
 
 
+# ---------------------------------------------------------------------------
+# Dash app helpers (used by Plumber.plot_dash)
+# ---------------------------------------------------------------------------
+
+_DASH_COLORS = [
+    "#636EFA",
+    "#EF553B",
+    "#00CC96",
+    "#AB63FA",
+    "#FFA15A",
+    "#19D3F3",
+    "#FF6692",
+    "#B6E880",
+    "#FF97FF",
+    "#FECB52",
+]
+
+
+def _node_to_dash_html(node, selected_cols, col_colors, is_data2=False):
+    """Recursively convert a bigtree node to Dash HTML components."""
+    from dash import dcc, html
+
+    if node.is_leaf:
+        col_name = getattr(node, "col_name", None)
+        # fig_col is the name used in the figure (prefixed for data_2)
+        fig_col = f"data_2->{col_name}" if is_data2 and col_name else (col_name or "")
+        is_checked = (col_name in selected_cols) if col_name else False
+        color = col_colors.get(col_name, _DASH_COLORS[0])
+        label_style = {"fontStyle": "italic"} if is_data2 else {}
+        return html.Div(
+            [
+                dcc.Checklist(
+                    id={"type": "col-check", "index": fig_col},
+                    options=[{"label": "", "value": fig_col}],
+                    value=[fig_col] if is_checked else [],
+                    style={"display": "inline-flex", "marginRight": "2px"},
+                ),
+                dcc.Input(
+                    id={"type": "col-color", "index": fig_col},
+                    type="color",
+                    value=color,
+                    style={
+                        "width": "24px",
+                        "height": "22px",
+                        "padding": "0",
+                        "border": "none",
+                        "cursor": "pointer",
+                        "marginRight": "6px",
+                        "flexShrink": "0",
+                    },
+                ),
+                html.Span(node.name, style=label_style),
+            ],
+            style={"display": "flex", "alignItems": "center", "padding": "3px 4px"},
+        )
+    else:
+        children_html = [
+            _node_to_dash_html(child, selected_cols, col_colors, is_data2)
+            for child in node.children
+        ]
+        return html.Details(
+            [
+                html.Summary(
+                    node.name,
+                    style={
+                        "cursor": "pointer",
+                        "userSelect": "none",
+                        "padding": "3px 0",
+                        "fontWeight": "500",
+                    },
+                ),
+                html.Div(children_html, style={"paddingLeft": "14px"}),
+            ],
+            open=True,
+        )
+
+
+def _build_dash_sidebar(
+    data_1_cols, data_2_cols, col_colors_1, col_colors_2, selected_1, selected_2
+):
+    """Build the right-side sidebar with an expandable tree of time series."""
+    from dash import html
+
+    sidebar_items = []
+
+    if list(data_1_cols):
+        root_1 = data_columns_to_tree(list(data_1_cols))
+        for child in root_1.children:
+            sidebar_items.append(
+                _node_to_dash_html(
+                    child,
+                    selected_cols=selected_1,
+                    col_colors=col_colors_1,
+                    is_data2=False,
+                )
+            )
+
+    if list(data_2_cols):
+        orig_data_2_cols = [c.replace("data_2->", "") for c in data_2_cols]
+        root_2 = data_columns_to_tree(orig_data_2_cols)
+        sidebar_items.append(html.Hr(style={"margin": "8px 0", "borderColor": "#ddd"}))
+        sidebar_items.append(
+            html.Div(
+                "Steps 2",
+                style={
+                    "fontWeight": "600",
+                    "padding": "4px 4px",
+                    "fontSize": "0.85em",
+                    "color": "#555",
+                    "letterSpacing": "0.05em",
+                    "textTransform": "uppercase",
+                },
+            )
+        )
+        for child in root_2.children:
+            sidebar_items.append(
+                _node_to_dash_html(
+                    child,
+                    selected_cols=selected_2,
+                    col_colors=col_colors_2,
+                    is_data2=True,
+                )
+            )
+
+    return html.Div(sidebar_items, style={"padding": "8px", "fontSize": "0.85em"})
+
+
 class Plumber:
     """A powerful class for managing and transforming time series data through configurable processing pipelines.
 
@@ -1001,3 +1128,377 @@ class Plumber:
         fig.update_layout(layout_dict)
 
         return fig
+
+    def plot_dash(
+        self,
+        select: str | pd.Index | list[str] = None,
+        start: str | dt.datetime | pd.Timestamp = None,
+        stop: str | dt.datetime | pd.Timestamp = None,
+        y_axis_level: str = None,
+        y_tag_list: list[str] = None,
+        steps: None | str | list[str] | slice = slice(None),
+        data_mode: str = "lines",
+        steps_2: None | str | list[str] | slice = None,
+        data_2_mode: str = "markers",
+        markers_opacity: float = 0.8,
+        lines_width: float = 2.0,
+        title: str = None,
+        plot_gaps: bool = False,
+        gaps_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_rgb: tuple[int, int, int] = (31, 73, 125),
+        gaps_alpha: float = 0.5,
+        plot_gaps_2: bool = False,
+        gaps_2_lower_td: str | pd.Timedelta | dt.timedelta = None,
+        gaps_2_rgb: tuple[int, int, int] = (254, 160, 34),
+        gaps_2_alpha: float = 0.5,
+        axis_space: float = 0.03,
+        y_title_standoff: int | float = 5,
+        verbose: bool = False,
+        port: int = 8050,
+    ):
+        """Launch an interactive Dash application for time series exploration.
+
+        Same parameters as :meth:`plot`, plus:
+
+        Parameters
+        ----------
+        port : int, default 8050
+            TCP port for the Dash server.
+
+        Notes
+        -----
+        The app runs in a background daemon thread and opens automatically in
+        the default browser. It stays alive as long as the Python process runs.
+        """
+        try:
+            from dash import Dash, dcc, html
+        except ImportError:
+            raise ImportError(
+                "dash is required for plot_dash. "
+                "Install it with: pip install python-tide[resampler]"
+            )
+
+        import threading
+        import time as _time
+        import webbrowser
+
+        # --- All processed data (for sidebar tree) ---
+        all_data_1 = self.get_corrected_data(
+            self.data.columns, start, stop, steps, verbose
+        )
+
+        # --- Selected data (for figure) ---
+        select_corr = (
+            self.data.columns if not tide_request(self.data, select) else select
+        )
+        data_1 = self.get_corrected_data(select_corr, start, stop, steps, verbose)
+
+        if steps_2 is not None:
+            all_data_2_raw = self.get_corrected_data(
+                self.data.columns, start, stop, steps_2
+            )
+            all_data_2 = all_data_2_raw.copy()
+            all_data_2.columns = [f"data_2->{c}" for c in all_data_2.columns]
+
+            data_2_raw = self.get_corrected_data(select_corr, start, stop, steps_2)
+            data_2 = data_2_raw.copy()
+            data_2.columns = [f"data_2->{c}" for c in data_2.columns]
+        else:
+            all_data_2 = pd.DataFrame()
+            data_2 = pd.DataFrame()
+
+        # --- Pre-assign colors (over all columns so they stay stable) ---
+        n = len(_DASH_COLORS)
+        col_colors_1 = {
+            col: _DASH_COLORS[i % n] for i, col in enumerate(all_data_1.columns)
+        }
+        col_colors_2 = {
+            col: _DASH_COLORS[(len(col_colors_1) + i) % n]
+            for i, col in enumerate(
+                [c.replace("data_2->", "") for c in all_data_2.columns]
+            )
+        }
+
+        # --- Build scatter config for ALL columns ---
+        all_fig_cols = pd.concat([all_data_1, all_data_2], axis=1).columns
+        col_axes_map, axes_col_map, y_labels = get_cols_axis_maps_and_labels(
+            all_fig_cols, y_axis_level, y_tag_list
+        )
+        conf_dict_list = [
+            {col: {"name": col} for col in all_fig_cols},
+            col_axes_map,
+            {col: {"mode": data_mode} for col in all_data_1}
+            | {col: {"mode": data_2_mode} for col in all_data_2},
+            {col: dict(line=dict(width=lines_width)) for col in all_fig_cols},
+            {col: dict(marker=dict(opacity=markers_opacity)) for col in all_fig_cols},
+        ]
+        scatter_config = {}
+        for d in conf_dict_list:
+            for key in d:
+                scatter_config[key] = {**scatter_config.get(key, {}), **d[key]}
+
+        # Inject pre-assigned colors so sidebar inputs match traces
+        for col in all_data_1.columns:
+            scatter_config[col]["line"]["color"] = col_colors_1[col]
+            scatter_config[col]["marker"]["color"] = col_colors_1[col]
+        for col in all_data_2.columns:
+            orig = col.replace("data_2->", "")
+            scatter_config[col]["line"]["color"] = col_colors_2[orig]
+            scatter_config[col]["marker"]["color"] = col_colors_2[orig]
+
+        # --- Initial visibility sets ---
+        selected_1 = set(data_1.columns)
+        selected_2 = {c.replace("data_2->", "") for c in data_2.columns}
+
+        # --- Build figure with ALL traces (unselected ones hidden) ---
+        fig = go.Figure()
+        for col in all_data_1:
+            is_vis = col in selected_1
+            fig.add_scattergl(
+                x=all_data_1.index, y=all_data_1[col],
+                visible=is_vis, showlegend=is_vis,
+                **scatter_config[col],
+            )
+        if steps_2 is not None:
+            for col in all_data_2:
+                orig = col.replace("data_2->", "")
+                is_vis = orig in selected_2
+                fig.add_scattergl(
+                    x=all_data_2.index, y=all_data_2[col],
+                    visible=is_vis, showlegend=is_vis,
+                    **scatter_config[col],
+                )
+
+        # Gaps (only on initially visible data)
+        yaxis_min_max = get_yaxis_min_max(
+            pd.concat([data_1, data_2], axis=1), y_axis_level, y_tag_list
+        )
+
+        def _gap_dict_config(data, lower_td, rgb, alpha):
+            result = []
+            for col in data:
+                configs = get_gap_scatter_dict(
+                    data[col], yaxis_min_max, col_axes_map, lower_td, rgb, alpha
+                )
+                if configs:
+                    result += configs
+            return result
+
+        gap_conf_list = []
+        if plot_gaps:
+            gap_conf_list += _gap_dict_config(
+                data_1, gaps_lower_td, gaps_rgb, gaps_alpha
+            )
+        if plot_gaps_2:
+            gap_conf_list += _gap_dict_config(
+                data_2, gaps_2_lower_td, gaps_2_rgb, gaps_2_alpha
+            )
+        for gap in gap_conf_list:
+            fig.add_scattergl(**gap)
+
+        # --- Initial layout based on initially visible columns ---
+        init_visible = selected_1 | {
+            f"data_2->{c}" for c in selected_2
+        }
+        init_active_axes = {
+            col_axes_map[c]["yaxis"] for c in init_visible if c in col_axes_map
+        }
+        all_axes_order = ["y"] + [f"y{i + 2}" for i in range(len(y_labels) - 1)]
+        init_active_right = [a for a in all_axes_order[1:] if a in init_active_axes]
+        x_right_space = 1.0 - axis_space * len(init_active_right)
+
+        layout_dict = {
+            "legend": dict(
+                orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5
+            ),
+            "title": title,
+            "yaxis": dict(
+                title=y_labels[0] if y_labels is not None else None,
+                side="left",
+                title_standoff=y_title_standoff,
+                visible="y" in init_active_axes,
+            ),
+            "margin": dict(l=60, r=20, t=50, b=80),
+        }
+        fig.update_xaxes(domain=(0, x_right_space))
+        right_idx = 0
+        for i, ax in enumerate(all_axes_order[1:]):
+            is_active = ax in init_active_axes
+            pos = x_right_space + right_idx * axis_space if is_active else 0
+            layout_dict[f"yaxis{i + 2}"] = dict(
+                title=y_labels[1 + i] if y_labels is not None else None,
+                overlaying="y",
+                side="right",
+                position=pos,
+                title_standoff=y_title_standoff,
+                visible=is_active,
+            )
+            if is_active:
+                right_idx += 1
+        fig.update_layout(layout_dict)
+
+        # --- Metadata store for callbacks ---
+        metadata = {
+            "col_ax_map": {col: v["yaxis"] for col, v in col_axes_map.items()},
+            "y_labels": list(y_labels) if y_labels is not None else [],
+            "axis_space": axis_space,
+            "y_title_standoff": y_title_standoff,
+        }
+
+        # --- Build sidebar ---
+        sidebar = _build_dash_sidebar(
+            all_data_1.columns,
+            all_data_2.columns,
+            col_colors_1,
+            col_colors_2,
+            selected_1,
+            selected_2,
+        )
+
+        # --- Dash app ---
+        from dash import ALL, Input, Output, State, ctx
+
+        app = Dash(__name__)
+        app.layout = html.Div(
+            [
+                dcc.Store(id="metadata-store", data=metadata),
+                dcc.Graph(
+                    id="main-graph",
+                    figure=fig,
+                    style={"flex": "1", "minWidth": "0"},
+                    config={"responsive": True},
+                ),
+                html.Div(
+                    style={
+                        "width": "1px",
+                        "backgroundColor": "#ddd",
+                        "flexShrink": "0",
+                    }
+                ),
+                html.Div(
+                    [
+                        html.Div(
+                            "Données disponibles",
+                            style={
+                                "padding": "10px 8px 6px",
+                                "fontWeight": "600",
+                                "borderBottom": "1px solid #eee",
+                                "fontSize": "0.9em",
+                                "color": "#333",
+                                "flexShrink": "0",
+                            },
+                        ),
+                        html.Div(
+                            sidebar,
+                            style={"overflowY": "auto", "flex": "1"},
+                        ),
+                    ],
+                    style={
+                        "width": "280px",
+                        "flexShrink": "0",
+                        "display": "flex",
+                        "flexDirection": "column",
+                        "background": "#f9f9f9",
+                    },
+                ),
+            ],
+            style={
+                "display": "flex",
+                "height": "100vh",
+                "fontFamily": "sans-serif",
+            },
+        )
+
+        # --- Callbacks ---
+        from dash.exceptions import PreventUpdate
+
+        @app.callback(
+            Output("main-graph", "figure"),
+            Input({"type": "col-check", "index": ALL}, "value"),
+            State("main-graph", "figure"),
+            State("metadata-store", "data"),
+            prevent_initial_call=True,
+        )
+        def _update_visibility(check_values, fig_dict, meta):
+            visible_cols = {v for vals in check_values for v in vals}
+
+            for trace in fig_dict["data"]:
+                is_vis = trace.get("name") in visible_cols
+                trace["visible"] = is_vis
+                trace["showlegend"] = is_vis
+
+            col_ax_map = meta["col_ax_map"]
+            _y_labels = meta["y_labels"]
+            _ax_space = meta["axis_space"]
+
+            active_axes = {col_ax_map[c] for c in visible_cols if c in col_ax_map}
+            _all_axes = ["y"] + [f"y{j + 2}" for j in range(len(_y_labels) - 1)]
+            active_right = [a for a in _all_axes[1:] if a in active_axes]
+            x_right = 1.0 - _ax_space * len(active_right)
+
+            fig_dict["layout"].setdefault("xaxis", {})["domain"] = [0, x_right]
+            _right_idx = 0
+            for _ax in _all_axes:
+                yax_key = "yaxis" if _ax == "y" else f"yaxis{_ax[1:]}"
+                _is_active = _ax in active_axes
+                _base = fig_dict["layout"].get(yax_key, {})
+                if _ax == "y":
+                    fig_dict["layout"][yax_key] = {**_base, "visible": _is_active}
+                else:
+                    _pos = (
+                        x_right + _right_idx * _ax_space
+                        if _is_active
+                        else _base.get("position", 0)
+                    )
+                    fig_dict["layout"][yax_key] = {
+                        **_base,
+                        "visible": _is_active,
+                        "position": _pos,
+                    }
+                    if _is_active:
+                        _right_idx += 1
+
+            return fig_dict
+
+        @app.callback(
+            Output("main-graph", "figure", allow_duplicate=True),
+            Input({"type": "col-color", "index": ALL}, "value"),
+            State("main-graph", "figure"),
+            prevent_initial_call=True,
+        )
+        def _update_color(color_values, fig_dict):
+            col_name = ctx.triggered_id["index"] if ctx.triggered_id else None
+            if not col_name:
+                raise PreventUpdate
+
+            color_idx = next(
+                (i for i, inp in enumerate(ctx.inputs_list[0])
+                 if inp.get("id", {}).get("index") == col_name),
+                None,
+            )
+            if color_idx is None:
+                raise PreventUpdate
+
+            new_color = color_values[color_idx]
+            if not new_color:
+                raise PreventUpdate
+
+            for trace in fig_dict["data"]:
+                if trace.get("name") == col_name:
+                    line = dict(trace.get("line") or {})
+                    line["color"] = new_color
+                    trace["line"] = line
+                    marker = dict(trace.get("marker") or {})
+                    marker["color"] = new_color
+                    trace["marker"] = marker
+
+            return fig_dict
+
+        # --- Launch in background thread ---
+        thread = threading.Thread(
+            target=lambda: app.run(port=port, debug=False, use_reloader=False),
+            daemon=True,
+        )
+        thread.start()
+        _time.sleep(1.0)
+        webbrowser.open(f"http://localhost:{port}")
