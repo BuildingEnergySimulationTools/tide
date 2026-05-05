@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import numpy as np
 import pytest
@@ -377,3 +379,162 @@ class TestPlotting:
         assert all(
             col in [trace.name for trace in fig.data] for col in gapped_data.columns
         )
+
+    def test_plot_with_resampler(self, gapped_data):
+        """Test plot with plotly-resampler returns a resampler figure."""
+        plotly_resampler = pytest.importorskip(
+            "plotly_resampler",
+            reason="plotly-resampler not installed, skipping resampler test",
+        )
+        plumber = Plumber(gapped_data)
+        fig = plumber.plot(use_resampler=True)
+
+        assert fig is not None
+        assert isinstance(
+            fig,
+            (plotly_resampler.FigureResampler, plotly_resampler.FigureWidgetResampler),
+        )
+        assert len(fig.data) > 0
+        assert all(
+            col in [trace.name for trace in fig.data] for col in gapped_data.columns
+        )
+
+    def test_plot_resampler_import_error(self, gapped_data, monkeypatch):
+        """Test that a clear ImportError is raised when plotly-resampler is missing."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "plotly_resampler", None)
+        plumber = Plumber(gapped_data)
+        with pytest.raises(ImportError, match="plotly-resampler"):
+            plumber.plot(use_resampler=True)
+
+
+@pytest.fixture
+def rich_data():
+    """Multi-unit, multi-bloc, 4-tag dataset for plot_dash visual inspection."""
+    idx = pd.date_range("2024-01-01", freq="h", periods=24 * 30, tz="UTC")
+    rng = np.random.default_rng(42)
+    return pd.DataFrame(
+        {
+            "Tin__°C__building__zone1": rng.normal(20, 2, len(idx)),
+            "Text__°C__outdoor__north": rng.normal(5, 5, len(idx)),
+            "Twall__°C__building__zone2": rng.normal(18, 1, len(idx)),
+            "Radiation__W/m2__outdoor__south": np.abs(rng.normal(200, 80, len(idx))),
+            "Humidity__%HR__building__zone1": rng.normal(50, 5, len(idx)),
+            "Power__kW__hvac__main": np.abs(rng.normal(8, 3, len(idx))),
+        },
+        index=idx,
+    )
+
+
+class TestPlotDash:
+    """Tests for Plumber.plot_dash."""
+
+    def test_plot_dash_starts(self, rich_data):
+        """plot_dash launches the Dash server without raising."""
+        import time
+
+        pytest.importorskip("dash", reason="dash not installed")
+        plumber = Plumber(rich_data)
+        plumber.plot_dash(y_axis_level="unit", port=8052)
+        time.sleep(3)  # Give server time to start and browser to connect
+
+    def test_plot_dash_with_select(self, rich_data):
+        """plot_dash respects select: only matching columns are initially checked."""
+        import time
+
+        pytest.importorskip("dash", reason="dash not installed")
+        plumber = Plumber(rich_data)
+        plumber.plot_dash(select="°C", y_axis_level="unit", port=8053)
+        time.sleep(3)
+
+    @pytest.mark.skipif(
+        not os.environ.get("VISUAL_TESTS"),
+        reason="Visual test — run with: VISUAL_TESTS=1 pytest -s tests/test_plumbing.py::TestPlotDash::test_plot_dash_visual",
+    )
+    def test_plot_dash_visual(self, rich_data):
+        """
+        Visual inspection of plot_dash: layout, sidebar tree, and steps_2 italic section.
+
+        Run with:
+            VISUAL_TESTS=1 pytest -s tests/test_plumbing.py::TestPlotDash::test_plot_dash_visual
+
+        Checklist:
+          [ ] Graph occupies most of the width
+          [ ] Sidebar shows tree: bloc > sub_bloc > unit > name
+          [ ] select='°C' -> only temperature leaves are checked initially
+          [ ] Other leaves are unchecked (but visible in the tree)
+          [ ] Test 2 (port 8051): 'Steps 2' section appears in italic below a separator
+        """
+        import time
+
+        # Test 1 — select filters initial visibility
+        Plumber(rich_data).plot_dash(
+            select="°C",
+            y_axis_level="unit",
+            title="Test 1 — select=degC (only temperatures initially visible)",
+            port=8050,
+        )
+        time.sleep(1.5)
+
+        # Test 2 — steps_2 shows an italic section in the sidebar
+        smoothing_pipe = {"smoothing": [["Interpolate", ["linear"]]]}
+        Plumber(rich_data, smoothing_pipe).plot_dash(
+            y_axis_level="unit",
+            steps=None,
+            steps_2=slice(None),
+            title="Test 2 — raw (lines) vs smoothed (markers)",
+            port=8051,
+        )
+
+        # input(
+        #     "\nApps running at http://localhost:8050 and http://localhost:8051\n"
+        #     "Press Enter to exit."
+        # )
+
+    @pytest.mark.skipif(
+        not os.environ.get("VISUAL_TESTS"),
+        reason="Visual test — run with: VISUAL_TESTS=1 pytest -s tests/test_plumbing.py::TestPlotDash::test_plot_dash_resampler",
+    )
+    def test_plot_dash_resampler(self):
+        """
+        Visual inspection of FigureResampler integration: zoom should dynamically
+        refine the two high-frequency sinusoidal series.
+        """
+        pytest.importorskip("dash", reason="dash not installed")
+        pytest.importorskip("plotly_resampler", reason="plotly-resampler not installed")
+
+        n = 1_000_000
+        x = np.arange(n)
+        t = pd.date_range("2024-01-01", freq="1min", periods=n, tz="UTC")
+
+        temp = 20 + np.sin(x / 5_000) * 8 + np.random.default_rng(0).normal(0, 0.3, n)
+        power = (
+            (
+                50
+                + np.sin(x / 8_000 + 1) * 20
+                + np.random.default_rng(1).normal(0, 1.5, n)
+            )
+            * x
+            / n
+        )
+
+        hf_data = pd.DataFrame(
+            {
+                "Temperature__°C__building__zone1": temp,
+                "Power__kWh__hvac__main": power,
+            },
+            index=t,
+        )
+
+        Plumber(hf_data).plot_dash(
+            y_axis_level="unit",
+            title="Resampler test — 1 M points, zoom to see detail",
+            port=8054,
+        )
+
+        # input(
+        #     "\nApp running at http://localhost:8054\n"
+        #     "Zoom in on the chart — the curve should sharpen dynamically.\n"
+        #     "Press Enter to exit."
+        # )
