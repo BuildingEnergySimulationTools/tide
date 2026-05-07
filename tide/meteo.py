@@ -9,6 +9,126 @@ import requests
 
 from tide.math import cosd, sind
 
+OPEN_METEO_PARAM_MAP = {
+    "temperature_2m": "temperature",
+    "relative_humidity_2m": "relative_humidity",
+    "dew_point_2m": "dewpoint_temperature",
+    "surface_pressure": "surface_pressure",
+    "cloud_cover": "total_cloud_cover",
+    "cloud_cover_low": "low_cloud_cover",
+    "cloud_cover_mid": "mid_cloud_cover",
+    "cloud_cover_high": "high_cloud_cover",
+    "precipitation": "total_precipitation",
+    "wind_speed_10m": "wind_speed",
+    "wind_direction_10m": "wind_direction",
+    "shortwave_radiation": "surface_solar_radiation",
+    "direct_radiation": "direct_solar_radiation",
+    "diffuse_radiation": "diffuse_solar_radiation",
+}
+
+
+def get_openmeteo_df(
+    lat: float,
+    lon: float,
+    start: pd.Timestamp | dt.datetime,
+    end: pd.Timestamp | dt.datetime,
+    param: list[str] = None,
+    timezone: str = "UTC",
+) -> pd.DataFrame:
+    """
+    Retrieve weather data from Open-Meteo API.
+
+    Parameters
+    ----------
+    lat : float
+        Latitude.
+
+    lon : float
+        Longitude.
+
+    start : pd.Timestamp | datetime
+        Start datetime.
+
+    end : pd.Timestamp | datetime
+        End datetime.
+
+    param : list[str]
+        Parameters to retrieve.
+
+    timezone : str
+        Timezone returned by API.
+
+    Returns
+    -------
+    pd.DataFrame
+    """
+
+    if param is None:
+
+        param = [
+            "temperature",
+            "relative_humidity",
+            "total_cloud_cover",
+            "surface_solar_radiation",
+            "wind_speed",
+        ]
+
+    reverse_map = {
+        v: k
+        for k, v in OPEN_METEO_PARAM_MAP.items()
+    }
+
+    api_params = [
+        reverse_map[p]
+        for p in param
+        if p in reverse_map
+    ]
+
+    url = (
+        "https://archive-api.open-meteo.com/v1/archive"
+    )
+
+    r = requests.get(
+        url,
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start.strftime("%Y-%m-%d"),
+            "end_date": end.strftime("%Y-%m-%d"),
+            "hourly": ",".join(api_params),
+            "timezone": timezone,
+        },
+    )
+
+    if r.status_code != 200:
+        raise ValueError(
+            f"Invalid request.\n{r.text}"
+        )
+
+    data = r.json()
+
+    if "hourly" not in data:
+        raise ValueError(
+            f"No hourly data returned.\n{data}"
+        )
+
+    df = pd.DataFrame(data["hourly"])
+
+    df["time"] = pd.to_datetime(df["time"])
+
+    df = df.set_index("time")
+
+    rename_dict = {
+        k: OPEN_METEO_PARAM_MAP[k]
+        for k in api_params
+    }
+
+    df = df.rename(columns=rename_dict)
+    df.index.freq = df.index.inferred_freq
+
+    return df
+
+
 OIKOLAB_PARAM_MAP = {
     "temperature": "temperature (degC)",
     "dewpoint_temperature": "dewpoint_temperature (degC)",
