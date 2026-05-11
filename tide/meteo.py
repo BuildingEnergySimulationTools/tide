@@ -32,6 +32,7 @@ def get_openmeteo_df(
     lon: float,
     start: pd.Timestamp | dt.datetime,
     end: pd.Timestamp | dt.datetime,
+    url: str | None = None,
     param: list[str] = None,
     timezone: str = "UTC",
 ) -> pd.DataFrame:
@@ -51,6 +52,15 @@ def get_openmeteo_df(
 
     end : pd.Timestamp | datetime
         End datetime.
+
+    url : str | None, optional
+        Open-Meteo endpoint URL.
+
+        If None, the historical archive endpoint is used:
+        https://archive-api.open-meteo.com/v1/archive
+
+        This parameter allows switching to other endpoints
+        such as forecast APIs or future API versions.
 
     param : list[str]
         Parameters to retrieve.
@@ -84,12 +94,14 @@ def get_openmeteo_df(
         if p in reverse_map
     ]
 
-    url = (
-        "https://archive-api.open-meteo.com/v1/archive"
+    url_address = (
+        url
+        if url is not None
+        else "https://archive-api.open-meteo.com/v1/archive"
     )
 
     r = requests.get(
-        url,
+        url_address,
         params={
             "latitude": lat,
             "longitude": lon,
