@@ -126,7 +126,10 @@ def get_openmeteo_df(
 
     df = pd.DataFrame(data["hourly"])
 
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = (
+        pd.to_datetime(df["time"])
+        .dt.tz_localize(timezone)
+    )
 
     df = df.set_index("time")
 
@@ -136,7 +139,11 @@ def get_openmeteo_df(
     }
 
     df = df.rename(columns=rename_dict)
-    df.index.freq = df.index.inferred_freq
+
+    try:
+        df.index.freq = df.index.inferred_freq
+    except ValueError:
+        pass
 
     return df
 
