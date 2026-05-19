@@ -4,17 +4,12 @@ import pandas as pd
 import numpy as np
 from pandas import DatetimeIndex
 
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.forecasting.stl import STLForecast
 from sklearn.base import RegressorMixin, BaseEstimator
 from sklearn.utils.validation import check_is_fitted
-
-from prophet import Prophet
 
 from tide.base import BaseSTL, TideBaseMixin
 from tide.utils import check_and_return_dt_index_df, check_datetime_index
 
-MODEL_MAP = {"ARIMA": ARIMA}
 MODEL_DEFAULT_CONF = {"ARIMA": {"order": (1, 1, 0), "trend": "t"}}
 
 
@@ -115,7 +110,16 @@ class SkSTLForecast(RegressorMixin, BaseSTL):
             X = check_and_return_dt_index_df(X)
         y = check_and_return_dt_index_df(y)
 
-        ar_model = MODEL_MAP[self.ar_model]
+        try:
+            from statsmodels.tsa.arima.model import ARIMA
+            from statsmodels.tsa.forecasting.stl import STLForecast
+        except ImportError:
+            raise ImportError(
+                "statsmodels is required for SkSTLForecast. "
+                "Install it with: pip install python-tide[statsmodels]"
+            )
+        model_map = {"ARIMA": ARIMA}
+        ar_model = model_map[self.ar_model]
         if self.ar_kwargs is None:
             ar_kwargs = MODEL_DEFAULT_CONF[self.ar_model]
         else:
@@ -323,6 +327,13 @@ class SkProphet(RegressorMixin, BaseEstimator, TideBaseMixin):
                     parts[0] = f"{parts[0]}_{bound}"
                     self.added_columns.append("__".join(parts))
 
+        try:
+            from prophet import Prophet
+        except ImportError:
+            raise ImportError(
+                "prophet is required for SkProphet. "
+                "Install it with: pip install python-tide[prophet]"
+            )
         for target in y:
             prophet_df = format_prophet_df(X, y[target])
             model = Prophet(

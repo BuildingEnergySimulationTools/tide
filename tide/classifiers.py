@@ -3,7 +3,6 @@ import pandas as pd
 
 from sklearn.base import ClassifierMixin
 from sklearn.utils.validation import check_is_fitted, check_array
-from statsmodels.tsa.seasonal import STL
 
 from tide.utils import check_and_return_dt_index_df
 from tide.base import BaseSTL
@@ -92,6 +91,13 @@ class STLEDetector(ClassifierMixin, BaseSTL):
         self.absolute_threshold = absolute_threshold
 
     def fit(self, X: pd.Series | pd.DataFrame, y=None):
+        try:
+            from statsmodels.tsa.seasonal import STL
+        except ImportError:
+            raise ImportError(
+                "statsmodels is required for STLEDetector. "
+                "Install it with: pip install python-tide[statsmodels]"
+            )
         self._pre_fit(X)
         self.stl_fit_res_ = {}
         for feat in X.columns:
