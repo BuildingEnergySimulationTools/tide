@@ -1,6 +1,6 @@
 [project]
 name = "python-tide"
-version = "0.1.9"
+version = "0.2.0"
 description = "Measured data visualization and pipelines creation"
 readme = "README.md"
 license = { file = "LICENSE.md" }
