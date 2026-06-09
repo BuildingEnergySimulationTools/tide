@@ -1610,9 +1610,10 @@ class Plumber:
 
         # --- Launch in background thread ---
         thread = threading.Thread(
-            target=lambda: app.run(port=port, debug=False, use_reloader=False),
+            target=lambda: app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False),
             daemon=True,
         )
         thread.start()
         _time.sleep(1.0)
         webbrowser.open(f"http://localhost:{port}")
+        thread.join()
