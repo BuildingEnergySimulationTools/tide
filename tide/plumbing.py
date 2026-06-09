@@ -1,4 +1,6 @@
 import datetime as dt
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -7,6 +9,7 @@ import plotly.graph_objects as go
 from sklearn.pipeline import make_pipeline, Pipeline
 from sklearn.compose import ColumnTransformer
 
+from tide.cache import CacheManager
 from tide.utils import (
     tide_request,
     check_and_return_dt_index_df,
@@ -269,6 +272,13 @@ class Plumber:
         and contains either:
         - A list of transformations to apply to all columns
         - A dictionary mapping column tags to specific transformations
+    cache_persistence : bool, default False
+        When False, pipeline results are cached in memory only and cleared when the
+        Python session ends.  When True, results are also saved as Parquet files in
+        ``cache_dir`` so they survive across sessions.
+    cache_dir : str or Path, optional
+        Directory used for on-disk cache files.  Defaults to ``.tide_cache/`` in the
+        current working directory.  Only used when ``cache_persistence=True``.
 
     Attributes
     ----------
@@ -278,6 +288,8 @@ class Plumber:
         Root node of the tree structure organizing column names
     pipe_dict : dict
         Configuration dictionary defining the processing pipeline steps
+    cache_manager : CacheManager
+        Manages in-memory (and optionally on-disk) caching of step results
 
     Examples
     --------
@@ -322,10 +334,19 @@ class Plumber:
     - Uses plotly for interactive data visualization
     """
 
-    def __init__(self, data: pd.Series | pd.DataFrame = None, pipe_dict: dict = None):
+    def __init__(
+        self,
+        data: pd.Series | pd.DataFrame = None,
+        pipe_dict: dict = None,
+        cache_persistence: bool = False,
+        cache_dir: str | Path = None,
+    ):
         self.data = check_and_return_dt_index_df(data) if data is not None else None
         self.root = data_columns_to_tree(data.columns) if data is not None else None
         self.pipe_dict = pipe_dict
+        self.cache_manager = CacheManager(
+            persistence=cache_persistence, cache_dir=cache_dir
+        )
 
     def __repr__(self):
         if self.data is not None:
@@ -456,6 +477,71 @@ class Plumber:
             idx for idx in stats_df.index if idx != "data_presence_%"
         ]
         return stats_df.reindex(row_order)
+
+    @classmethod
+    def from_json(
+        cls,
+        path: str | Path,
+        data: pd.Series | pd.DataFrame = None,
+        **kwargs,
+    ) -> "Plumber":
+        """Create a Plumber with ``pipe_dict`` loaded from a JSON file.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the JSON file containing the pipe_dict.
+        data : pd.Series or pd.DataFrame, optional
+            Time series data to attach to the new Plumber instance.
+        **kwargs
+            Additional keyword arguments passed to ``Plumber.__init__``
+            (e.g. ``cache_persistence``, ``cache_dir``).
+
+        Returns
+        -------
+        Plumber
+        """
+        with open(path) as f:
+            pipe_dict = json.load(f)
+        return cls(data=data, pipe_dict=pipe_dict, **kwargs)
+
+    def load_pipe_dict(self, path: str | Path) -> "Plumber":
+        """Load ``pipe_dict`` from a JSON file, replacing the current configuration.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the JSON file.
+
+        Returns
+        -------
+        Plumber
+            Returns *self* to allow chaining.
+        """
+        with open(path) as f:
+            self.pipe_dict = json.load(f)
+        return self
+
+    def save_pipe_dict(self, path: str | Path) -> None:
+        """Save the current ``pipe_dict`` to a JSON file.
+
+        Parameters
+        ----------
+        path : str or Path
+            Destination path for the JSON file.
+        """
+        with open(path, "w") as f:
+            json.dump(self.pipe_dict, f, indent=2)
+
+    def clear_cache(self, disk: bool = True) -> None:
+        """Clear the pipeline result cache.
+
+        Parameters
+        ----------
+        disk : bool, default True
+            Also remove on-disk cache files when ``cache_persistence=True``.
+        """
+        self.cache_manager.clear(disk=disk)
 
     def set_data(self, data: pd.Series | pd.DataFrame):
         """Set new data for the Plumber instance.
@@ -674,7 +760,56 @@ class Plumber:
             start or self.data.index[0] : stop or self.data.index[-1], select
         ].copy()
 
-        return self.get_pipeline(select, steps, verbose).fit_transform(data)
+        # Resolve effective steps (mirrors get_pipeline logic)
+        if self.pipe_dict is None or steps is None:
+            effective_steps = {}
+        else:
+            pipe_named_keys = NamedList(list(self.pipe_dict.keys()))
+            selected_keys = pipe_named_keys[steps]
+            effective_steps = {k: self.pipe_dict[k] for k in selected_keys}
+
+        if not effective_steps:
+            return get_pipeline_from_dict(
+                select, None, self.data.index.tz, verbose
+            ).transform(data)
+
+        data_hash = CacheManager.hash_dataframe(data)
+        step_items = list(effective_steps.items())
+        resume_from = 0
+        current_data = data
+
+        # Find the longest cached prefix and resume from there
+        for i in range(len(step_items), 0, -1):
+            key = CacheManager.make_key(data_hash, dict(step_items[:i]))
+            cached = self.cache_manager.get(key)
+            if cached is not None:
+                resume_from = i
+                current_data = cached
+                break
+
+        # Execute remaining steps one by one, caching each result
+        step_columns = list(current_data.columns)
+        for i in range(resume_from, len(step_items)):
+            step_name, step_config = step_items[i]
+            if isinstance(step_config, list):
+                op = _get_pipe_from_proc_list(
+                    step_columns, step_config, self.data.index.tz, verbose
+                )
+            elif isinstance(step_config, dict):
+                op = _get_column_wise_transformer(
+                    step_config, step_columns, self.data.index.tz, step_name, verbose
+                )
+            else:
+                raise ValueError(f"{step_config} is an invalid operation config")
+
+            if op is not None:
+                current_data = op.fit_transform(current_data)
+                step_columns = [str(f) for f in op.get_feature_names_out()]
+
+            key = CacheManager.make_key(data_hash, dict(step_items[: i + 1]))
+            self.cache_manager.set(key, current_data)
+
+        return current_data
 
     def plot_gaps_heatmap(
         self,
@@ -1610,10 +1745,11 @@ class Plumber:
 
         # --- Launch in background thread ---
         thread = threading.Thread(
-            target=lambda: app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False),
+            target=lambda: app.run(
+                host="127.0.0.1", port=port, debug=False, use_reloader=False
+            ),
             daemon=True,
         )
         thread.start()
         _time.sleep(1.0)
         webbrowser.open(f"http://localhost:{port}")
-        thread.join()
