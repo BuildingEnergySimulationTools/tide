@@ -518,6 +518,36 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(lager, res)
 
+    def test_pd_add_time_lag_string_time_lag(self):
+        """time_lag as a string (e.g. from a JSON pipe_dict spec, see
+        AddTimeLag's own docstring) must work the same as a dt.timedelta --
+        pandas >= 2 no longer supports DatetimeIndex + <str> directly, so
+        _transform_implementation must convert it via pd.Timedelta first."""
+        df = pd.DataFrame(
+            {
+                "col0": np.arange(2),
+                "col1": np.arange(2) * 10,
+            },
+            index=pd.date_range("2009-01-01", freq="h", periods=2, tz="UTC"),
+        )
+
+        ref = pd.DataFrame(
+            {
+                "col0": [1.0],
+                "col1": [10.0],
+                "1h_col0": [0.0],
+                "1h_col1": [0.0],
+            },
+            index=pd.DatetimeIndex(
+                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
+            ),
+        )
+
+        lager = AddTimeLag(time_lag="1h", drop_resulting_nan=True)
+        res = lager.fit_transform(df)
+        pd.testing.assert_frame_equal(ref, res)
+        check_feature_names_out(lager, res)
+
     def test_pd_gaussian_filter(self):
         df = pd.DataFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]},

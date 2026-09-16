@@ -1747,7 +1747,10 @@ class AddTimeLag(BaseProcessing):
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
         to_lag = X[self.features_to_lag].copy()
-        to_lag.index = to_lag.index + self.time_lag
+        # pandas no longer supports DatetimeIndex + <str> directly (e.g. "1h");
+        # pd.Timedelta(...) accepts a str, Timedelta or datetime.timedelta alike,
+        # so this normalizes all three constructor-documented input types.
+        to_lag.index = to_lag.index + pd.Timedelta(self.time_lag)
         to_lag.columns = self.feature_marker + to_lag.columns
         X_transformed = pd.concat([X, to_lag], axis=1)
         if self.drop_resulting_nan:
