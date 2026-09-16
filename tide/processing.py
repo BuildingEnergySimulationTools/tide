@@ -3483,6 +3483,99 @@ class KeepColumns(BaseProcessing):
         return X[self.feature_names_out_]
 
 
+class Duplicate(BaseProcessing):
+    """A transformer that duplicates one or more columns.
+
+    Each selected column is copied and its name tag (the first "__"-separated
+    component) is suffixed, while the rest of the tag
+    (unit__bloc__sub_bloc) is preserved. It broadcasts over every column
+    matched by `columns`, and always keeps the original columns.
+
+    Parameters
+    ----------
+    columns : str | list[str], optional (default=None)
+        The column name, list of column names, or tide_request tag pattern
+        selecting the columns to duplicate.
+        If None, ALL columns are duplicated.
+        Example: 'temp__°C' or ['temp__°C', 'humid__%'] or '°C|%'
+    suffix : str, default="copy"
+        Appended to the name tag as f"{name}_{suffix}".
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (input columns plus the duplicated ones).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> # Create DataFrame with DateTimeIndex
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01 00:00:00", end="2024-01-01 00:02:00", freq="1min"
+    ... ).tz_localize("UTC")
+    >>> df = pd.DataFrame(
+    ...     {
+    ...         "temperature__°C__Z1": [20, 21, 22],
+    ...         "temperature__°C__Z2": [18, 19, 20],
+    ...         "press__Pa": [1000, 1010, 1020],
+    ...     },
+    ...     index=dates,
+    ... )
+    >>> # Duplicate every column tagged "temperature", broadcasting over Z1/Z2
+    >>> duplicator = Duplicate(columns="temperature", suffix="copy")
+    >>> result = duplicator.fit_transform(df)
+    >>> print(result)
+                               temperature__°C__Z1  temperature__°C__Z2  press__Pa  temperature_copy__°C__Z1  temperature_copy__°C__Z2
+    2024-01-01 00:00:00+00:00                  20                    18       1000                        20                        18
+    2024-01-01 00:01:00+00:00                  21                    19       1010                        21                        19
+    2024-01-01 00:02:00+00:00                  22                    20       1020                        22                        20
+
+    Notes
+    -----
+    - Original columns are preserved unchanged, duplicated columns are
+      appended at the end
+    - A ValueError is raised if a duplicated column name would collide with
+      an existing one
+    - If no columns are specified (columns=None), every column is duplicated
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with the selected columns duplicated under a
+        suffixed name.
+    """
+
+    def __init__(self, columns: str | list[str] = None, suffix: str = "copy"):
+        self.columns = columns
+        self.suffix = suffix
+        BaseProcessing.__init__(self)
+
+    def _duplicated_name(self, col: str) -> str:
+        parts = col.split("__")
+        parts[0] = f"{parts[0]}_{self.suffix}"
+        return "__".join(parts)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.required_columns = tide_request(X.columns, self.columns)
+        self.duplicated_names_ = [
+            self._duplicated_name(col) for col in self.required_columns
+        ]
+        collisions = set(self.duplicated_names_) & set(X.columns)
+        if collisions:
+            raise ValueError(
+                f"Duplicate would create column(s) already present: {collisions}"
+            )
+        self.feature_names_out_.extend(self.duplicated_names_)
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
+        duplicated = X[self.required_columns].copy()
+        duplicated.columns = self.duplicated_names_
+        return pd.concat([X, duplicated], axis=1)
+
+
 class ReplaceTag(BaseProcessing):
     """A transformer that replaces components or full Tide tag names with new values.
 

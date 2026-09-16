@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.ndimage import gaussian_filter1d
 from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
@@ -37,6 +38,7 @@ from tide.processing import (
     FillOtherColumns,
     DropColumns,
     KeepColumns,
+    Duplicate,
     ReplaceTag,
     AddFourierPairs,
     DropQuantile,
@@ -1161,6 +1163,48 @@ class TestCustomTransformers:
         res = col_keeper.transform(df.copy())
         pd.testing.assert_frame_equal(df, res)
         check_feature_names_out(col_keeper, res)
+
+    def test_duplicate(self):
+        df = pd.DataFrame(
+            {
+                "temperature__°C__Z1": [20.0, 21.0],
+                "temperature__°C__Z2": [18.0, 19.0],
+                "press__Pa": [1000.0, 1010.0],
+            },
+            index=pd.date_range("2009", freq="h", periods=2, tz="UTC"),
+        )
+
+        # Single exact-tag match
+        dup = Duplicate(columns="press__Pa", suffix="copy")
+        res = dup.fit_transform(df.copy())
+        assert "press_copy__Pa" in res.columns
+        pd.testing.assert_series_equal(
+            df["press__Pa"], res["press_copy__Pa"], check_names=False
+        )
+        pd.testing.assert_frame_equal(df, res[df.columns.tolist()])
+        check_feature_names_out(dup, res)
+
+        # Broadcast over every column matched by a partial tag
+        dup_broadcast = Duplicate(columns="temperature", suffix="copy")
+        res_broadcast = dup_broadcast.fit_transform(df.copy())
+        assert "temperature_copy__°C__Z1" in res_broadcast.columns
+        assert "temperature_copy__°C__Z2" in res_broadcast.columns
+        assert "press_copy__Pa" not in res_broadcast.columns
+        check_feature_names_out(dup_broadcast, res_broadcast)
+
+        # columns=None duplicates every column
+        dup_all = Duplicate()
+        res_all = dup_all.fit_transform(df.copy())
+        assert res_all.shape == (2, 6)
+        for col in df.columns:
+            assert dup_all._duplicated_name(col) in res_all.columns
+        check_feature_names_out(dup_all, res_all)
+
+        # Name collision raises
+        collide_df = df.copy()
+        collide_df["press_copy__Pa"] = [0.0, 0.0]
+        with pytest.raises(ValueError):
+            Duplicate(columns="press__Pa", suffix="copy").fit(collide_df)
 
     def test_replace_tag(self):
         df = pd.DataFrame(

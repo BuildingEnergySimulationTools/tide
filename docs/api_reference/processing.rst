@@ -95,6 +95,10 @@ The processing module provides transformers for data processing and manipulation
    :members:
    :show-inheritance:
 
+.. autoclass:: tide.processing.Duplicate
+   :members:
+   :show-inheritance:
+
 .. autoclass:: tide.processing.ReplaceTag
    :members:
    :show-inheritance:
