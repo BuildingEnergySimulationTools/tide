@@ -95,7 +95,7 @@ def time_integrate(data: pd.DataFrame | pd.Series) -> pd.Series:
     if data.empty:
         return pd.Series(index=data.columns, dtype=float)
 
-    t = (data.index.view("int64") - data.index[0].value) * 1e-9  # seconds
+    t = ((data.index - data.index[0]) / pd.Timedelta(seconds=1)).to_numpy()  # seconds
     y = data.to_numpy()
     result = trapezoid(y, t, axis=0)
 
