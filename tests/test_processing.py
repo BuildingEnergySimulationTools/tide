@@ -511,8 +511,8 @@ class TestCustomTransformers:
                 "1:00:00_col1": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
-            ),
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
         )
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
@@ -541,8 +541,8 @@ class TestCustomTransformers:
                 "1h_col1": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
-            ),
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
         )
 
         lager = AddTimeLag(time_lag="1h", drop_resulting_nan=True)
@@ -1399,7 +1399,7 @@ class TestCustomTransformers:
             filtered_noise["Noise_1"][filtered_noise["Noise_1"].isna()].index,
             pd.DatetimeIndex(
                 ["2009-01-01 10:00:00+00:00", "2009-01-01 15:30:00+00:00"],
-                dtype="datetime64[ns, UTC]",
+                dtype=f"datetime64[{toy_df.index.unit}, UTC]",
                 freq=None,
             ),
         )
@@ -1407,7 +1407,7 @@ class TestCustomTransformers:
         pd.testing.assert_index_equal(
             filtered_noise["Noise_2"][filtered_noise["Noise_2"].isna()].index,
             pd.DatetimeIndex(
-                ["2009-01-01 03:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+                ["2009-01-01 03:30:00+00:00"], dtype=f"datetime64[{toy_df.index.unit}, UTC]", freq=None
             ),
         )
 
@@ -1440,7 +1440,7 @@ class TestCustomTransformers:
         pd.testing.assert_index_equal(
             filtered["Temp_2"][filtered["Temp_2"].isna()].index,
             pd.DatetimeIndex(
-                ["2009-01-01 11:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+                ["2009-01-01 11:30:00+00:00"], dtype=f"datetime64[{toy_df.index.unit}, UTC]", freq=None
             ),
         )
 

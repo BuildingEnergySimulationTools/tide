@@ -1050,7 +1050,7 @@ class TimeIntegrate(BaseProcessing):
         if len(X) == 0:
             return X
 
-        time_diffs = np.diff(X.index.view("int64")) * 1e-9
+        time_diffs = np.diff(X.index) / np.timedelta64(1, "s")
 
         # Create DataFrame for integrated values
         integrated = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
@@ -3846,7 +3846,7 @@ class AddFourierPairs(BaseProcessing):
 
         new_index = X.index.to_frame().diff().squeeze()
         sec_dt = [element.total_seconds() for element in new_index]
-        increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy()
+        increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy(copy=True)
         increasing_seconds[0] = 0
 
         omega = 2 * np.pi * frequency
