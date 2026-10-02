@@ -25,6 +25,7 @@ from tide.processing import (
     RenameColumns,
     SkTransform,
     TimeGradient,
+    Ewm,
     TimeIntegrate,
     ReplaceDuplicated,
     STLFilter,
@@ -567,6 +568,25 @@ class TestCustomTransformers:
             res.to_numpy()[:, 0],
             decimal=5,
         )
+
+    def test_ewm(self):
+        df = pd.DataFrame(
+            {"a": [1.0, 2.0, 3.0, 2.0, 5.0], "b": [4.0, 5.0, 6.0, 5.0, 3.0]},
+            index=pd.date_range("2009", freq="h", periods=5, tz="UTC"),
+        )
+
+        ewm = Ewm(span=3)
+        res = ewm.fit_transform(df)
+        check_feature_names_out(ewm, res)
+        pd.testing.assert_frame_equal(df.ewm(span=3).mean(), res)
+
+        ewm_std = Ewm(span=3, agg_method="std")
+        res_std = ewm_std.fit_transform(df)
+        check_feature_names_out(ewm_std, res_std)
+        pd.testing.assert_frame_equal(df.ewm(span=3).std(), res_std)
+
+        with pytest.raises(ValueError):
+            Ewm(span=3, agg_method="not_a_method").fit_transform(df)
 
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(

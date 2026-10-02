@@ -900,6 +900,90 @@ class TimeGradient(BaseProcessing):
         return derivative
 
 
+class Ewm(BaseProcessing):
+    """A transformer that applies an exponentially weighted moving operation.
+
+    Behaves like TimeGradient: broadcasts over every input column, in place,
+    same output shape and column names as the input. Wraps
+    pandas.DataFrame.ewm(...), defaulting to the mean.
+
+    Parameters
+    ----------
+    com, span, halflife, alpha : float | str | pd.Timedelta, optional
+        Decay parameters forwarded to pandas.DataFrame.ewm(). Exactly one
+        should be specified (mutually exclusive, as in pandas).
+    min_periods : int, default=0
+        Minimum number of observations required to have a value.
+    adjust : bool, default=True
+    ignore_na : bool, default=False
+    agg_method : str, default="mean"
+        Name of the aggregation to call on the resulting `.ewm(...)` object
+        (e.g. "mean", "std", "var", "sum").
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01", periods=5, freq="1h", tz="UTC"
+    ... )
+    >>> df = pd.DataFrame(
+    ...     {"temperature__°C__Z1": [20.0, 21.0, 19.0, 23.0, 22.0]}, index=dates
+    ... )
+    >>> transformer = Ewm(span=3)
+    >>> result = transformer.fit_transform(df)
+
+    Notes
+    -----
+    - No column is added or removed; output columns match the input exactly
+    - `agg_method` must name a method available on the pandas `Ewm` object,
+      otherwise a ValueError is raised at transform time
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with the ewm aggregation applied to each column.
+    """
+
+    def __init__(
+        self,
+        com: float = None,
+        span: float = None,
+        halflife: float | str | pd.Timedelta = None,
+        alpha: float = None,
+        min_periods: int = 0,
+        adjust: bool = True,
+        ignore_na: bool = False,
+        agg_method: str = "mean",
+    ):
+        super().__init__()
+        self.com = com
+        self.span = span
+        self.halflife = halflife
+        self.alpha = alpha
+        self.min_periods = min_periods
+        self.adjust = adjust
+        self.ignore_na = ignore_na
+        self.agg_method = agg_method
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        ewm = X.ewm(
+            com=self.com,
+            span=self.span,
+            halflife=self.halflife,
+            alpha=self.alpha,
+            min_periods=self.min_periods,
+            adjust=self.adjust,
+            ignore_na=self.ignore_na,
+        )
+        if not hasattr(ewm, self.agg_method):
+            raise ValueError(f"Aggregation '{self.agg_method}' not supported by ewm")
+        return getattr(ewm, self.agg_method)()
+
+
 class TimeIntegrate(BaseProcessing):
     """
     A transformer that calculates the time integral (cumulative sum over time) of a
