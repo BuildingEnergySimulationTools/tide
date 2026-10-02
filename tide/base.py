@@ -60,8 +60,17 @@ class TideBaseMixin:
 
     def check_required_features(self, X):
         if self.required_columns is not None:
-            if not set(self.required_columns).issubset(X.columns):
-                raise ValueError("One or several required columns are missing")
+            required = (
+                {self.required_columns}
+                if isinstance(self.required_columns, str)
+                else set(self.required_columns)
+            )
+            missing = required - set(X.columns)
+            if missing:
+                raise ValueError(
+                    f"{self.__class__.__name__}: required column(s) missing: "
+                    f"{sorted(missing)}"
+                )
 
     def fit_check_features(self, X):
         self.check_required_features(X)
