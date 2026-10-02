@@ -1723,10 +1723,10 @@ class AddTimeLag(BaseProcessing):
         time lag creates features with future values.
 
     features_to_lag : str | list[str] | None, default=None
-        The features to create lagged versions of. If None, all features in the
-        input DataFrame will be lagged. Can be specified as:
-            - A single feature name (string)
-            - A list of feature names
+        The features to create lagged versions of, resolved with
+        ``tide_request`` so TIDE tag patterns can be used. Can be specified as:
+            - A single feature name or tag pattern (string, e.g. "°C")
+            - A list of feature names or tag patterns
             - None (to lag all features)
 
     feature_marker : str | None, default=None
@@ -1776,6 +1776,16 @@ class AddTimeLag(BaseProcessing):
     2024-01-01 01:00:00               300.0           22.0                    200.0
     2024-01-01 02:00:00               400.0           23.0                    300.0
     2024-01-01 03:00:00               500.0           24.0                    400.0
+    >>> # Select features to lag with a TIDE tag pattern
+    >>> lagger_tag = AddTimeLag(time_lag="1h", features_to_lag="°C")
+    >>> result_tag = lagger_tag.fit_transform(df)
+    >>> print(result_tag)
+                           power__W__building  temp__°C__room  1h_temp__°C__room
+    2024-01-01 00:00:00               100.0           20.0                 NaN
+    2024-01-01 01:00:00               200.0           21.0                20.0
+    2024-01-01 02:00:00               300.0           22.0                21.0
+    2024-01-01 03:00:00               400.0           23.0                22.0
+    2024-01-01 04:00:00               500.0           24.0                23.0
 
     Notes
     -----
@@ -1786,6 +1796,8 @@ class AddTimeLag(BaseProcessing):
       are removed from the output
     - The feature_marker parameter allows for custom naming of lagged features
     - The transformer supports both positive (past) and negative (future) lags
+    - features_to_lag is resolved with ``tide_request``, so TIDE tag patterns
+      (e.g. "°C", "bloc1") can be used in addition to exact column names
 
     Returns
     -------
@@ -1809,28 +1821,20 @@ class AddTimeLag(BaseProcessing):
         self.drop_resulting_nan = drop_resulting_nan
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        if self.features_to_lag is None:
-            self.features_to_lag = X.columns
-        else:
-            self.features_to_lag = (
-                [self.features_to_lag]
-                if isinstance(self.features_to_lag, str)
-                else self.features_to_lag
-            )
+        self.required_columns = tide_request(X.columns, self.features_to_lag)
         self.feature_marker = (
             str(self.time_lag) + "_"
             if self.feature_marker is None
             else self.feature_marker
         )
 
-        self.required_columns = self.features_to_lag
         self.feature_names_out_.extend(
             [self.feature_marker + name for name in self.required_columns]
         )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
-        to_lag = X[self.features_to_lag].copy()
+        to_lag = X[self.required_columns].copy()
         # pandas no longer supports DatetimeIndex + <str> directly (e.g. "1h");
         # pd.Timedelta(...) accepts a str, Timedelta or datetime.timedelta alike,
         # so this normalizes all three constructor-documented input types.

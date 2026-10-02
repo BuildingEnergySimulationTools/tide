@@ -551,6 +551,35 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(lager, res)
 
+    def test_pd_add_time_lag_features_to_lag_tide_request(self):
+        """features_to_lag is resolved through tide_request, so a tag pattern
+        can select features to lag instead of listing exact column names."""
+        df = pd.DataFrame(
+            {
+                "power__W__building": np.arange(2),
+                "temp__°C__room": np.arange(2) * 10,
+            },
+            index=pd.date_range("2009-01-01", freq="h", periods=2, tz="UTC"),
+        )
+
+        ref = pd.DataFrame(
+            {
+                "power__W__building": [1.0],
+                "temp__°C__room": [10.0],
+                "1h_temp__°C__room": [0.0],
+            },
+            index=pd.DatetimeIndex(
+                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
+            ),
+        )
+
+        lager = AddTimeLag(
+            time_lag="1h", features_to_lag="°C", drop_resulting_nan=True
+        )
+        res = lager.fit_transform(df)
+        pd.testing.assert_frame_equal(ref, res)
+        check_feature_names_out(lager, res)
+
     def test_pd_gaussian_filter(self):
         df = pd.DataFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]},
