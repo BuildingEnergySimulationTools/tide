@@ -39,6 +39,7 @@ from tide.processing import (
     DropColumns,
     KeepColumns,
     Duplicate,
+    SpreadOverDuration,
     ReplaceTag,
     AddFourierPairs,
     DropQuantile,
@@ -1163,6 +1164,50 @@ class TestCustomTransformers:
         res = col_keeper.transform(df.copy())
         pd.testing.assert_frame_equal(df, res)
         check_feature_names_out(col_keeper, res)
+
+    def test_spread_over_duration(self):
+        index = pd.date_range("2024-03-29", periods=3, freq="2D", tz="Europe/Paris")
+        df = pd.DataFrame(
+            {
+                "gas__kWh__site": [10.0, 30.0, 5.0],
+                "vol__m3__site": [1.0, 3.0, 0.5],
+                "duration__d__site": [1.0, 3.0, np.nan],
+            },
+            index=index,
+        )
+        spreader = SpreadOverDuration(columns="gas|vol", duration_column="duration")
+        res = spreader.fit_transform(df)
+        check_feature_names_out(spreader, res)
+        # 2024-03-31 + 1 day crosses the DST change: local midnight kept
+        expected_index = pd.DatetimeIndex(
+            ["2024-03-29", "2024-03-31", "2024-04-01", "2024-04-02"]
+        ).tz_localize("Europe/Paris")
+        assert res.index.equals(expected_index)
+        assert res["gas__kWh__site"].tolist() == [10.0, 10.0, 10.0, 15.0]
+        assert res["gas__kWh__site"].sum() == df["gas__kWh__site"].sum()
+        assert res["vol__m3__site"].tolist() == [1.0, 1.0, 1.0, 1.5]
+
+        dropped = SpreadOverDuration(
+            "gas", duration_column="duration", method="drop"
+        ).fit_transform(df)
+        assert dropped.index.equals(df.index)
+        assert dropped["gas__kWh__site"].isna().tolist() == [False, True, False]
+        assert dropped["vol__m3__site"].tolist() == [1.0, 3.0, 0.5]
+
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration", method="bad").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration(duration_column="duration").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="__").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration").fit_transform(
+                df.assign(**{"duration__d__site": [1.0, 2.5, 1.0]})
+            )
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration").fit_transform(
+                df.iloc[[0, 0, 1]]
+            )
 
     def test_duplicate(self):
         df = pd.DataFrame(

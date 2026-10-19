@@ -3576,6 +3576,136 @@ class Duplicate(BaseProcessing):
         return pd.concat([X, duplicated], axis=1)
 
 
+class SpreadOverDuration(BaseProcessing):
+    """A transformer that handles readings covering several time steps.
+
+    Some sources give readings over a period longer than the nominal time step
+    (e.g. a gas reading covering 3 days in a daily series), placed on the start of
+    their period. A column gives the duration of each reading, as a number of
+    `step`. Readings lasting more than one step are either spread evenly over
+    the steps they cover (``method="spread"``: totals are kept), or replaced by
+    NaN (``method="drop"``).
+
+    Parameters
+    ----------
+    columns : str | list[str]
+        The column name, list of column names, or tide_request tag pattern
+        selecting the values to spread. Required: only extensive quantities
+        (energies, volumes) can be spread; an intensive one (a coefficient, a
+        temperature) would be divided by the duration.
+    duration_column : str
+        Column name or tide_request pattern selecting exactly one column: the
+        duration of each reading, in number of `step` (1 or less, or NaN: one
+        step, unchanged). Durations above 1 must be integers.
+    step : str | pd.DateOffset, default="1D"
+        Time step of the series. Spread values are placed on the start of the
+        reading, then every `step` (calendar days for "1D": local midnights
+        across daylight saving time changes).
+    method : {"spread", "drop"}, default="spread"
+        "spread": divide the value by the duration and place it on each covered
+        step; "drop": replace the value by NaN.
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> index = pd.date_range("2024-01-01", periods=3, freq="2D", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {"gas__kWh__site": [10.0, 30.0, 5.0], "duration__d__site": [1, 3, 1]},
+    ...     index=index,
+    ... )
+    >>> SpreadOverDuration("gas", duration_column="duration").fit_transform(df)
+                               gas__kWh__site  duration__d__site
+    2024-01-01 00:00:00+00:00            10.0                1.0
+    2024-01-03 00:00:00+00:00            10.0                3.0
+    2024-01-04 00:00:00+00:00            10.0                NaN
+    2024-01-05 00:00:00+00:00            15.0                1.0
+
+    Notes
+    -----
+    - Spread steps missing from the index are added; on a step that already
+      has a value, the spread value is added to it.
+    - The duration column is kept (NaN on the added steps).
+    - A DataFrame mixing several meters needs one transformer per meter, each
+      with its own duration column.
+    - The index must not have duplicated timestamps.
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with multi-step readings spread or dropped.
+    """
+
+    def __init__(
+        self,
+        columns: str | list[str] = None,
+        duration_column: str = None,
+        step: str | pd.DateOffset = "1D",
+        method: str = "spread",
+    ):
+        self.columns = columns
+        self.duration_column = duration_column
+        self.step = step
+        self.method = method
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.columns is None:
+            raise ValueError("columns is required: select the extensive quantities")
+        if self.method not in ("spread", "drop"):
+            raise ValueError(f"method must be 'spread' or 'drop', got {self.method!r}")
+        if self.duration_column is None:
+            raise ValueError("duration_column is required")
+        durations = tide_request(X.columns, self.duration_column)
+        if len(durations) != 1:
+            raise ValueError(
+                f"duration_column must select exactly one column, got {durations}"
+            )
+        self.duration_column_ = durations[0]
+        self.value_columns_ = [
+            col
+            for col in tide_request(X.columns, self.columns)
+            if col != self.duration_column_
+        ]
+        self.required_columns = self.value_columns_ + [self.duration_column_]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "duration_column_"])
+        if X.index.has_duplicates:
+            raise ValueError("the index has duplicated timestamps")
+        durations = X[self.duration_column_].astype("float64")
+        long = durations > 1
+        if not (durations[long] % 1 == 0).all():
+            raise ValueError(
+                f"{self.duration_column_}: durations above 1 must be integers"
+            )
+        X = X.copy()
+        values = X[self.value_columns_].astype("float64")
+        if self.method == "drop" or not long.any():
+            X.loc[long, self.value_columns_] = np.nan
+            return X
+        step = pd.tseries.frequencies.to_offset(self.step)
+        pieces = [
+            pd.DataFrame(
+                np.tile(values.loc[time].to_numpy() / count, (int(count), 1)),
+                index=pd.date_range(time, periods=int(count), freq=step),
+                columns=self.value_columns_,
+            )
+            for time, count in durations[long].items()
+        ]
+        spread = pd.concat(pieces).groupby(level=0).sum(min_count=1)
+        result = values.mask(long).add(spread, fill_value=0)
+        X = X.reindex(result.index)
+        X[self.value_columns_] = result
+        return X
+
+
 class ReplaceTag(BaseProcessing):
     """A transformer that replaces components or full Tide tag names with new values.
 
