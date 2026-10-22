@@ -42,6 +42,7 @@ from tide.processing import (
     SpreadOverDuration,
     ReplaceTag,
     AddFourierPairs,
+    AddSchoolHolidays,
     DropQuantile,
     TrimSequence,
     WindowAggregate,
@@ -1365,6 +1366,54 @@ class TestCustomTransformers:
             "1 day, 0:00:00_order_1_Sine__W__BLOCK__SUB_BLOCK",
             "1 day, 0:00:00_order_1_Cosine__W__BLOCK__SUB_BLOCK",
         ]
+
+    def test_add_school_holidays(self):
+        pytest.importorskip("vacances_scolaires_france")
+        # All Saints holidays 2023, zone A: Saturday 21 October to Sunday 5 November
+        days = pd.date_range("2023-10-20", "2023-11-06", freq="D", tz="UTC")
+        data = pd.DataFrame({"feat_1": np.arange(len(days), dtype="float64")}, days)
+        res = AddSchoolHolidays().fit_transform(data.copy())
+        assert res["school_holidays"].tolist() == [0.0] + [1.0] * 16 + [0.0]
+        assert res["feat_1"].tolist() == data["feat_1"].tolist()
+
+        # Winter holidays 2024 differ between zones
+        day = pd.DataFrame(
+            {"feat_1": [0.0]}, pd.DatetimeIndex(["2024-02-13"], tz="UTC")
+        )
+        flags = {
+            zone: AddSchoolHolidays(zone=zone).fit_transform(day.copy()).iloc[0, 1]
+            for zone in "ABC"
+        }
+        assert flags == {"A": 0.0, "B": 0.0, "C": 1.0}
+
+        # Local date: 2023-10-20 22:00 UTC is already Saturday 21 in Paris (UTC+2)
+        hours = pd.date_range("2023-10-20 21:00", periods=3, freq="h", tz="UTC")
+        hourly = pd.DataFrame({"feat_1": [0.0, 1.0, 2.0]}, hours)
+        res = AddSchoolHolidays().fit_transform(hourly.copy())
+        assert res["school_holidays"].tolist() == [0.0, 1.0, 1.0]
+        res = AddSchoolHolidays(tz="UTC").fit_transform(hourly.copy())
+        assert res["school_holidays"].tolist() == [0.0, 0.0, 0.0]
+
+        # Outside the period covered by the package: NaN
+        old = pd.DataFrame(
+            {"feat_1": [0.0]}, pd.DatetimeIndex(["1950-07-14"], tz="UTC")
+        )
+        assert np.isnan(AddSchoolHolidays().fit_transform(old).iloc[0, 1])
+
+        # Name from the tag levels, as AddFourierPairs
+        for column, expected in [
+            ("feat_1", "school_holidays"),
+            ("feat_1__°C", "school_holidays__0-1"),
+            ("feat_1__°C__building", "school_holidays__0-1__outdoor"),
+            ("feat_1__°C__building__room", "school_holidays__0-1__outdoor__calendar"),
+        ]:
+            holidays = AddSchoolHolidays(block="outdoor", sub_block="calendar")
+            res = holidays.fit_transform(data.rename(columns={"feat_1": column}))
+            assert holidays.feature_names_out_ == [column, expected]
+            check_feature_names_out(holidays, res)
+
+        with pytest.raises(ValueError):
+            AddSchoolHolidays(zone="D").fit(data)
 
     def test_drop_quantile(self):
         index = pd.date_range(

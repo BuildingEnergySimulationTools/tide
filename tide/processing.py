@@ -3993,6 +3993,125 @@ class AddFourierPairs(BaseProcessing):
         return X
 
 
+class AddSchoolHolidays(BaseProcessing):
+    """A transformer that adds a column flagging French school holidays.
+
+    The value of each time step is 1.0 when its local date (in `tz`) is a school
+    holiday of `zone`, 0.0 otherwise. The dates come from the
+    ``vacances-scolaires-france`` package (data.gouv.fr calendar, bundled with
+    the package, no network access): steps outside the period it covers are
+    NaN; update the package to cover the coming school years.
+
+    Requires the optional dependency: ``pip install tide[calendar]``.
+
+    Add it after a daily ``Resample``: averaging hourly 0/1 values over a day
+    would give fractions on the first and last days of the holidays.
+
+    Parameters
+    ----------
+    zone : str, default="A"
+        School holiday zone: "A", "B" or "C".
+    tz : str, default="Europe/Paris"
+        Time zone of the local date of each step (the index of tide data is
+        always tz-aware).
+    name : str, default="school_holidays"
+        Name of the new column.
+    unit : str, default="0-1"
+        Unit tag of the new column.
+    block : str, default="BLOCK"
+        block tag according to tide taging system. Will only be used if level 2
+        tags or more are already used
+    sub_block : str, default="SUB_BLOCK"
+        sub_block tag according to tide taging system. Will only be used if level
+        3 tags or more are already used
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of input columns followed by the new column.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> data = pd.DataFrame(
+    ...     {"energy__kWh__building__heating": [1.0, 2.0, 3.0]},
+    ...     index=pd.date_range("2023-10-20", periods=3, freq="D", tz="UTC"),
+    ... )
+    >>> holidays = AddSchoolHolidays(zone="A", block="outdoor", sub_block="calendar")
+    >>> holidays.fit_transform(data)["school_holidays__0-1__outdoor__calendar"].tolist()
+    [0.0, 1.0, 1.0]
+    """
+
+    def __init__(
+        self,
+        zone: str = "A",
+        tz: str = "Europe/Paris",
+        name: str = "school_holidays",
+        unit: str = "0-1",
+        block: str = "BLOCK",
+        sub_block: str = "SUB_BLOCK",
+    ):
+        BaseProcessing.__init__(self)
+        self.zone = zone
+        self.tz = tz
+        self.name = name
+        self.unit = unit
+        self.block = block
+        self.sub_block = sub_block
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.fit_check_features(X)
+        dates = _school_holiday_dates()
+        if self.zone not in dates.SUPPORTED_ZONES:
+            raise ValueError(
+                f"zone must be one of {dates.SUPPORTED_ZONES}, not {self.zone!r}"
+            )
+        max_level = get_tags_max_level(X.columns)
+        name = self.name
+        if max_level > 0:
+            name += f"__{self.unit}"
+        if max_level > 1:
+            name += f"__{self.block}"
+        if max_level > 2:
+            name += f"__{self.sub_block}"
+        self.new_column_ = name
+        self.feature_names_out_.append(name)
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(
+            self, attributes=["feature_names_in_", "feature_names_out_", "new_column_"]
+        )
+        dates = _school_holiday_dates()
+        first = dt.date(dates.min_year, 1, 1)
+        last = max(dates.data)
+        local_dates = X.index.tz_convert(self.tz).date
+        flags = {
+            day: float(dates.is_holiday_for_zone(day, self.zone))
+            if first <= day <= last
+            else np.nan
+            for day in set(local_dates)
+        }
+        X[self.new_column_] = np.array(
+            [flags[day] for day in local_dates], dtype="float64"
+        )
+        return X
+
+
+def _school_holiday_dates():
+    """Calendar of the ``vacances-scolaires-france`` package (optional dependency)."""
+    try:
+        from vacances_scolaires_france import SchoolHolidayDates
+    except ImportError:
+        raise ImportError(
+            "vacances-scolaires-france is required for AddSchoolHolidays. "
+            "Install it with: pip install tide[calendar]"
+        )
+    return SchoolHolidayDates()
+
+
 QUANTILE_METHODS = {
     "Gaussian": (gaussian_filter1d, dict(sigma=5, truncate=5, mode="wrap")),
     "Detrend": (detrend, dict(type="linear")),
