@@ -1134,7 +1134,7 @@ class TimeIntegrate(BaseProcessing):
         if len(X) == 0:
             return X
 
-        time_diffs = np.diff(X.index) / np.timedelta64(1, "s")
+        time_diffs = (X.index[1:] - X.index[:-1]).total_seconds().to_numpy()
 
         # Create DataFrame for integrated values
         integrated = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
