@@ -1260,6 +1260,7 @@ class Plumber:
                 "Install it with: pip install python-tide[resampler]"
             )
 
+        import socket
         import threading
         import time as _time
         import webbrowser
@@ -1607,6 +1608,23 @@ class Plumber:
 
         if _use_resampler:
             fig.register_update_graph_callback(app, "main-graph")
+
+        # --- Pick a free port: the requested one, or the next free one above it ---
+        # (a previous plot_dash call keeps its server running in a daemon thread,
+        # so re-using the same port would silently fail to bind and the browser
+        # would just reopen the earlier, still-running app instead of this one)
+        requested_port = port
+        while True:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                if sock.connect_ex(("localhost", port)) != 0:
+                    break
+            port += 1
+        if port != requested_port:
+            print(
+                f"Port {requested_port} already in use (another plot_dash is running there); "
+                f"using port {port} instead."
+            )
 
         # --- Launch in background thread ---
         thread = threading.Thread(
