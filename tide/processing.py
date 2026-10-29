@@ -900,6 +900,90 @@ class TimeGradient(BaseProcessing):
         return derivative
 
 
+class Ewm(BaseProcessing):
+    """A transformer that applies an exponentially weighted moving operation.
+
+    Behaves like TimeGradient: broadcasts over every input column, in place,
+    same output shape and column names as the input. Wraps
+    pandas.DataFrame.ewm(...), defaulting to the mean.
+
+    Parameters
+    ----------
+    com, span, halflife, alpha : float | str | pd.Timedelta, optional
+        Decay parameters forwarded to pandas.DataFrame.ewm(). Exactly one
+        should be specified (mutually exclusive, as in pandas).
+    min_periods : int, default=0
+        Minimum number of observations required to have a value.
+    adjust : bool, default=True
+    ignore_na : bool, default=False
+    agg_method : str, default="mean"
+        Name of the aggregation to call on the resulting `.ewm(...)` object
+        (e.g. "mean", "std", "var", "sum").
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> dates = pd.date_range(
+    ...     start="2024-01-01", periods=5, freq="1h", tz="UTC"
+    ... )
+    >>> df = pd.DataFrame(
+    ...     {"temperature__°C__Z1": [20.0, 21.0, 19.0, 23.0, 22.0]}, index=dates
+    ... )
+    >>> transformer = Ewm(span=3)
+    >>> result = transformer.fit_transform(df)
+
+    Notes
+    -----
+    - No column is added or removed; output columns match the input exactly
+    - `agg_method` must name a method available on the pandas `Ewm` object,
+      otherwise a ValueError is raised at transform time
+
+    Returns
+    -------
+    pd.DataFrame
+        The DataFrame with the ewm aggregation applied to each column.
+    """
+
+    def __init__(
+        self,
+        com: float = None,
+        span: float = None,
+        halflife: float | str | pd.Timedelta = None,
+        alpha: float = None,
+        min_periods: int = 0,
+        adjust: bool = True,
+        ignore_na: bool = False,
+        agg_method: str = "mean",
+    ):
+        super().__init__()
+        self.com = com
+        self.span = span
+        self.halflife = halflife
+        self.alpha = alpha
+        self.min_periods = min_periods
+        self.adjust = adjust
+        self.ignore_na = ignore_na
+        self.agg_method = agg_method
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        ewm = X.ewm(
+            com=self.com,
+            span=self.span,
+            halflife=self.halflife,
+            alpha=self.alpha,
+            min_periods=self.min_periods,
+            adjust=self.adjust,
+            ignore_na=self.ignore_na,
+        )
+        if not hasattr(ewm, self.agg_method):
+            raise ValueError(f"Aggregation '{self.agg_method}' not supported by ewm")
+        return getattr(ewm, self.agg_method)()
+
+
 class TimeIntegrate(BaseProcessing):
     """
     A transformer that calculates the time integral (cumulative sum over time) of a
@@ -1639,10 +1723,10 @@ class AddTimeLag(BaseProcessing):
         time lag creates features with future values.
 
     features_to_lag : str | list[str] | None, default=None
-        The features to create lagged versions of. If None, all features in the
-        input DataFrame will be lagged. Can be specified as:
-            - A single feature name (string)
-            - A list of feature names
+        The features to create lagged versions of, resolved with
+        ``tide_request`` so TIDE tag patterns can be used. Can be specified as:
+            - A single feature name or tag pattern (string, e.g. "°C")
+            - A list of feature names or tag patterns
             - None (to lag all features)
 
     feature_marker : str | None, default=None
@@ -1692,6 +1776,16 @@ class AddTimeLag(BaseProcessing):
     2024-01-01 01:00:00               300.0           22.0                    200.0
     2024-01-01 02:00:00               400.0           23.0                    300.0
     2024-01-01 03:00:00               500.0           24.0                    400.0
+    >>> # Select features to lag with a TIDE tag pattern
+    >>> lagger_tag = AddTimeLag(time_lag="1h", features_to_lag="°C")
+    >>> result_tag = lagger_tag.fit_transform(df)
+    >>> print(result_tag)
+                           power__W__building  temp__°C__room  1h_temp__°C__room
+    2024-01-01 00:00:00               100.0           20.0                 NaN
+    2024-01-01 01:00:00               200.0           21.0                20.0
+    2024-01-01 02:00:00               300.0           22.0                21.0
+    2024-01-01 03:00:00               400.0           23.0                22.0
+    2024-01-01 04:00:00               500.0           24.0                23.0
 
     Notes
     -----
@@ -1702,6 +1796,8 @@ class AddTimeLag(BaseProcessing):
       are removed from the output
     - The feature_marker parameter allows for custom naming of lagged features
     - The transformer supports both positive (past) and negative (future) lags
+    - features_to_lag is resolved with ``tide_request``, so TIDE tag patterns
+      (e.g. "°C", "bloc1") can be used in addition to exact column names
 
     Returns
     -------
@@ -1725,28 +1821,20 @@ class AddTimeLag(BaseProcessing):
         self.drop_resulting_nan = drop_resulting_nan
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
-        if self.features_to_lag is None:
-            self.features_to_lag = X.columns
-        else:
-            self.features_to_lag = (
-                [self.features_to_lag]
-                if isinstance(self.features_to_lag, str)
-                else self.features_to_lag
-            )
+        self.required_columns = tide_request(X.columns, self.features_to_lag)
         self.feature_marker = (
             str(self.time_lag) + "_"
             if self.feature_marker is None
             else self.feature_marker
         )
 
-        self.required_columns = self.features_to_lag
         self.feature_names_out_.extend(
             [self.feature_marker + name for name in self.required_columns]
         )
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         check_is_fitted(self, attributes=["feature_names_in_", "feature_names_out_"])
-        to_lag = X[self.features_to_lag].copy()
+        to_lag = X[self.required_columns].copy()
         # pandas no longer supports DatetimeIndex + <str> directly (e.g. "1h");
         # pd.Timedelta(...) accepts a str, Timedelta or datetime.timedelta alike,
         # so this normalizes all three constructor-documented input types.

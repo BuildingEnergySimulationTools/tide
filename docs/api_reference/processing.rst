@@ -63,6 +63,10 @@ The processing module provides transformers for data processing and manipulation
    :members:
    :show-inheritance:
 
+.. autoclass:: tide.processing.Ewm
+   :members:
+   :show-inheritance:
+
 .. autoclass:: tide.processing.AddTimeLag
    :members:
    :show-inheritance:

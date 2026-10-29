@@ -25,6 +25,7 @@ from tide.processing import (
     RenameColumns,
     SkTransform,
     TimeGradient,
+    Ewm,
     TimeIntegrate,
     ReplaceDuplicated,
     STLFilter,
@@ -552,6 +553,35 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(lager, res)
 
+    def test_pd_add_time_lag_features_to_lag_tide_request(self):
+        """features_to_lag is resolved through tide_request, so a tag pattern
+        can select features to lag instead of listing exact column names."""
+        df = pd.DataFrame(
+            {
+                "power__W__building": np.arange(2),
+                "temp__°C__room": np.arange(2) * 10,
+            },
+            index=pd.date_range("2009-01-01", freq="h", periods=2, tz="UTC"),
+        )
+
+        ref = pd.DataFrame(
+            {
+                "power__W__building": [1.0],
+                "temp__°C__room": [10.0],
+                "1h_temp__°C__room": [0.0],
+            },
+            index=pd.DatetimeIndex(
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
+        )
+
+        lager = AddTimeLag(
+            time_lag="1h", features_to_lag="°C", drop_resulting_nan=True
+        )
+        res = lager.fit_transform(df)
+        pd.testing.assert_frame_equal(ref, res)
+        check_feature_names_out(lager, res)
+
     def test_pd_gaussian_filter(self):
         df = pd.DataFrame(
             {"a": [1, 2, 3], "b": [4, 5, 6]},
@@ -569,6 +599,25 @@ class TestCustomTransformers:
             res.to_numpy()[:, 0],
             decimal=5,
         )
+
+    def test_ewm(self):
+        df = pd.DataFrame(
+            {"a": [1.0, 2.0, 3.0, 2.0, 5.0], "b": [4.0, 5.0, 6.0, 5.0, 3.0]},
+            index=pd.date_range("2009", freq="h", periods=5, tz="UTC"),
+        )
+
+        ewm = Ewm(span=3)
+        res = ewm.fit_transform(df)
+        check_feature_names_out(ewm, res)
+        pd.testing.assert_frame_equal(df.ewm(span=3).mean(), res)
+
+        ewm_std = Ewm(span=3, agg_method="std")
+        res_std = ewm_std.fit_transform(df)
+        check_feature_names_out(ewm_std, res_std)
+        pd.testing.assert_frame_equal(df.ewm(span=3).std(), res_std)
+
+        with pytest.raises(ValueError):
+            Ewm(span=3, agg_method="not_a_method").fit_transform(df)
 
     def test_pd_combine_columns(self):
         x_in = pd.DataFrame(
