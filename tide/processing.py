@@ -1134,7 +1134,7 @@ class TimeIntegrate(BaseProcessing):
         if len(X) == 0:
             return X
 
-        time_diffs = np.diff(X.index.view("int64")) * 1e-9
+        time_diffs = (X.index[1:] - X.index[:-1]).total_seconds().to_numpy()
 
         # Create DataFrame for integrated values
         integrated = pd.DataFrame(index=X.index, columns=X.columns, dtype=float)
@@ -3664,6 +3664,136 @@ class Duplicate(BaseProcessing):
         return pd.concat([X, duplicated], axis=1)
 
 
+class SpreadOverDuration(BaseProcessing):
+    """A transformer that handles readings covering several time steps.
+
+    Some sources give readings over a period longer than the nominal time step
+    (e.g. a gas reading covering 3 days in a daily series), placed on the start of
+    their period. A column gives the duration of each reading, as a number of
+    `step`. Readings lasting more than one step are either spread evenly over
+    the steps they cover (``method="spread"``: totals are kept), or replaced by
+    NaN (``method="drop"``).
+
+    Parameters
+    ----------
+    columns : str | list[str]
+        The column name, list of column names, or tide_request tag pattern
+        selecting the values to spread. Required: only extensive quantities
+        (energies, volumes) can be spread; an intensive one (a coefficient, a
+        temperature) would be divided by the duration.
+    duration_column : str
+        Column name or tide_request pattern selecting exactly one column: the
+        duration of each reading, in number of `step` (1 or less, or NaN: one
+        step, unchanged). Durations above 1 must be integers.
+    step : str | pd.DateOffset, default="1D"
+        Time step of the series. Spread values are placed on the start of the
+        reading, then every `step` (calendar days for "1D": local midnights
+        across daylight saving time changes).
+    method : {"spread", "drop"}, default="spread"
+        "spread": divide the value by the duration and place it on each covered
+        step; "drop": replace the value by NaN.
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of output columns (same as input).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> index = pd.date_range("2024-01-01", periods=3, freq="2D", tz="UTC")
+    >>> df = pd.DataFrame(
+    ...     {"gas__kWh__site": [10.0, 30.0, 5.0], "duration__d__site": [1, 3, 1]},
+    ...     index=index,
+    ... )
+    >>> SpreadOverDuration("gas", duration_column="duration").fit_transform(df)
+                               gas__kWh__site  duration__d__site
+    2024-01-01 00:00:00+00:00            10.0                1.0
+    2024-01-03 00:00:00+00:00            10.0                3.0
+    2024-01-04 00:00:00+00:00            10.0                NaN
+    2024-01-05 00:00:00+00:00            15.0                1.0
+
+    Notes
+    -----
+    - Spread steps missing from the index are added; on a step that already
+      has a value, the spread value is added to it.
+    - The duration column is kept (NaN on the added steps).
+    - A DataFrame mixing several meters needs one transformer per meter, each
+      with its own duration column.
+    - The index must not have duplicated timestamps.
+
+    Returns
+    -------
+    pd.DataFrame
+        The input DataFrame with multi-step readings spread or dropped.
+    """
+
+    def __init__(
+        self,
+        columns: str | list[str] = None,
+        duration_column: str = None,
+        step: str | pd.DateOffset = "1D",
+        method: str = "spread",
+    ):
+        self.columns = columns
+        self.duration_column = duration_column
+        self.step = step
+        self.method = method
+        BaseProcessing.__init__(self)
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.columns is None:
+            raise ValueError("columns is required: select the extensive quantities")
+        if self.method not in ("spread", "drop"):
+            raise ValueError(f"method must be 'spread' or 'drop', got {self.method!r}")
+        if self.duration_column is None:
+            raise ValueError("duration_column is required")
+        durations = tide_request(X.columns, self.duration_column)
+        if len(durations) != 1:
+            raise ValueError(
+                f"duration_column must select exactly one column, got {durations}"
+            )
+        self.duration_column_ = durations[0]
+        self.value_columns_ = [
+            col
+            for col in tide_request(X.columns, self.columns)
+            if col != self.duration_column_
+        ]
+        self.required_columns = self.value_columns_ + [self.duration_column_]
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(self, attributes=["feature_names_in_", "duration_column_"])
+        if X.index.has_duplicates:
+            raise ValueError("the index has duplicated timestamps")
+        durations = X[self.duration_column_].astype("float64")
+        long = durations > 1
+        if not (durations[long] % 1 == 0).all():
+            raise ValueError(
+                f"{self.duration_column_}: durations above 1 must be integers"
+            )
+        X = X.copy()
+        values = X[self.value_columns_].astype("float64")
+        if self.method == "drop" or not long.any():
+            X.loc[long, self.value_columns_] = np.nan
+            return X
+        step = pd.tseries.frequencies.to_offset(self.step)
+        pieces = [
+            pd.DataFrame(
+                np.tile(values.loc[time].to_numpy() / count, (int(count), 1)),
+                index=pd.date_range(time, periods=int(count), freq=step),
+                columns=self.value_columns_,
+            )
+            for time, count in durations[long].items()
+        ]
+        spread = pd.concat(pieces).groupby(level=0).sum(min_count=1)
+        result = values.mask(long).add(spread, fill_value=0)
+        X = X.reindex(result.index)
+        X[self.value_columns_] = result
+        return X
+
+
 class ReplaceTag(BaseProcessing):
     """A transformer that replaces components or full Tide tag names with new values.
 
@@ -3934,7 +4064,7 @@ class AddFourierPairs(BaseProcessing):
 
         new_index = X.index.to_frame().diff().squeeze()
         sec_dt = [element.total_seconds() for element in new_index]
-        increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy()
+        increasing_seconds = pd.Series(sec_dt).cumsum().to_numpy(copy=True)
         increasing_seconds[0] = 0
 
         omega = 2 * np.pi * frequency
@@ -3949,6 +4079,125 @@ class AddFourierPairs(BaseProcessing):
             )
 
         return X
+
+
+class AddSchoolHolidays(BaseProcessing):
+    """A transformer that adds a column flagging French school holidays.
+
+    The value of each time step is 1.0 when its local date (in `tz`) is a school
+    holiday of `zone`, 0.0 otherwise. The dates come from the
+    ``vacances-scolaires-france`` package (data.gouv.fr calendar, bundled with
+    the package, no network access): steps outside the period it covers are
+    NaN; update the package to cover the coming school years.
+
+    Requires the optional dependency: ``pip install tide[calendar]``.
+
+    Add it after a daily ``Resample``: averaging hourly 0/1 values over a day
+    would give fractions on the first and last days of the holidays.
+
+    Parameters
+    ----------
+    zone : str, default="A"
+        School holiday zone: "A", "B" or "C".
+    tz : str, default="Europe/Paris"
+        Time zone of the local date of each step (the index of tide data is
+        always tz-aware).
+    name : str, default="school_holidays"
+        Name of the new column.
+    unit : str, default="0-1"
+        Unit tag of the new column.
+    block : str, default="BLOCK"
+        block tag according to tide taging system. Will only be used if level 2
+        tags or more are already used
+    sub_block : str, default="SUB_BLOCK"
+        sub_block tag according to tide taging system. Will only be used if level
+        3 tags or more are already used
+
+    Attributes
+    ----------
+    feature_names_in_ : list[str]
+        Names of input columns (set during fit).
+    feature_names_out_ : list[str]
+        Names of input columns followed by the new column.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> data = pd.DataFrame(
+    ...     {"energy__kWh__building__heating": [1.0, 2.0, 3.0]},
+    ...     index=pd.date_range("2023-10-20", periods=3, freq="D", tz="UTC"),
+    ... )
+    >>> holidays = AddSchoolHolidays(zone="A", block="outdoor", sub_block="calendar")
+    >>> holidays.fit_transform(data)["school_holidays__0-1__outdoor__calendar"].tolist()
+    [0.0, 1.0, 1.0]
+    """
+
+    def __init__(
+        self,
+        zone: str = "A",
+        tz: str = "Europe/Paris",
+        name: str = "school_holidays",
+        unit: str = "0-1",
+        block: str = "BLOCK",
+        sub_block: str = "SUB_BLOCK",
+    ):
+        BaseProcessing.__init__(self)
+        self.zone = zone
+        self.tz = tz
+        self.name = name
+        self.unit = unit
+        self.block = block
+        self.sub_block = sub_block
+
+    def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        self.fit_check_features(X)
+        dates = _school_holiday_dates()
+        if self.zone not in dates.SUPPORTED_ZONES:
+            raise ValueError(
+                f"zone must be one of {dates.SUPPORTED_ZONES}, not {self.zone!r}"
+            )
+        max_level = get_tags_max_level(X.columns)
+        name = self.name
+        if max_level > 0:
+            name += f"__{self.unit}"
+        if max_level > 1:
+            name += f"__{self.block}"
+        if max_level > 2:
+            name += f"__{self.sub_block}"
+        self.new_column_ = name
+        self.feature_names_out_.append(name)
+        return self
+
+    def _transform_implementation(self, X: pd.Series | pd.DataFrame):
+        check_is_fitted(
+            self, attributes=["feature_names_in_", "feature_names_out_", "new_column_"]
+        )
+        dates = _school_holiday_dates()
+        first = dt.date(dates.min_year, 1, 1)
+        last = max(dates.data)
+        local_dates = X.index.tz_convert(self.tz).date
+        flags = {
+            day: float(dates.is_holiday_for_zone(day, self.zone))
+            if first <= day <= last
+            else np.nan
+            for day in set(local_dates)
+        }
+        X[self.new_column_] = np.array(
+            [flags[day] for day in local_dates], dtype="float64"
+        )
+        return X
+
+
+def _school_holiday_dates():
+    """Calendar of the ``vacances-scolaires-france`` package (optional dependency)."""
+    try:
+        from vacances_scolaires_france import SchoolHolidayDates
+    except ImportError:
+        raise ImportError(
+            "vacances-scolaires-france is required for AddSchoolHolidays. "
+            "Install it with: pip install tide[calendar]"
+        )
+    return SchoolHolidayDates()
 
 
 QUANTILE_METHODS = {

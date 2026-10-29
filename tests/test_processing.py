@@ -40,8 +40,10 @@ from tide.processing import (
     DropColumns,
     KeepColumns,
     Duplicate,
+    SpreadOverDuration,
     ReplaceTag,
     AddFourierPairs,
+    AddSchoolHolidays,
     DropQuantile,
     TrimSequence,
     WindowAggregate,
@@ -512,8 +514,8 @@ class TestCustomTransformers:
                 "1:00:00_col1": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
-            ),
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
         )
 
         lager = AddTimeLag(time_lag=dt.timedelta(hours=1), drop_resulting_nan=True)
@@ -542,8 +544,8 @@ class TestCustomTransformers:
                 "1h_col1": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
-            ),
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
         )
 
         lager = AddTimeLag(time_lag="1h", drop_resulting_nan=True)
@@ -569,8 +571,8 @@ class TestCustomTransformers:
                 "1h_temp__°C__room": [0.0],
             },
             index=pd.DatetimeIndex(
-                ["2009-01-01 01:00:00"], dtype="datetime64[ns, UTC]", freq="h", tz="UTC"
-            ),
+                ["2009-01-01 01:00:00"], freq="h", tz="UTC"
+            ).as_unit(df.index.unit),
         )
 
         lager = AddTimeLag(
@@ -1213,6 +1215,50 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(df, res)
         check_feature_names_out(col_keeper, res)
 
+    def test_spread_over_duration(self):
+        index = pd.date_range("2024-03-29", periods=3, freq="2D", tz="Europe/Paris")
+        df = pd.DataFrame(
+            {
+                "gas__kWh__site": [10.0, 30.0, 5.0],
+                "vol__m3__site": [1.0, 3.0, 0.5],
+                "duration__d__site": [1.0, 3.0, np.nan],
+            },
+            index=index,
+        )
+        spreader = SpreadOverDuration(columns="gas|vol", duration_column="duration")
+        res = spreader.fit_transform(df)
+        check_feature_names_out(spreader, res)
+        # 2024-03-31 + 1 day crosses the DST change: local midnight kept
+        expected_index = pd.DatetimeIndex(
+            ["2024-03-29", "2024-03-31", "2024-04-01", "2024-04-02"]
+        ).tz_localize("Europe/Paris")
+        assert res.index.equals(expected_index)
+        assert res["gas__kWh__site"].tolist() == [10.0, 10.0, 10.0, 15.0]
+        assert res["gas__kWh__site"].sum() == df["gas__kWh__site"].sum()
+        assert res["vol__m3__site"].tolist() == [1.0, 1.0, 1.0, 1.5]
+
+        dropped = SpreadOverDuration(
+            "gas", duration_column="duration", method="drop"
+        ).fit_transform(df)
+        assert dropped.index.equals(df.index)
+        assert dropped["gas__kWh__site"].isna().tolist() == [False, True, False]
+        assert dropped["vol__m3__site"].tolist() == [1.0, 3.0, 0.5]
+
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration", method="bad").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration(duration_column="duration").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="__").fit(df)
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration").fit_transform(
+                df.assign(**{"duration__d__site": [1.0, 2.5, 1.0]})
+            )
+        with pytest.raises(ValueError):
+            SpreadOverDuration("gas", duration_column="duration").fit_transform(
+                df.iloc[[0, 0, 1]]
+            )
+
     def test_duplicate(self):
         df = pd.DataFrame(
             {
@@ -1370,6 +1416,54 @@ class TestCustomTransformers:
             "1 day, 0:00:00_order_1_Cosine__W__BLOCK__SUB_BLOCK",
         ]
 
+    def test_add_school_holidays(self):
+        pytest.importorskip("vacances_scolaires_france")
+        # All Saints holidays 2023, zone A: Saturday 21 October to Sunday 5 November
+        days = pd.date_range("2023-10-20", "2023-11-06", freq="D", tz="UTC")
+        data = pd.DataFrame({"feat_1": np.arange(len(days), dtype="float64")}, days)
+        res = AddSchoolHolidays().fit_transform(data.copy())
+        assert res["school_holidays"].tolist() == [0.0] + [1.0] * 16 + [0.0]
+        assert res["feat_1"].tolist() == data["feat_1"].tolist()
+
+        # Winter holidays 2024 differ between zones
+        day = pd.DataFrame(
+            {"feat_1": [0.0]}, pd.DatetimeIndex(["2024-02-13"], tz="UTC")
+        )
+        flags = {
+            zone: AddSchoolHolidays(zone=zone).fit_transform(day.copy()).iloc[0, 1]
+            for zone in "ABC"
+        }
+        assert flags == {"A": 0.0, "B": 0.0, "C": 1.0}
+
+        # Local date: 2023-10-20 22:00 UTC is already Saturday 21 in Paris (UTC+2)
+        hours = pd.date_range("2023-10-20 21:00", periods=3, freq="h", tz="UTC")
+        hourly = pd.DataFrame({"feat_1": [0.0, 1.0, 2.0]}, hours)
+        res = AddSchoolHolidays().fit_transform(hourly.copy())
+        assert res["school_holidays"].tolist() == [0.0, 1.0, 1.0]
+        res = AddSchoolHolidays(tz="UTC").fit_transform(hourly.copy())
+        assert res["school_holidays"].tolist() == [0.0, 0.0, 0.0]
+
+        # Outside the period covered by the package: NaN
+        old = pd.DataFrame(
+            {"feat_1": [0.0]}, pd.DatetimeIndex(["1950-07-14"], tz="UTC")
+        )
+        assert np.isnan(AddSchoolHolidays().fit_transform(old).iloc[0, 1])
+
+        # Name from the tag levels, as AddFourierPairs
+        for column, expected in [
+            ("feat_1", "school_holidays"),
+            ("feat_1__°C", "school_holidays__0-1"),
+            ("feat_1__°C__building", "school_holidays__0-1__outdoor"),
+            ("feat_1__°C__building__room", "school_holidays__0-1__outdoor__calendar"),
+        ]:
+            holidays = AddSchoolHolidays(block="outdoor", sub_block="calendar")
+            res = holidays.fit_transform(data.rename(columns={"feat_1": column}))
+            assert holidays.feature_names_out_ == [column, expected]
+            check_feature_names_out(holidays, res)
+
+        with pytest.raises(ValueError):
+            AddSchoolHolidays(zone="D").fit(data)
+
     def test_drop_quantile(self):
         index = pd.date_range(
             "2009-01-01", "2009-01-01 23:00:00", freq="15min", tz="UTC"
@@ -1448,7 +1542,7 @@ class TestCustomTransformers:
             filtered_noise["Noise_1"][filtered_noise["Noise_1"].isna()].index,
             pd.DatetimeIndex(
                 ["2009-01-01 10:00:00+00:00", "2009-01-01 15:30:00+00:00"],
-                dtype="datetime64[ns, UTC]",
+                dtype=f"datetime64[{toy_df.index.unit}, UTC]",
                 freq=None,
             ),
         )
@@ -1456,7 +1550,7 @@ class TestCustomTransformers:
         pd.testing.assert_index_equal(
             filtered_noise["Noise_2"][filtered_noise["Noise_2"].isna()].index,
             pd.DatetimeIndex(
-                ["2009-01-01 03:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+                ["2009-01-01 03:30:00+00:00"], dtype=f"datetime64[{toy_df.index.unit}, UTC]", freq=None
             ),
         )
 
@@ -1489,7 +1583,7 @@ class TestCustomTransformers:
         pd.testing.assert_index_equal(
             filtered["Temp_2"][filtered["Temp_2"].isna()].index,
             pd.DatetimeIndex(
-                ["2009-01-01 11:30:00+00:00"], dtype="datetime64[ns, UTC]", freq=None
+                ["2009-01-01 11:30:00+00:00"], dtype=f"datetime64[{toy_df.index.unit}, UTC]", freq=None
             ),
         )
 

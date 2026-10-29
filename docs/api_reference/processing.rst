@@ -103,6 +103,10 @@ The processing module provides transformers for data processing and manipulation
    :members:
    :show-inheritance:
 
+.. autoclass:: tide.processing.SpreadOverDuration
+   :members:
+   :show-inheritance:
+
 .. autoclass:: tide.processing.ReplaceTag
    :members:
    :show-inheritance:
@@ -120,6 +124,10 @@ The processing module provides transformers for data processing and manipulation
    :show-inheritance:
 
 .. autoclass:: tide.processing.AddFourierPairs
+   :members:
+   :show-inheritance:
+
+.. autoclass:: tide.processing.AddSchoolHolidays
    :members:
    :show-inheritance:
 
