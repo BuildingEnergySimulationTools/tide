@@ -566,7 +566,9 @@ class TestCustomTransformers:
 
         daily_index = pd.date_range(
             "2026-03-28", "2026-03-30", freq="1D", tz="Europe/Paris"
-        ).append(pd.date_range("2026-10-24", "2026-10-26", freq="1D", tz="Europe/Paris"))
+        ).append(
+            pd.date_range("2026-10-24", "2026-10-26", freq="1D", tz="Europe/Paris")
+        )
         df = pd.DataFrame({"val": np.ones(6)}, index=daily_index)
         res = Resample(
             rule="1D", method="sum", min_coverage=1.0, input_step="1D"
@@ -657,15 +659,20 @@ class TestCustomTransformers:
             assert not np.isnan(res["val"].iloc[1])
 
     def test_resampler_min_coverage_right_closed_rule(self):
-        # R11: "ME" bins, January complete, February with one NaN day
+        # R11: month-end bins (right-closed), January complete, one NaN day
+        # in February. MonthEnd offset: the "ME" alias does not exist before
+        # pandas 2.2
         df = pd.DataFrame(
             {"val": np.ones(59)},
             index=pd.date_range("2026-01-01", freq="1D", periods=59, tz="UTC"),
         )
         df.loc["2026-02-10", "val"] = np.nan
-        ref = Resample(rule="ME", method="sum").fit_transform(df)
+        ref = Resample(rule=pd.offsets.MonthEnd(), method="sum").fit_transform(df)
         res = Resample(
-            rule="ME", method="sum", min_coverage=1.0, input_step="1D"
+            rule=pd.offsets.MonthEnd(),
+            method="sum",
+            min_coverage=1.0,
+            input_step="1D",
         ).fit_transform(df)
         pd.testing.assert_index_equal(res.index, ref.index)
         np.testing.assert_array_equal(res["val"].to_numpy(), [31.0, np.nan])
@@ -687,9 +694,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
         )
         for min_coverage in [0, 1.5]:
-            resampler = Resample(
-                rule="1D", min_coverage=min_coverage, input_step="1h"
-            )
+            resampler = Resample(rule="1D", min_coverage=min_coverage, input_step="1h")
             with pytest.raises(ValueError):
                 resampler.fit(df)
 
@@ -1056,9 +1061,7 @@ class TestCustomTransformers:
             index=pd.date_range("2009", freq="h", periods=8, tz="UTC"),
         )
         for method in ["linear", "time", "pchip", "cubicspline"]:
-            default = Interpolate(method=method, gaps_lte="4h").fit_transform(
-                df.copy()
-            )
+            default = Interpolate(method=method, gaps_lte="4h").fit_transform(df.copy())
             assert default["data"].iloc[-2:].notna().all()
 
             res = Interpolate(
