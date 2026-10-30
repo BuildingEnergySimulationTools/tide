@@ -606,6 +606,19 @@ class TestCustomTransformers:
         ).fit_transform(df)
         np.testing.assert_array_equal(res["val"].to_numpy(), [5.0])
 
+    def test_resampler_min_coverage_float_threshold(self):
+        # 14/25 is valid with min_coverage=0.56, although 0.56 * 25 > 14 in
+        # floating point
+        df = pd.DataFrame(
+            {"val": np.ones(25)},
+            index=pd.date_range("2009-01-01", freq="h", periods=25, tz="UTC"),
+        )
+        df.iloc[0:11, 0] = np.nan
+        res = Resample(
+            rule="25h", method="sum", min_coverage=0.56, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [14.0])
+
     def test_resampler_min_coverage_per_column(self):
         # R9: coverage mask is computed per column
         df = pd.DataFrame(
