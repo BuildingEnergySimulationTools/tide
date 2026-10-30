@@ -497,6 +497,207 @@ class TestCustomTransformers:
         pd.testing.assert_frame_equal(ref, res)
         check_feature_names_out(resampler, res)
 
+    def test_resampler_min_coverage_partial_day(self):
+        # R2: one NaN in a 24 points day -> NaN in mean and sum
+        df = pd.DataFrame(
+            {"val": np.ones(48)},
+            index=pd.date_range("2009-01-01", freq="h", periods=48, tz="UTC"),
+        )
+        df.iloc[5, 0] = np.nan
+
+        for method, full_day_value in [("mean", 1.0), ("sum", 24.0)]:
+            resampler = Resample(
+                rule="1D", method=method, min_coverage=1.0, input_step="1h"
+            )
+            res = resampler.fit_transform(df)
+            assert np.isnan(res["val"].iloc[0])
+            assert res["val"].iloc[1] == full_day_value
+            check_feature_names_out(resampler, res)
+
+    def test_resampler_min_coverage_empty_day_sum(self):
+        # R3: an all-NaN day gives NaN in sum, not 0
+        df = pd.DataFrame(
+            {"val": np.ones(48)},
+            index=pd.date_range("2009-01-01", freq="h", periods=48, tz="UTC"),
+        )
+        df.iloc[:24, 0] = np.nan
+
+        res = Resample(
+            rule="1D", method="sum", min_coverage=1.0, input_step="1h"
+        ).fit_transform(df)
+        assert np.isnan(res["val"].iloc[0])
+        assert res["val"].iloc[1] == 24.0
+
+    def test_resampler_min_coverage_series_starts_mid_day(self):
+        # R4: first day is incomplete
+        df = pd.DataFrame(
+            {"val": np.ones(60)},
+            index=pd.date_range("2009-01-01 12:00", freq="h", periods=60, tz="UTC"),
+        )
+        res = Resample(
+            rule="1D", method="sum", min_coverage=1.0, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [np.nan, 24.0, 24.0])
+
+    def test_resampler_min_coverage_series_ends_mid_day(self):
+        # R5: last day is incomplete
+        df = pd.DataFrame(
+            {"val": np.ones(61)},
+            index=pd.date_range("2009-01-01 00:00", freq="h", periods=61, tz="UTC"),
+        )
+        res = Resample(
+            rule="1D", method="sum", min_coverage=1.0, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [24.0, 24.0, np.nan])
+
+    def test_resampler_min_coverage_dst(self):
+        # R6: 23 h and 25 h local days are complete
+        for day, n_hours in [("2026-03-29", 23), ("2026-10-25", 25)]:
+            start = pd.Timestamp(day, tz="Europe/Paris")
+            hourly_index = pd.date_range(
+                start, start + pd.DateOffset(days=1), freq="1h", inclusive="left"
+            )
+            assert len(hourly_index) == n_hours
+            df = pd.DataFrame({"val": np.ones(n_hours)}, index=hourly_index)
+            res = Resample(
+                rule="1D", method="sum", min_coverage=1.0, input_step="1h"
+            ).fit_transform(df)
+            np.testing.assert_array_equal(res["val"].to_numpy(), [float(n_hours)])
+
+        daily_index = pd.date_range(
+            "2026-03-28", "2026-03-30", freq="1D", tz="Europe/Paris"
+        ).append(
+            pd.date_range("2026-10-24", "2026-10-26", freq="1D", tz="Europe/Paris")
+        )
+        df = pd.DataFrame({"val": np.ones(6)}, index=daily_index)
+        res = Resample(
+            rule="1D", method="sum", min_coverage=1.0, input_step="1D"
+        ).fit_transform(df)
+        for day in [
+            "2026-03-28",
+            "2026-03-29",
+            "2026-03-30",
+            "2026-10-24",
+            "2026-10-25",
+            "2026-10-26",
+        ]:
+            assert res.loc[pd.Timestamp(day, tz="Europe/Paris"), "val"] == 1.0
+
+    def test_resampler_min_coverage_threshold(self):
+        # R7: 6/10 valid, 4/10 NaN with min_coverage=0.5
+        df = pd.DataFrame(
+            {"val": np.ones(20)},
+            index=pd.date_range("2009-01-01", freq="h", periods=20, tz="UTC"),
+        )
+        df.iloc[0:4, 0] = np.nan
+        df.iloc[10:16, 0] = np.nan
+        res = Resample(
+            rule="10h", method="sum", min_coverage=0.5, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [6.0, np.nan])
+
+    def test_resampler_min_coverage_inclusive_threshold(self):
+        # R8: 5/10 is valid with min_coverage=0.5
+        df = pd.DataFrame(
+            {"val": np.ones(10)},
+            index=pd.date_range("2009-01-01", freq="h", periods=10, tz="UTC"),
+        )
+        df.iloc[0:5, 0] = np.nan
+        res = Resample(
+            rule="10h", method="sum", min_coverage=0.5, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [5.0])
+
+    def test_resampler_min_coverage_float_threshold(self):
+        # 14/25 is valid with min_coverage=0.56, although 0.56 * 25 > 14 in
+        # floating point
+        df = pd.DataFrame(
+            {"val": np.ones(25)},
+            index=pd.date_range("2009-01-01", freq="h", periods=25, tz="UTC"),
+        )
+        df.iloc[0:11, 0] = np.nan
+        res = Resample(
+            rule="25h", method="sum", min_coverage=0.56, input_step="1h"
+        ).fit_transform(df)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [14.0])
+
+    def test_resampler_min_coverage_per_column(self):
+        # R9: coverage mask is computed per column
+        df = pd.DataFrame(
+            {"col_sum": np.ones(72), "col_mean": 2 * np.ones(72)},
+            index=pd.date_range("2009-01-01", freq="h", periods=72, tz="UTC"),
+        )
+        df.iloc[3, 0] = np.nan
+        df.iloc[30, 1] = np.nan
+        resampler = Resample(
+            rule="1D",
+            columns_methods=[(["col_sum"], "sum"), (["col_mean"], "mean")],
+            min_coverage=1.0,
+            input_step="1h",
+        )
+        res = resampler.fit_transform(df)
+        np.testing.assert_array_equal(res["col_sum"].to_numpy(), [np.nan, 24.0, 24.0])
+        np.testing.assert_array_equal(res["col_mean"].to_numpy(), [2.0, np.nan, 2.0])
+        check_feature_names_out(resampler, res)
+
+    def test_resampler_min_coverage_function_map_and_callable(self):
+        # R10: time_integrate and a callable give NaN on an incomplete bin
+        df = pd.DataFrame(
+            {"val": np.arange(8.0)},
+            index=pd.date_range("2009-01-01", freq="h", periods=8, tz="UTC"),
+        )
+        df.iloc[1, 0] = np.nan
+
+        def value_range(x):
+            return x.max() - x.min()
+
+        for method in ["time_integrate", value_range]:
+            res = Resample(
+                rule="4h", method=method, min_coverage=1.0, input_step="1h"
+            ).fit_transform(df)
+            assert np.isnan(res["val"].iloc[0])
+            assert not np.isnan(res["val"].iloc[1])
+
+    def test_resampler_min_coverage_right_closed_rule(self):
+        # R11: month-end bins (right-closed), January complete, one NaN day
+        # in February. MonthEnd offset: the "ME" alias does not exist before
+        # pandas 2.2
+        df = pd.DataFrame(
+            {"val": np.ones(59)},
+            index=pd.date_range("2026-01-01", freq="1D", periods=59, tz="UTC"),
+        )
+        df.loc["2026-02-10", "val"] = np.nan
+        ref = Resample(rule=pd.offsets.MonthEnd(), method="sum").fit_transform(df)
+        res = Resample(
+            rule=pd.offsets.MonthEnd(),
+            method="sum",
+            min_coverage=1.0,
+            input_step="1D",
+        ).fit_transform(df)
+        pd.testing.assert_index_equal(res.index, ref.index)
+        np.testing.assert_array_equal(res["val"].to_numpy(), [31.0, np.nan])
+
+    def test_resampler_min_coverage_requires_input_step(self):
+        # R12
+        df = pd.DataFrame(
+            {"val": np.ones(24)},
+            index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
+        )
+        resampler = Resample(rule="1D", min_coverage=0.8)
+        with pytest.raises(ValueError):
+            resampler.fit(df)
+
+    def test_resampler_min_coverage_out_of_bounds(self):
+        # R13
+        df = pd.DataFrame(
+            {"val": np.ones(24)},
+            index=pd.date_range("2009-01-01", freq="h", periods=24, tz="UTC"),
+        )
+        for min_coverage in [0, 1.5]:
+            resampler = Resample(rule="1D", min_coverage=min_coverage, input_step="1h")
+            with pytest.raises(ValueError):
+                resampler.fit(df)
+
     def test_pd_add_time_lag(self):
         df = pd.DataFrame(
             {
@@ -824,6 +1025,74 @@ class TestCustomTransformers:
             ),
         )
         check_feature_names_out(filler, test_df)
+
+    def test_interpolate_trailing_gap_default(self):
+        # I2: without limit_area, a trailing gap is filled with the last value
+        df = pd.DataFrame(
+            {"data": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, np.nan, np.nan]},
+            index=pd.date_range("2009", freq="h", periods=9, tz="UTC"),
+        )
+        res = Interpolate(gaps_lte="4h").fit_transform(df.copy())
+        np.testing.assert_array_equal(
+            res["data"].to_numpy(),
+            np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 6.0, 6.0]),
+        )
+
+    def test_interpolate_limit_area_inside(self):
+        # I3: trailing gap stays NaN, inner gap is linearly filled
+        df = pd.DataFrame(
+            {"data": [0.0, 1.0, 2.0, np.nan, np.nan, 5.0, 6.0, 7.0, np.nan, np.nan]},
+            index=pd.date_range("2009", freq="h", periods=10, tz="UTC"),
+        )
+        filler = Interpolate(gaps_lte="4h", limit_area="inside")
+        res = filler.fit_transform(df.copy())
+        np.testing.assert_array_equal(
+            res["data"].to_numpy(),
+            np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, np.nan, np.nan]),
+        )
+        check_feature_names_out(filler, res)
+
+    def test_interpolate_limit_area_inside_leading_gap(self):
+        # I4: leading gap stays NaN, for several methods. No non-deprecated
+        # method fills a leading gap, so a trailing gap (filled by default)
+        # is added to check that limit_area actually reaches pandas.
+        df = pd.DataFrame(
+            {"data": [np.nan, np.nan, 2.0, 3.0, 4.0, 5.0, np.nan, np.nan]},
+            index=pd.date_range("2009", freq="h", periods=8, tz="UTC"),
+        )
+        for method in ["linear", "time", "pchip", "cubicspline"]:
+            default = Interpolate(method=method, gaps_lte="4h").fit_transform(df.copy())
+            assert default["data"].iloc[-2:].notna().all()
+
+            res = Interpolate(
+                method=method, gaps_lte="4h", limit_area="inside"
+            ).fit_transform(df.copy())
+            np.testing.assert_array_equal(
+                res["data"].to_numpy(),
+                np.array([np.nan, np.nan, 2.0, 3.0, 4.0, 5.0, np.nan, np.nan]),
+            )
+
+    def test_interpolate_limit_area_inside_gaps_lte(self):
+        # I5: inner gap longer than gaps_lte stays NaN, short inner gap is
+        # filled, short trailing gap (filled by default) stays NaN
+        df = pd.DataFrame(
+            {
+                "data": [0.0, 1.0, np.nan, np.nan, np.nan, np.nan, 6.0, 7.0]
+                + [np.nan, 9.0, 10.0, np.nan, np.nan]
+            },
+            index=pd.date_range("2009", freq="h", periods=13, tz="UTC"),
+        )
+        default = Interpolate(gaps_lte="2h").fit_transform(df.copy())
+        assert default["data"].iloc[-2:].notna().all()
+
+        res = Interpolate(gaps_lte="2h", limit_area="inside").fit_transform(df.copy())
+        np.testing.assert_array_equal(
+            res["data"].to_numpy(),
+            np.array(
+                [0.0, 1.0, np.nan, np.nan, np.nan, np.nan, 6.0, 7.0]
+                + [8.0, 9.0, 10.0, np.nan, np.nan]
+            ),
+        )
 
     def test_pd_fill_gap(self):
         index = pd.date_range("2009-01-01", "2009-12-31 23:00:00", freq="h", tz="UTC")

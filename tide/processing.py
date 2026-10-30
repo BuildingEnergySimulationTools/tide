@@ -1502,6 +1502,14 @@ class Interpolate(BaseFiller, BaseProcessing):
     gaps_gte : str | pd.Timedelta | dt.timedelta, optional (default=None)
         Only interpolate gaps with duration greater than or equal to this value.
 
+    limit_area : str, optional (default=None)
+        Passed to ``DataFrame.interpolate``:
+            - None: no restriction
+            - "inside": only fill NaNs surrounded by valid values. Gaps at the
+              start or end of the series stay NaN, whatever their duration
+            - "outside": only fill NaNs outside valid values
+        The gaps_lte / gaps_gte filter is applied afterwards.
+
     Examples
     --------
     >>> import pandas as pd
@@ -1537,6 +1545,9 @@ class Interpolate(BaseFiller, BaseProcessing):
     - Different interpolation methods may produce different results:
         - Linear interpolation is simple but may not capture complex patterns
         - Cubic interpolation provides smoother curves but may overshoot
+    - With the default limit_area=None, gaps at the end of the series are
+      filled with the last valid value (extrapolation). Use
+      limit_area="inside" to keep them NaN
 
     Returns
     -------
@@ -1550,19 +1561,21 @@ class Interpolate(BaseFiller, BaseProcessing):
         method: str = "linear",
         gaps_lte: str | pd.Timedelta | dt.timedelta = None,
         gaps_gte: str | pd.Timedelta | dt.timedelta = None,
+        limit_area: str | None = None,
     ):
         BaseFiller.__init__(self)
         BaseProcessing.__init__(self)
         self.method = method
         self.gaps_gte = gaps_gte
         self.gaps_lte = gaps_lte
+        self.limit_area = limit_area
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
         return self
 
     def _transform_implementation(self, X: pd.Series | pd.DataFrame):
         gaps_mask = self.get_gaps_mask(X)
-        X_full = X.interpolate(method=self.method)
+        X_full = X.interpolate(method=self.method, limit_area=self.limit_area)
         X[gaps_mask] = X_full[gaps_mask]
         return X
 
@@ -1604,6 +1617,21 @@ class Resample(BaseProcessing):
             - str | Callable: The aggregation method to use
         Example: [(['power__W__building'], 'sum')]
 
+    min_coverage : float, optional (default=None)
+        Minimum fraction of expected input points a bin must contain, in ]0, 1].
+        For each column and each output bin, coverage is the number of non-NaN
+        values divided by the number of points of the regular input_step grid
+        within the bin. If coverage < min_coverage, the aggregated value is
+        replaced by NaN, whatever the method. The whole bin is considered, so
+        bins at the start or end of a series that begins or ends mid-bin may be
+        incomplete. If None, no bin is masked.
+
+    input_step : str | pd.Timedelta | dt.timedelta, optional (default=None)
+        Step of the regular input grid used to count expected points per bin
+        (e.g. "1h", "15min", "1D"). Required when min_coverage is set. The grid
+        is calendar based, in the index timezone: a 23 h or 25 h local day
+        holds 23 or 25 hourly points, and one daily point.
+
     Examples
     --------
     >>> import pandas as pd
@@ -1633,7 +1661,19 @@ class Resample(BaseProcessing):
     ...     tide_format_methods={"name": "power", "method": "min"},
     ...     columns_methods=[(["temp__°C__room"], "max")],
     ... )
-
+    >>> # Daily sum, NaN for days with missing hourly values
+    >>> hourly = pd.DataFrame(
+    ...     {"energy__Wh": np.ones(48)},
+    ...     index=pd.date_range("2024-01-01", freq="1h", periods=48, tz="UTC"),
+    ... )
+    >>> hourly.iloc[5, 0] = np.nan
+    >>> resampler_cov = Resample(
+    ...     rule="1D", method="sum", min_coverage=1.0, input_step="1h"
+    ... )
+    >>> print(resampler_cov.fit_transform(hourly))
+                               energy__Wh
+    2024-01-01 00:00:00+00:00         NaN
+    2024-01-02 00:00:00+00:00        24.0
 
     Notes
     -----
@@ -1659,14 +1699,31 @@ class Resample(BaseProcessing):
         method: str | Callable = "mean",
         tide_format_methods: dict[str, str | Callable] = None,
         columns_methods: list[tuple[list[str], str | Callable]] = None,
+        min_coverage: float | None = None,
+        input_step: str | pd.Timedelta | dt.timedelta | None = None,
     ):
         super().__init__()
         self.rule = rule
         self.method = method
         self.tide_format_methods = tide_format_methods
         self.columns_methods = columns_methods
+        self.min_coverage = min_coverage
+        self.input_step = input_step
 
     def _fit_implementation(self, X: pd.Series | pd.DataFrame, y=None):
+        if self.min_coverage is not None:
+            if not 0 < self.min_coverage <= 1:
+                raise ValueError(
+                    f"min_coverage must be in ]0, 1], got {self.min_coverage}"
+                )
+            if self.input_step is None:
+                raise ValueError("input_step is required when min_coverage is set")
+        if self.input_step is not None:
+            try:
+                pd.tseries.frequencies.to_offset(self.input_step)
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid input_step {self.input_step!r}") from e
+
         if self.tide_format_methods:
             self.columns_methods = []
             for req, method in self.tide_format_methods.items():
@@ -1700,8 +1757,41 @@ class Resample(BaseProcessing):
             res = X[cols].resample(self.rule).agg(method)
             results.append(res)
 
-        out = pd.concat(results, axis=1)
-        return out[X.columns]
+        out = pd.concat(results, axis=1)[X.columns]
+        if self.min_coverage is not None:
+            out = out.mask(self._low_coverage_mask(X, out.index))
+        return out
+
+    def _low_coverage_mask(self, X: pd.DataFrame, bins: pd.Index) -> pd.DataFrame:
+        # Bins and expected counts both come from resample(self.rule), so
+        # right-closed rules ("ME", "W", ...) are handled as in the aggregation
+        n_valid = X.resample(self.rule).count().reindex(bins)
+
+        # Regular input grid in the index timezone, phased on the first
+        # timestamp and covering every output bin entirely
+        start, end = X.index.min(), X.index.max()
+        rule = pd.tseries.frequencies.to_offset(self.rule)
+        lower, upper = start - 2 * rule, end + 2 * rule
+        n_before = 2
+        before = pd.date_range(end=start, periods=n_before, freq=self.input_step)
+        while before[0] > lower:
+            n_before *= 2
+            before = pd.date_range(end=start, periods=n_before, freq=self.input_step)
+        grid = pd.date_range(start=before[0], end=upper, freq=self.input_step)
+
+        # Same origin as the aggregation ("start_day" of X), as the grid
+        # starts earlier
+        n_expected = (
+            pd.Series(1, index=grid)
+            .resample(self.rule, origin=start.normalize())
+            .count()
+            .reindex(bins)
+        )
+
+        # Ratio of two integers compared to min_coverage: no rounding of the
+        # threshold product (0.7 * 10 != 7.0 in floating point)
+        coverage = n_valid.div(n_expected, axis=0)
+        return coverage.lt(self.min_coverage)
 
 
 class AddTimeLag(BaseProcessing):
